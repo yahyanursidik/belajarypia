@@ -3,7 +3,7 @@
 
 ## 1. Global Acceptance Criteria
 - App builds successfully.
-- App uses Vite + React + TypeScript + Refine + Ant Design.
+- App uses Vite + React + TypeScript + Refine headless + shadcn/ui + Tailwind CSS.
 - User-facing labels are in Indonesian.
 - Unauthenticated users cannot access protected pages.
 - Role-based navigation works.

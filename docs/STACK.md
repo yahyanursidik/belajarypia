@@ -6,7 +6,8 @@
 - React
 - TypeScript
 - Refine
-- Ant Design
+- shadcn/ui
+- Tailwind CSS
 - React Router
 - Refine data/auth/access control providers
 - Vercel for deployment
@@ -24,38 +25,33 @@
 - File access via signed upload/download URLs generated server-side
 
 ## 4. UI Framework
-Use Ant Design as the main UI component system.
+Use shadcn/ui-style local components with Tailwind CSS as the main UI component system.
 
-Recommended components:
-- Layout
-- Menu
-- Table
-- Form
-- Input
-- Select
-- DatePicker
-- Checkbox
-- Radio
+Recommended primitives:
 - Button
 - Card
-- Statistic
-- Tag
 - Badge
 - Alert
-- Drawer
-- Modal
+- Input
+- Select
+- Checkbox
+- Radio Group
+- Form
+- Table
+- Dialog
+- Sheet
 - Tabs
-- Steps
-- Descriptions
-- Empty
-- Result
-- Upload
-- Tree
+- Separator
+- Dropdown Menu
+- Navigation Menu
+- Breadcrumb
+- Progress
+- Skeleton
 - Calendar
-- Timeline
+- Command
 
 ## 5. Refine Usage
-Refine is used for:
+Refine is used headlessly for:
 - resource-based routing
 - CRUD-heavy pages
 - admin workspaces
@@ -63,8 +59,8 @@ Refine is used for:
 - data fetching
 - auth integration
 - access control
-- notification provider
-- form/table integration with Ant Design
+- notification integration
+- resource and data orchestration without locking the UI to a component library
 
 Refine should not force learner pages to look like admin CRUD pages. Use custom React pages for participant/guardian dashboards when needed.
 
@@ -168,7 +164,7 @@ src/
     helpdesk/
   components/
     common/
-    antd-extended/
+    ui/
     tables/
     forms/
     dashboard/

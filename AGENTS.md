@@ -12,7 +12,8 @@ Build a flexible LMS for Islamic education and parenting programs, including Qur
 - React
 - TypeScript
 - Refine
-- Ant Design
+- shadcn/ui
+- Tailwind CSS
 - Supabase Auth
 - Supabase PostgreSQL
 - Supabase Row Level Security
@@ -25,8 +26,8 @@ Build a flexible LMS for Islamic education and parenting programs, including Qur
 - Do not implement audio/video upload in MVP.
 - Do not implement native mobile app in MVP.
 - Do not implement payment gateway in MVP.
-- Use Ant Design as the main UI component library.
-- Use Refine for resource-based admin, teacher, and operational workflows.
+- Use shadcn/ui and Tailwind CSS as the main UI component system.
+- Use Refine headless for resource-based admin, teacher, and operational workflows.
 - Use custom React pages when learner experience needs to be simpler than CRUD.
 - Use Indonesian language for all user-facing labels, menus, statuses, empty states, and validation messages.
 
@@ -65,13 +66,13 @@ Never expose S3 secrets in frontend. Use Supabase Edge Functions for signed uplo
 - Always validate user role and scope in backend logic or database policies.
 
 ## UI Rules
-- Use Ant Design components.
+- Use shadcn/ui-style local components and Tailwind CSS utilities.
 - Keep UI clean, warm, professional, and easy to use.
 - Admin pages may be dense but must remain readable.
 - Learner pages must be simple, guided, and mobile-friendly.
 - Use consistent status tags and badges.
 - Use clear empty states and actionable messages.
-- Avoid building custom components when Ant Design provides a suitable component.
+- Keep shared UI components in `src/components/ui` and avoid one-off styling when an existing local UI primitive fits.
 
 ## Development Rules
 - Work in small phases.

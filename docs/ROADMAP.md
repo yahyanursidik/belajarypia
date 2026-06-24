@@ -12,8 +12,8 @@ Create the project foundation.
 
 ### Scope
 - Vite + React + TypeScript setup
-- Refine setup
-- Ant Design setup
+- Refine headless setup
+- shadcn/ui + Tailwind CSS setup
 - Supabase client setup
 - Basic layouts
 - Placeholder routes

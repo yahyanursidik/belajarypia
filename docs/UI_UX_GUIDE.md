@@ -10,7 +10,7 @@ The LMS should feel:
 - easy to use
 - suitable for Islamic education and parenting programs
 
-Use Ant Design as the main UI system. Customize theme to avoid a cold corporate feel.
+Use shadcn/ui-style local components with Tailwind CSS as the main UI system. Customize tokens to avoid a cold corporate feel.
 
 ## 2. Language
 Use Indonesian for user-facing UI.
@@ -144,53 +144,44 @@ For global governance:
 - Audit Logs
 - System Settings
 
-## 5. Ant Design Component Usage
+## 5. shadcn/ui Component Usage
 
 ### Admin Pages
 Use:
 - Table
 - Form
-- Drawer
-- Modal
+- Sheet
+- Dialog
 - Tabs
-- Tag
 - Badge
-- Statistic
 - Card
-- Descriptions
-- Steps
 - Alert
-- Upload
-- Tree
-- Dropdown
-- Space
+- Progress
+- Dropdown Menu
+- Separator
 
 ### Learner Pages
 Use:
 - Card
 - List
 - Progress
-- Steps
 - Alert
-- Empty
-- Result
 - Tabs
-- Collapse
 - Button
-- Tag
+- Badge
+- Empty State
 
 ### Teacher Pages
 Use:
 - Table
 - List
-- Drawer
+- Sheet
 - Form
 - Tabs
 - Card
 - Badge
-- Tag
-- Descriptions
-- Timeline
+- Alert
+- Timeline-style list
 - Calendar
 
 ## 6. Status System

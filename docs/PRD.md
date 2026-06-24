@@ -9,7 +9,8 @@ YPIA LMS is a web-based Learning Management System for Yayasan Pendidikan Ihsanu
 - React
 - TypeScript
 - Refine
-- Ant Design
+- shadcn/ui
+- Tailwind CSS
 - Supabase Auth
 - Supabase PostgreSQL
 - Supabase Row Level Security
