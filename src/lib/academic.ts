@@ -105,3 +105,32 @@ export type AcademicHalaqah = {
   mentor_user_id: string | null;
   status: "active" | "archived";
 };
+
+export type QuestionBank = {
+  id: string;
+  program_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+};
+
+export type QuestionBankItem = {
+  id: string;
+  question_bank_id: string;
+  question_type: string;
+  question_text: string;
+  options: string[] | any;
+  correct_answer: string | null;
+  explanation: string | null;
+};
+
+export type QuizQuestion = {
+  id: string;
+  lesson_id: string;
+  question_type: string;
+  question_text: string;
+  options: string[] | any;
+  correct_answer: string | null;
+  explanation: string | null;
+  order_no: number;
+};

@@ -226,8 +226,8 @@ export function AdminProgramListPage() {
       ) : (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {filteredPrograms.map((program) => (
-            <Card key={program.id} className="overflow-hidden hover:shadow-xl transition-all duration-300 border-border/50 group flex flex-col">
-              <div className={`h-2 w-full ${program.status === 'active' ? 'bg-emerald-500' : program.status === 'draft' ? 'bg-amber-400' : 'bg-slate-300'}`} />
+            <Card key={program.id} className="overflow-hidden hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 border-border/50 group flex flex-col bg-card/95 backdrop-blur">
+              <div className={`h-2 w-full ${program.status === 'active' ? 'bg-gradient-to-r from-emerald-500 to-emerald-400' : program.status === 'draft' ? 'bg-gradient-to-r from-amber-400 to-amber-300' : 'bg-slate-300'}`} />
               <CardHeader className="pb-4">
                 <div className="flex justify-between items-start mb-2">
                   <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 font-semibold tracking-wider text-[10px]">
@@ -394,9 +394,12 @@ export function AdminProgramListPage() {
                   </div>
                 </div>
 
-                <div className="space-y-3 pt-2">
-                  <label className="text-sm font-semibold border-b pb-2 block">Fitur Tambahan (MVP)</label>
-                  <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-3 pt-4 border-t">
+                  <label className="text-sm font-semibold flex items-center justify-between pb-2">
+                    <span>Fitur Tambahan (MVP)</span>
+                    <span className="text-xs text-muted-foreground font-normal">Pilih fitur yang ingin diaktifkan</span>
+                  </label>
+                  <div className="grid gap-3 md:grid-cols-2 max-h-[200px] overflow-y-auto pr-2 rounded-xl p-2 bg-muted/20 border border-muted-foreground/10">
                     {allowedMvpFeatureFlags.map((flag) => {
                       const isForbidden = flag === "use_ai_assist" || flag === "use_audio_submission" || flag === "use_video_submission";
                       return (

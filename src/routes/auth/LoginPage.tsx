@@ -18,27 +18,27 @@ const portalConfig = {
     title: "Portal Admin & Staf",
     subtitle: "Sistem Manajemen Terpadu YPIA",
     Icon: Users,
-    gradient: "from-slate-900 to-slate-800",
-    iconBg: "bg-slate-800/50",
-    themeColor: "bg-slate-900",
+    gradient: "from-[#0a1f1a] to-[#0d2a22]",
+    iconBg: "bg-white/10",
+    themeColor: "bg-[#0a1f1a]",
     allowedRoles: ["super_admin", "admin", "finance", "helpdesk", "content_reviewer"] as RoleCode[],
   },
   teacher: {
     title: "Portal Pengajar",
     subtitle: "Manajemen Kelas dan Pembelajaran",
     Icon: BookOpen,
-    gradient: "from-emerald-900 to-emerald-800",
-    iconBg: "bg-emerald-800/50",
-    themeColor: "bg-emerald-900",
+    gradient: "from-[#0d2a22] to-[#122e25]",
+    iconBg: "bg-white/10",
+    themeColor: "bg-[#0d2a22]",
     allowedRoles: ["teacher", "mentor"] as RoleCode[],
   },
   learner: {
     title: "Portal Siswa",
     subtitle: "Akses Program dan Materi Belajar",
     Icon: GraduationCap,
-    gradient: "from-primary to-emerald-950",
-    iconBg: "bg-white/20",
-    themeColor: "bg-primary",
+    gradient: "from-[#0a1f1a] to-[#143d31]",
+    iconBg: "bg-white/15",
+    themeColor: "bg-[#0a1f1a]",
     allowedRoles: ["participant", "guardian"] as RoleCode[],
   },
 };
@@ -46,7 +46,7 @@ const portalConfig = {
 export function LoginPage({ portal }: LoginPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isLoading, session, primaryRole, roles, signIn, signOut } = useAuthSession();
+  const { isLoading, session, primaryRole, signIn, signOut } = useAuthSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -79,6 +79,21 @@ export function LoginPage({ portal }: LoginPageProps) {
           <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-white/10 blur-3xl" />
         </div>
 
+        {/* Geometric Islamic pattern overlay */}
+        <div className="absolute inset-0 pointer-events-none opacity-[0.03]" style={{
+          backgroundImage: `
+            repeating-linear-gradient(0deg, transparent, transparent 48px, rgba(255,255,255,0.5) 48px, rgba(255,255,255,0.5) 49px),
+            repeating-linear-gradient(90deg, transparent, transparent 48px, rgba(255,255,255,0.5) 48px, rgba(255,255,255,0.5) 49px),
+            repeating-linear-gradient(45deg, transparent, transparent 67px, rgba(255,255,255,0.3) 67px, rgba(255,255,255,0.3) 68px),
+            repeating-linear-gradient(-45deg, transparent, transparent 67px, rgba(255,255,255,0.3) 67px, rgba(255,255,255,0.3) 68px)
+          `
+        }} />
+
+        {/* Gold accent line at top */}
+        <div className="absolute top-0 left-0 right-0 h-1" style={{
+          background: 'linear-gradient(90deg, transparent, hsl(42 70% 55% / 0.7), transparent)'
+        }} />
+
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-12">
             <div className={`w-12 h-12 rounded-xl ${config.iconBg} flex items-center justify-center backdrop-blur-sm border border-white/20`}>
@@ -90,7 +105,7 @@ export function LoginPage({ portal }: LoginPageProps) {
             </div>
           </div>
 
-          <div className="space-y-6 max-w-lg mt-24">
+          <div className="space-y-6 max-w-lg mt-16">
             <h2 className="text-4xl font-bold leading-tight text-white">
               {config.subtitle}
             </h2>

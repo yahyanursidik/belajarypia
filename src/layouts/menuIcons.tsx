@@ -1,4 +1,15 @@
-import { BookOpen, LayoutDashboard, LogIn, Settings, User, Users } from "lucide-react";
+import {
+  BookOpen,
+  FileCheck,
+  LayoutDashboard,
+  LogIn,
+  MessageCircleQuestion,
+  ShieldCheck,
+  SlidersHorizontal,
+  User,
+  Users,
+  Wallet,
+} from "lucide-react";
 
 export const menuIcon = {
   dashboard: LayoutDashboard,
@@ -6,5 +17,9 @@ export const menuIcon = {
   book: BookOpen,
   team: Users,
   user: User,
-  settings: Settings,
+  settings: SlidersHorizontal,
+  finance: Wallet,
+  helpdesk: MessageCircleQuestion,
+  contentReview: FileCheck,
+  audit: ShieldCheck,
 } as const;

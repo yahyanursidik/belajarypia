@@ -152,7 +152,8 @@ export function LearnerDashboardPage() {
             <GraduationCap className="h-8 w-8 text-white" />
           </div>
           <div>
-            <h2>Halo, {participant.display_name}!</h2>
+            <p className="text-white/70 text-sm font-medium mb-1">Assalamu'alaikum, Peserta 👋</p>
+            <h2>Selamat Datang, {participant.display_name}!</h2>
             <p>
               Selamat datang di portal pembelajaran Anda. Lanjutkan proses belajar Anda dan pantau perkembangan program yang Anda ikuti.
             </p>

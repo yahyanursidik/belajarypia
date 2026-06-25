@@ -17,10 +17,12 @@ import type {
   LessonVisibilityStatus,
   ProgramModule,
   StaffProfile,
+  QuestionBank,
 } from "../../lib/academic";
 import { inferFileCategory, requestSignedUploadUrl, requestSignedDownloadUrl } from "../../lib/documents";
 import type { Program } from "../../lib/organization";
 import { supabase } from "../../lib/supabase";
+import { ProgramAdmissionBuilder } from "./ProgramAdmissionBuilder";
 
 /* ───────────────── Empty Form Templates ───────────────── */
 
@@ -40,6 +42,7 @@ const emptyLesson = {
   content_body: "",
   external_url: "",
 };
+const emptyQuestion = { question_text: "", optA: "", optB: "", optC: "", optD: "", correct_option: "A", explanation: "" };
 
 /* ───────────────── Component ───────────────── */
 
@@ -58,6 +61,7 @@ export function ProgramBuilderPage() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [documentFiles, setDocumentFiles] = useState<DocumentFile[]>([]);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
+  const [questionBanks, setQuestionBanks] = useState<QuestionBank[]>([]);
 
   /* ── Form State ── */
   const [batchForm, setBatchForm] = useState(emptyBatch);
@@ -68,10 +72,32 @@ export function ProgramBuilderPage() {
   const [lessonForm, setLessonForm] = useState(emptyLesson);
   const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
   const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
+  const [lessonModalMode, setLessonModalMode] = useState<"materi" | "kuis">("materi");
 
   /* ── UI State ── */
-  const [activeTab, setActiveTab] = useState<"info" | "kurikulum" | "angkatan">("info");
+  const [activeTab, setActiveTab] = useState<"info" | "kurikulum" | "angkatan" | "bank_soal" | "pendaftaran">("info");
   const [isLessonModalOpen, setIsLessonModalOpen] = useState(false);
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [isClassModalOpen, setIsClassModalOpen] = useState(false);
+  const [isHalaqahModalOpen, setIsHalaqahModalOpen] = useState(false);
+  const [isLevelModalOpen, setIsLevelModalOpen] = useState(false);
+  const [isModuleModalOpen, setIsModuleModalOpen] = useState(false);
+  const [isBankModalOpen, setIsBankModalOpen] = useState(false);
+  const [isQuestionModalOpen, setIsQuestionModalOpen] = useState(false);
+  const [managingLesson, setManagingLesson] = useState<Lesson | null>(null);
+  const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
+
+  const [managingBankId, setManagingBankId] = useState<string | null>(null);
+  const [bankItems, setBankItems] = useState<any[]>([]);
+  const [isManageBankItemsModalOpen, setIsManageBankItemsModalOpen] = useState(false);
+  const [isCreateQuestionModalOpen, setIsCreateQuestionModalOpen] = useState(false);
+  const [questionTarget, setQuestionTarget] = useState<"quiz" | "bank" | null>(null);
+  const [questionForm, setQuestionForm] = useState(emptyQuestion);
+  const [isBankSelectModalOpen, setIsBankSelectModalOpen] = useState(false);
+  const [allBankItems, setAllBankItems] = useState<any[]>([]);
+  const [selectedBankItems, setSelectedBankItems] = useState<Record<string, boolean>>({});
+
+  const [bankForm, setBankForm] = useState({ name: "", description: "" });
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
   const [uploadSource, setUploadSource] = useState<"url" | "upload">("url");
   const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
@@ -122,6 +148,7 @@ export function ProgramBuilderPage() {
       { data: lessonRows },
       { data: docRows },
       { data: staffRows },
+      { data: bankRows },
     ] = await Promise.all([
       supabase.from("programs").select("*").eq("id", programId).single(),
       supabase.from("batches").select("*").eq("program_id", programId).order("created_at"),
@@ -132,6 +159,7 @@ export function ProgramBuilderPage() {
       supabase.from("lessons").select("*, program_modules!inner(program_id)").eq("program_modules.program_id", programId).order("order_no"),
       supabase.from("document_files").select("*"),
       supabase.from("profiles").select("id, full_name, email"),
+      supabase.from("question_banks").select("*").eq("program_id", programId).order("created_at"),
     ]);
 
     if (prog) setProgram(prog as unknown as Program);
@@ -143,6 +171,7 @@ export function ProgramBuilderPage() {
     setLessons((lessonRows ?? []) as unknown as Lesson[]);
     setDocumentFiles((docRows ?? []) as unknown as DocumentFile[]);
     setStaff((staffRows ?? []) as StaffProfile[]);
+    setQuestionBanks((bankRows ?? []) as any[]);
     setIsLoading(false);
   };
 
@@ -182,8 +211,13 @@ export function ProgramBuilderPage() {
     }
   };
 
-  const openCreateLessonModal = (moduleId: string) => {
-    setLessonForm({ ...emptyLesson, module_id: moduleId });
+  const openCreateLessonModal = (moduleId: string, mode: "materi" | "kuis") => {
+    setLessonModalMode(mode);
+    setLessonForm({ 
+      ...emptyLesson, 
+      module_id: moduleId,
+      lesson_type: mode === "kuis" ? "quiz" : "content" 
+    });
     setEditingLessonId(null);
     setUploadSource("url");
     setSelectedUploadFile(null);
@@ -193,6 +227,7 @@ export function ProgramBuilderPage() {
   };
 
   const editLesson = (lesson: Lesson) => {
+    setLessonModalMode(lesson.lesson_type === "quiz" || lesson.lesson_type === "exam" ? "kuis" : "materi");
     const doc = documentFiles.find(d => d.lesson_id === lesson.id && d.source_type === "object_storage");
     if (doc) {
       setUploadSource("upload");
@@ -231,6 +266,101 @@ export function ProgramBuilderPage() {
 
   const toggleModule = (id: string) => {
     setExpandedModules(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const manageQuestions = async (lesson: Lesson) => {
+    setManagingLesson(lesson);
+    setIsQuestionModalOpen(true);
+    const { data } = await supabase.from("quiz_questions").select("*").eq("lesson_id", lesson.id).order("order_no");
+    setQuizQuestions(data || []);
+  };
+
+  const manageBankItems = async (bankId: string) => {
+    setManagingBankId(bankId);
+    setIsManageBankItemsModalOpen(true);
+    const { data } = await supabase.from("question_bank_items").select("*").eq("question_bank_id", bankId).order("created_at");
+    setBankItems(data || []);
+  };
+
+  const openSelectFromBank = async () => {
+    const { data } = await supabase.from("question_bank_items").select("*, question_banks!inner(name, programs(title))");
+    setAllBankItems(data || []);
+    setSelectedBankItems({});
+    setIsBankSelectModalOpen(true);
+  };
+
+  const submitQuestion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const opts = [questionForm.optA, questionForm.optB, questionForm.optC, questionForm.optD].filter(o => o.trim() !== "");
+    let correct = questionForm.optA;
+    if (questionForm.correct_option === "B") correct = questionForm.optB;
+    if (questionForm.correct_option === "C") correct = questionForm.optC;
+    if (questionForm.correct_option === "D") correct = questionForm.optD;
+
+    if (questionTarget === "quiz" && managingLesson) {
+      await submit(async () => {
+        const payload = {
+          lesson_id: managingLesson.id,
+          question_text: questionForm.question_text,
+          options: opts,
+          correct_answer: correct,
+          explanation: questionForm.explanation || null,
+          order_no: quizQuestions.length + 1
+        };
+        const res = await supabase.from("quiz_questions").insert(payload);
+        if (!res.error) {
+          const { data } = await supabase.from("quiz_questions").select("*").eq("lesson_id", managingLesson.id).order("order_no");
+          setQuizQuestions(data || []);
+        }
+        return res;
+      }, "Soal berhasil ditambahkan ke kuis.");
+    } else if (questionTarget === "bank" && managingBankId) {
+      await submit(async () => {
+        const payload = {
+          question_bank_id: managingBankId,
+          question_text: questionForm.question_text,
+          options: opts,
+          correct_answer: correct,
+          explanation: questionForm.explanation || null,
+        };
+        const res = await supabase.from("question_bank_items").insert(payload);
+        if (!res.error) {
+          const { data } = await supabase.from("question_bank_items").select("*").eq("question_bank_id", managingBankId).order("created_at");
+          setBankItems(data || []);
+        }
+        return res;
+      }, "Soal berhasil ditambahkan ke bank.");
+    }
+    setQuestionForm(emptyQuestion);
+    setIsCreateQuestionModalOpen(false);
+  };
+
+  const submitImportBank = async () => {
+    if (!managingLesson) return;
+    const selectedIds = Object.keys(selectedBankItems).filter(k => selectedBankItems[k]);
+    if (selectedIds.length === 0) return setIsBankSelectModalOpen(false);
+    
+    const itemsToImport = allBankItems.filter(i => selectedIds.includes(i.id));
+    const startOrder = quizQuestions.length;
+    const payloads = itemsToImport.map((item, idx) => ({
+      lesson_id: managingLesson.id,
+      question_type: item.question_type,
+      question_text: item.question_text,
+      options: item.options,
+      correct_answer: item.correct_answer,
+      explanation: item.explanation,
+      order_no: startOrder + idx + 1
+    }));
+
+    await submit(async () => {
+      const res = await supabase.from("quiz_questions").insert(payloads);
+      if (!res.error) {
+        const { data } = await supabase.from("quiz_questions").select("*").eq("lesson_id", managingLesson.id).order("order_no");
+        setQuizQuestions(data || []);
+      }
+      return res;
+    }, `${itemsToImport.length} soal berhasil diimpor.`);
+    setIsBankSelectModalOpen(false);
   };
 
   /* ── URL Preview Helper ── */
@@ -360,7 +490,7 @@ export function ProgramBuilderPage() {
   if (!program) {
     return (
       <div className="page-stack space-y-4">
-        <Alert variant="destructive">
+        <Alert className="border-red-200 bg-red-50 text-red-900">
           <AlertTitle>Error</AlertTitle>
           <AlertDescription>Program tidak ditemukan atau Anda tidak memiliki akses.</AlertDescription>
         </Alert>
@@ -391,6 +521,8 @@ export function ProgramBuilderPage() {
           { key: "info" as const, label: "📝 Info Program" },
           { key: "kurikulum" as const, label: "📚 Kurikulum & Materi" },
           ...(program.curriculum_model === "angkatan" ? [{ key: "angkatan" as const, label: "👥 Angkatan & Kelas" }] : []),
+          { key: "bank_soal" as const, label: "🏦 Bank Soal" },
+          { key: "pendaftaran" as const, label: "📝 Pendaftaran" },
         ]).map(tab => (
           <Button
             key={tab.key}
@@ -481,68 +613,20 @@ export function ProgramBuilderPage() {
       {/* ═══════════════ TAB: ANGKATAN ═══════════════ */}
       {activeTab === "angkatan" && program.curriculum_model === "angkatan" && (
         <>
-          <div className="grid gap-6 md:grid-cols-3">
-            {/* Buat Angkatan */}
-            <Card>
-              <CardHeader><CardTitle className="text-base">Buat Angkatan Baru</CardTitle></CardHeader>
-              <CardContent>
-                <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); void submit(() => supabase.from("batches").insert({ program_id: programId, code: batchForm.code.trim(), name: batchForm.name.trim(), start_date: batchForm.start_date || null, end_date: batchForm.end_date || null, status: batchForm.status }), "Angkatan berhasil dibuat."); setBatchForm(emptyBatch); }}>
-                  <Input placeholder="Kode (BATCH-01)" required value={batchForm.code} onChange={e => setBatchForm(c => ({ ...c, code: e.target.value }))} />
-                  <Input placeholder="Nama (Angkatan 1)" required value={batchForm.name} onChange={e => setBatchForm(c => ({ ...c, name: e.target.value }))} />
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input type="date" title="Tanggal Mulai" value={batchForm.start_date} onChange={e => setBatchForm(c => ({ ...c, start_date: e.target.value }))} />
-                    <Input type="date" title="Tanggal Selesai" value={batchForm.end_date} onChange={e => setBatchForm(c => ({ ...c, end_date: e.target.value }))} />
-                  </div>
-                  <Button disabled={isSubmitting} type="submit" className="w-full">Tambahkan Angkatan</Button>
-                </form>
-              </CardContent>
-            </Card>
-
-            {/* Buat Kelas */}
-            <Card>
-              <CardHeader><CardTitle className="text-base">Buat Kelas Baru</CardTitle></CardHeader>
-              <CardContent>
-                <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); void submit(() => supabase.from("classes").insert({ program_id: programId, batch_id: classForm.batch_id || null, code: classForm.code.trim(), name: classForm.name.trim(), capacity: classForm.capacity ? Number(classForm.capacity) : null, teacher_user_id: classForm.teacher_user_id || null }), "Kelas berhasil dibuat."); setClassForm(emptyClass); }}>
-                  <select className="field-control" value={classForm.batch_id} onChange={e => setClassForm(c => ({ ...c, batch_id: e.target.value }))}>
-                    <option value="">-- Pilih Angkatan --</option>
-                    {batches.map(b => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}
-                  </select>
-                  <Input placeholder="Kode kelas (KLS-A)" required value={classForm.code} onChange={e => setClassForm(c => ({ ...c, code: e.target.value }))} />
-                  <Input placeholder="Nama kelas (Kelas A)" required value={classForm.name} onChange={e => setClassForm(c => ({ ...c, name: e.target.value }))} />
-                  <Input placeholder="Kapasitas" type="number" value={classForm.capacity} onChange={e => setClassForm(c => ({ ...c, capacity: e.target.value }))} />
-                  <select className="field-control" value={classForm.teacher_user_id} onChange={e => setClassForm(c => ({ ...c, teacher_user_id: e.target.value }))}>
-                    <option value="">-- Pilih Pengajar --</option>
-                    {staff.map(s => <option key={s.id} value={s.id}>{s.full_name ?? s.email}</option>)}
-                  </select>
-                  <Button disabled={isSubmitting} type="submit" className="w-full">Tambahkan Kelas</Button>
-                </form>
-              </CardContent>
-            </Card>
-
-            {/* Buat Halaqah */}
-            <Card>
-              <CardHeader><CardTitle className="text-base">Buat Halaqah / Kelompok</CardTitle></CardHeader>
-              <CardContent>
-                <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); void submit(() => supabase.from("halaqahs").insert({ class_id: halaqahForm.class_id, code: halaqahForm.code.trim(), name: halaqahForm.name.trim(), capacity: halaqahForm.capacity ? Number(halaqahForm.capacity) : null, mentor_user_id: halaqahForm.mentor_user_id || null }), "Halaqah berhasil dibuat."); setHalaqahForm(emptyHalaqah); }}>
-                  <select className="field-control" required value={halaqahForm.class_id} onChange={e => setHalaqahForm(c => ({ ...c, class_id: e.target.value }))}>
-                    <option value="">-- Pilih Kelas --</option>
-                    {classes.map(cl => <option key={cl.id} value={cl.id}>{cl.code} - {cl.name}</option>)}
-                  </select>
-                  <Input placeholder="Kode halaqah (HLQ-01)" required value={halaqahForm.code} onChange={e => setHalaqahForm(c => ({ ...c, code: e.target.value }))} />
-                  <Input placeholder="Nama halaqah" required value={halaqahForm.name} onChange={e => setHalaqahForm(c => ({ ...c, name: e.target.value }))} />
-                  <Input placeholder="Kapasitas" type="number" value={halaqahForm.capacity} onChange={e => setHalaqahForm(c => ({ ...c, capacity: e.target.value }))} />
-                  <select className="field-control" value={halaqahForm.mentor_user_id} onChange={e => setHalaqahForm(c => ({ ...c, mentor_user_id: e.target.value }))}>
-                    <option value="">-- Pilih Mentor --</option>
-                    {staff.map(s => <option key={s.id} value={s.id}>{s.full_name ?? s.email}</option>)}
-                  </select>
-                  <Button disabled={isSubmitting} type="submit" className="w-full">Tambahkan Halaqah</Button>
-                </form>
-              </CardContent>
-            </Card>
+          <div className="flex flex-wrap gap-3 mb-6">
+            <Button onClick={() => { setBatchForm(emptyBatch); setIsBatchModalOpen(true); }} className="shadow-sm">
+              <Plus className="h-4 w-4 mr-2" /> Tambah Angkatan
+            </Button>
+            <Button variant="outline" onClick={() => { setClassForm(emptyClass); setIsClassModalOpen(true); }} className="shadow-sm">
+              <Plus className="h-4 w-4 mr-2" /> Tambah Kelas
+            </Button>
+            <Button variant="outline" onClick={() => { setHalaqahForm(emptyHalaqah); setIsHalaqahModalOpen(true); }} className="shadow-sm">
+              <Plus className="h-4 w-4 mr-2" /> Tambah Halaqah
+            </Button>
           </div>
 
           {/* Ringkasan Kelas */}
-          <Card className="mt-6">
+          <Card>
             <CardHeader><CardTitle>Ringkasan Kelas & Halaqah</CardTitle></CardHeader>
             <CardContent>
               {classes.length === 0 ? (
@@ -574,61 +658,17 @@ export function ProgramBuilderPage() {
       {/* ═══════════════ TAB: KURIKULUM ═══════════════ */}
       {activeTab === "kurikulum" && (
         <>
-          {/* Form Builder Row */}
-          <div className="grid gap-6 md:grid-cols-2">
-            {/* Buat Tahapan */}
-            <Card>
-              <CardHeader><CardTitle className="text-base">Buat Tahapan (Opsional)</CardTitle></CardHeader>
-              <CardContent>
-                <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); void submit(() => supabase.from("levels").insert({ program_id: programId, parent_level_id: levelForm.parent_level_id || null, code: levelForm.code.trim(), name: levelForm.name.trim(), order_no: Number(levelForm.order_no || 0) }), "Tahapan berhasil dibuat."); setLevelForm(emptyLevel); }}>
-                  <select className="field-control" value={levelForm.parent_level_id} onChange={e => setLevelForm(c => ({ ...c, parent_level_id: e.target.value }))}>
-                    <option value="">Tanpa parent tahapan</option>
-                    {levels.map(l => <option key={l.id} value={l.id}>{l.code} - {l.name}</option>)}
-                  </select>
-                  <Input placeholder="Kode (DASAR)" required value={levelForm.code} onChange={e => setLevelForm(c => ({ ...c, code: e.target.value }))} />
-                  <Input placeholder="Nama (Level 1 Dasar)" required value={levelForm.name} onChange={e => setLevelForm(c => ({ ...c, name: e.target.value }))} />
-                  <Input placeholder="Urutan (1)" type="number" value={levelForm.order_no} onChange={e => setLevelForm(c => ({ ...c, order_no: e.target.value }))} />
-                  <Button disabled={isSubmitting} type="submit" className="w-full">Tambahkan Tahapan</Button>
-                </form>
-              </CardContent>
-            </Card>
-
-            {/* Buat Mata Pelajaran */}
-            <Card>
-              <CardHeader><CardTitle className="text-base">{editingModuleId ? "Edit Mata Pelajaran" : "Buat Mata Pelajaran"}</CardTitle></CardHeader>
-              <CardContent>
-                <form className="space-y-3" onSubmit={(e) => {
-                  e.preventDefault();
-                  if (editingModuleId) {
-                    void submit(() => supabase.from("program_modules").update({ parent_module_id: moduleForm.parent_module_id || null, level_id: moduleForm.level_id || null, code: moduleForm.code.trim(), title: moduleForm.title.trim(), order_no: Number(moduleForm.order_no || 0) }).eq("id", editingModuleId), "Mata Pelajaran berhasil diperbarui.");
-                    setEditingModuleId(null);
-                  } else {
-                    void submit(() => supabase.from("program_modules").insert({ program_id: programId, parent_module_id: moduleForm.parent_module_id || null, level_id: moduleForm.level_id || null, code: moduleForm.code.trim(), title: moduleForm.title.trim(), order_no: Number(moduleForm.order_no || 0) }), "Mata Pelajaran berhasil dibuat.");
-                  }
-                  setModuleForm(emptyModule);
-                }}>
-                  <select className="field-control" value={moduleForm.level_id} onChange={e => setModuleForm(c => ({ ...c, level_id: e.target.value }))}>
-                    <option value="">-- Pilih Tahapan (Opsional) --</option>
-                    {levels.map(l => <option key={l.id} value={l.id}>{l.code} - {l.name}</option>)}
-                  </select>
-                  <select className="field-control" value={moduleForm.parent_module_id} onChange={e => setModuleForm(c => ({ ...c, parent_module_id: e.target.value }))}>
-                    <option value="">-- Induk (Opsional) --</option>
-                    {modules.map(m => <option key={m.id} value={m.id}>{m.code} - {m.title}</option>)}
-                  </select>
-                  <Input placeholder="Kode (THD)" required value={moduleForm.code} onChange={e => setModuleForm(c => ({ ...c, code: e.target.value }))} />
-                  <Input placeholder="Nama Mata Pelajaran (Tauhid)" required value={moduleForm.title} onChange={e => setModuleForm(c => ({ ...c, title: e.target.value }))} />
-                  <Input placeholder="Urutan (1)" type="number" value={moduleForm.order_no} onChange={e => setModuleForm(c => ({ ...c, order_no: e.target.value }))} />
-                  <div className="flex gap-2">
-                    <Button disabled={isSubmitting} type="submit" className="flex-1">{editingModuleId ? "Simpan Perubahan" : "Tambahkan"}</Button>
-                    {editingModuleId && <Button type="button" variant="outline" onClick={() => { setEditingModuleId(null); setModuleForm(emptyModule); }}>Batal</Button>}
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
+          <div className="flex flex-wrap gap-3 mb-6">
+            <Button onClick={() => { setModuleForm(emptyModule); setEditingModuleId(null); setIsModuleModalOpen(true); }} className="shadow-sm">
+              <Plus className="h-4 w-4 mr-2" /> Tambah Mata Pelajaran
+            </Button>
+            <Button variant="outline" onClick={() => { setLevelForm(emptyLevel); setIsLevelModalOpen(true); }} className="shadow-sm">
+              <Plus className="h-4 w-4 mr-2" /> Tambah Tahapan (Level)
+            </Button>
           </div>
 
           {/* Struktur Kurikulum */}
-          <Card className="mt-6">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Struktur Kurikulum Program</CardTitle>
               <Badge variant="outline">{modules.length} Mata Pelajaran · {lessons.length} Materi</Badge>
@@ -664,7 +704,7 @@ export function ProgramBuilderPage() {
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             <Badge variant="outline" className="bg-white text-xs">{moduleLessons.length} Materi</Badge>
-                            <Button variant="ghost" className="h-8 w-8 p-0 text-blue-500 hover:bg-blue-50 rounded-full" onClick={(e) => { e.stopPropagation(); setModuleForm({ parent_module_id: module.parent_module_id || "", level_id: module.level_id || "", code: module.code, title: module.title, order_no: module.order_no.toString() }); setEditingModuleId(module.id); }}>
+                            <Button variant="ghost" className="h-8 w-8 p-0 text-blue-500 hover:bg-blue-50 rounded-full" onClick={(e) => { e.stopPropagation(); setModuleForm({ parent_module_id: module.parent_module_id || "", level_id: module.level_id || "", code: module.code, title: module.title, order_no: module.order_no.toString() }); setEditingModuleId(module.id); setIsModuleModalOpen(true); }}>
                               <Edit2 className="h-3.5 w-3.5" />
                             </Button>
                             <Button variant="ghost" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full" onClick={(e) => { e.stopPropagation(); void deleteModule(module.id); }}>
@@ -694,6 +734,11 @@ export function ProgramBuilderPage() {
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2 shrink-0">
+                                    {(lesson.lesson_type === "quiz" || lesson.lesson_type === "exam") && (
+                                      <Button variant="outline" size="sm" className="h-8 text-xs border-orange-200 text-orange-600 hover:bg-orange-50" onClick={() => manageQuestions(lesson)}>
+                                        <BookOpen className="h-3 w-3 mr-1" /> Kelola Soal
+                                      </Button>
+                                    )}
                                     <Badge variant={lesson.visibility_status === "published" ? "default" : "secondary"} className="text-xs">{lesson.visibility_status}</Badge>
                                     <Button variant="ghost" className="h-8 w-8 p-0 text-blue-500 hover:bg-blue-50 rounded-full" onClick={() => editLesson(lesson)}><Edit2 className="h-3.5 w-3.5" /></Button>
                                     <Button variant="ghost" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full" onClick={() => void deleteLesson(lesson.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
@@ -704,9 +749,12 @@ export function ProgramBuilderPage() {
                           )}
 
                           {/* Add Lesson Button */}
-                          <div className="p-3 bg-muted/20 border-t">
-                            <Button variant="outline" className="w-full border-dashed rounded-lg" onClick={() => openCreateLessonModal(module.id)}>
+                          <div className="p-3 bg-muted/20 border-t grid gap-2 md:grid-cols-2">
+                            <Button variant="outline" className="w-full border-dashed rounded-lg" onClick={() => openCreateLessonModal(module.id, "materi")}>
                               <Plus className="h-4 w-4 mr-2" /> Tambah Pertemuan / Materi
+                            </Button>
+                            <Button variant="outline" className="w-full border-dashed rounded-lg text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-200" onClick={() => openCreateLessonModal(module.id, "kuis")}>
+                              <FileText className="h-4 w-4 mr-2" /> Tambah Kuis / Ujian
                             </Button>
                           </div>
                         </div>
@@ -720,6 +768,371 @@ export function ProgramBuilderPage() {
         </>
       )}
 
+      {/* ═══════════════ TAB: BANK SOAL ═══════════════ */}
+      {activeTab === "bank_soal" && (
+        <>
+          <div className="flex flex-wrap gap-3 mb-6">
+            <Button onClick={() => { setBankForm({ name: "", description: "" }); setIsBankModalOpen(true); }} className="shadow-sm">
+              <Plus className="h-4 w-4 mr-2" /> Buat Bank Soal
+            </Button>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Daftar Bank Soal</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {questionBanks.length === 0 ? (
+                <div className="text-center p-12 text-muted-foreground border rounded-lg border-dashed">
+                  <BookOpen className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                  <p>Belum ada Bank Soal.</p>
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {questionBanks.map(bank => (
+                    <Card key={bank.id} className="overflow-hidden hover:shadow-md transition-shadow">
+                      <CardHeader className="bg-muted/30 pb-4">
+                        <div className="flex justify-between items-start">
+                          <CardTitle className="text-lg">{bank.name}</CardTitle>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full" onClick={() => submit(() => supabase.from("question_banks").delete().eq("id", bank.id), "Bank Soal dihapus.")}><Trash2 className="h-4 w-4" /></Button>
+                        </div>
+                        <p className="text-sm text-muted-foreground line-clamp-2">{bank.description || "Tidak ada deskripsi."}</p>
+                      </CardHeader>
+                      <CardContent className="pt-4 border-t">
+                        <Button variant="outline" className="w-full" onClick={() => manageBankItems(bank.id)}>Kelola Butir Soal <ChevronRight className="ml-2 h-4 w-4" /></Button>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
+
+      {/* ═══════════════ MODALS ═══════════════ */}
+      
+      {/* Modal Kelola Soal Kuis */}
+      {isQuestionModalOpen && managingLesson && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+            <CardHeader className="border-b flex flex-row items-center justify-between py-4 shrink-0">
+              <div>
+                <CardTitle className="text-xl">Kelola Soal: {managingLesson.title}</CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">Total {quizQuestions.length} soal ditambahkan.</p>
+              </div>
+              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => { setIsQuestionModalOpen(false); setManagingLesson(null); }}>
+                <X className="h-5 w-5" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-6 overflow-y-auto flex-1 bg-muted/10">
+              <div className="flex gap-4 mb-6">
+                <Button className="shadow-sm" onClick={() => { setQuestionTarget("quiz"); setQuestionForm(emptyQuestion); setIsCreateQuestionModalOpen(true); }}>
+                  <Plus className="h-4 w-4 mr-2" /> Buat Soal Sendiri
+                </Button>
+                <Button variant="outline" className="border-primary/20 text-primary hover:bg-primary/5" onClick={openSelectFromBank}>
+                  <BookOpen className="h-4 w-4 mr-2" /> Ambil dari Bank Soal
+                </Button>
+              </div>
+
+              {quizQuestions.length === 0 ? (
+                <div className="text-center p-12 text-muted-foreground border rounded-lg border-dashed bg-background">
+                  <FileText className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                  <p>Belum ada soal untuk kuis ini.</p>
+                  <p className="text-sm mt-1">Pilih "Buat Soal Sendiri" atau "Ambil dari Bank Soal" di atas.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {quizQuestions.map((q, i) => (
+                    <Card key={q.id}>
+                      <div className="flex gap-4 p-4">
+                        <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0 font-bold">
+                          {i + 1}
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-sm text-foreground mb-3">{q.question_text}</p>
+                          <div className="space-y-2">
+                            {(q.options || []).map((opt: string, idx: number) => (
+                              <div key={idx} className={`p-2 border rounded-md text-sm ${opt === q.correct_answer ? "bg-emerald-50 border-emerald-200 font-medium" : "bg-muted/30"}`}>
+                                {String.fromCharCode(65 + idx)}. {opt}
+                                {opt === q.correct_answer && <span className="float-right text-emerald-600 text-xs">Jawaban Benar</span>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-2 shrink-0">
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-blue-500 hover:bg-blue-50 rounded-full"><Edit2 className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full"><Trash2 className="h-4 w-4" /></Button>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Bank Soal */}
+      {isBankModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+            <CardHeader className="border-b flex flex-row items-center justify-between py-4">
+              <CardTitle className="text-xl">Buat Bank Soal Baru</CardTitle>
+              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsBankModalOpen(false)}>
+                <X className="h-5 w-5" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-6">
+              <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void submit(() => supabase.from("question_banks").insert({ program_id: programId, name: bankForm.name.trim(), description: bankForm.description.trim() || null }), "Bank Soal berhasil dibuat."); setBankForm({ name: "", description: "" }); setIsBankModalOpen(false); }}>
+                <div>
+                  <label className="text-sm font-semibold mb-1 block">Nama Bank Soal <span className="text-red-500">*</span></label>
+                  <Input placeholder="Contoh: Bank Soal Tauhid" required value={bankForm.name} onChange={e => setBankForm(c => ({ ...c, name: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold mb-1 block">Deskripsi</label>
+                  <textarea className="field-control min-h-[80px]" placeholder="Keterangan..." value={bankForm.description} onChange={e => setBankForm(c => ({ ...c, description: e.target.value }))} />
+                </div>
+                <div className="pt-4 flex justify-end gap-3">
+                  <Button type="button" variant="outline" onClick={() => setIsBankModalOpen(false)}>Batal</Button>
+                  <Button disabled={isSubmitting} type="submit">Simpan Bank Soal</Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Angkatan */}
+      {isBatchModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+            <CardHeader className="border-b flex flex-row items-center justify-between py-4">
+              <CardTitle className="text-xl">Buat Angkatan Baru</CardTitle>
+              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsBatchModalOpen(false)}>
+                <X className="h-5 w-5" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-6">
+              <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void submit(() => supabase.from("batches").insert({ program_id: programId, code: batchForm.code.trim(), name: batchForm.name.trim(), start_date: batchForm.start_date || null, end_date: batchForm.end_date || null, status: batchForm.status }), "Angkatan berhasil dibuat."); setBatchForm(emptyBatch); setIsBatchModalOpen(false); }}>
+                <div>
+                  <label className="text-sm font-semibold mb-1 block">Kode Angkatan</label>
+                  <Input placeholder="Contoh: BATCH-01" required value={batchForm.code} onChange={e => setBatchForm(c => ({ ...c, code: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold mb-1 block">Nama Angkatan</label>
+                  <Input placeholder="Contoh: Angkatan 1" required value={batchForm.name} onChange={e => setBatchForm(c => ({ ...c, name: e.target.value }))} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm font-semibold mb-1 block">Tanggal Mulai</label>
+                    <Input type="date" value={batchForm.start_date} onChange={e => setBatchForm(c => ({ ...c, start_date: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold mb-1 block">Tanggal Selesai</label>
+                    <Input type="date" value={batchForm.end_date} onChange={e => setBatchForm(c => ({ ...c, end_date: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="pt-4 flex justify-end gap-3">
+                  <Button type="button" variant="outline" onClick={() => setIsBatchModalOpen(false)}>Batal</Button>
+                  <Button disabled={isSubmitting} type="submit">Tambahkan Angkatan</Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Kelas */}
+      {isClassModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+            <CardHeader className="border-b flex flex-row items-center justify-between py-4">
+              <CardTitle className="text-xl">Buat Kelas Baru</CardTitle>
+              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsClassModalOpen(false)}>
+                <X className="h-5 w-5" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-6">
+              <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void submit(() => supabase.from("classes").insert({ program_id: programId, batch_id: classForm.batch_id || null, code: classForm.code.trim(), name: classForm.name.trim(), capacity: classForm.capacity ? Number(classForm.capacity) : null, teacher_user_id: classForm.teacher_user_id || null }), "Kelas berhasil dibuat."); setClassForm(emptyClass); setIsClassModalOpen(false); }}>
+                <div>
+                  <label className="text-sm font-semibold mb-1 block">Angkatan (Opsional)</label>
+                  <select className="field-control" value={classForm.batch_id} onChange={e => setClassForm(c => ({ ...c, batch_id: e.target.value }))}>
+                    <option value="">-- Pilih Angkatan --</option>
+                    {batches.map(b => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm font-semibold mb-1 block">Kode Kelas</label>
+                    <Input placeholder="KLS-A" required value={classForm.code} onChange={e => setClassForm(c => ({ ...c, code: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold mb-1 block">Kapasitas</label>
+                    <Input placeholder="Max peserta" type="number" value={classForm.capacity} onChange={e => setClassForm(c => ({ ...c, capacity: e.target.value }))} />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-semibold mb-1 block">Nama Kelas</label>
+                  <Input placeholder="Contoh: Kelas A" required value={classForm.name} onChange={e => setClassForm(c => ({ ...c, name: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold mb-1 block">Pengajar Utama</label>
+                  <select className="field-control" value={classForm.teacher_user_id} onChange={e => setClassForm(c => ({ ...c, teacher_user_id: e.target.value }))}>
+                    <option value="">-- Pilih Pengajar --</option>
+                    {staff.map(s => <option key={s.id} value={s.id}>{s.full_name ?? s.email}</option>)}
+                  </select>
+                </div>
+                <div className="pt-4 flex justify-end gap-3">
+                  <Button type="button" variant="outline" onClick={() => setIsClassModalOpen(false)}>Batal</Button>
+                  <Button disabled={isSubmitting} type="submit">Tambahkan Kelas</Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Halaqah */}
+      {isHalaqahModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+            <CardHeader className="border-b flex flex-row items-center justify-between py-4">
+              <CardTitle className="text-xl">Buat Halaqah / Kelompok</CardTitle>
+              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsHalaqahModalOpen(false)}>
+                <X className="h-5 w-5" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-6">
+              <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void submit(() => supabase.from("halaqahs").insert({ class_id: halaqahForm.class_id, code: halaqahForm.code.trim(), name: halaqahForm.name.trim(), capacity: halaqahForm.capacity ? Number(halaqahForm.capacity) : null, mentor_user_id: halaqahForm.mentor_user_id || null }), "Halaqah berhasil dibuat."); setHalaqahForm(emptyHalaqah); setIsHalaqahModalOpen(false); }}>
+                <div>
+                  <label className="text-sm font-semibold mb-1 block">Kelas <span className="text-red-500">*</span></label>
+                  <select className="field-control" required value={halaqahForm.class_id} onChange={e => setHalaqahForm(c => ({ ...c, class_id: e.target.value }))}>
+                    <option value="">-- Pilih Kelas --</option>
+                    {classes.map(cl => <option key={cl.id} value={cl.id}>{cl.code} - {cl.name}</option>)}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm font-semibold mb-1 block">Kode Halaqah</label>
+                    <Input placeholder="HLQ-01" required value={halaqahForm.code} onChange={e => setHalaqahForm(c => ({ ...c, code: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold mb-1 block">Kapasitas</label>
+                    <Input placeholder="Max" type="number" value={halaqahForm.capacity} onChange={e => setHalaqahForm(c => ({ ...c, capacity: e.target.value }))} />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-semibold mb-1 block">Nama Halaqah</label>
+                  <Input placeholder="Contoh: Kelompok Abu Bakar" required value={halaqahForm.name} onChange={e => setHalaqahForm(c => ({ ...c, name: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold mb-1 block">Mentor / Pendamping</label>
+                  <select className="field-control" value={halaqahForm.mentor_user_id} onChange={e => setHalaqahForm(c => ({ ...c, mentor_user_id: e.target.value }))}>
+                    <option value="">-- Pilih Mentor --</option>
+                    {staff.map(s => <option key={s.id} value={s.id}>{s.full_name ?? s.email}</option>)}
+                  </select>
+                </div>
+                <div className="pt-4 flex justify-end gap-3">
+                  <Button type="button" variant="outline" onClick={() => setIsHalaqahModalOpen(false)}>Batal</Button>
+                  <Button disabled={isSubmitting} type="submit">Tambahkan Halaqah</Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Tahapan */}
+      {isLevelModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+            <CardHeader className="border-b flex flex-row items-center justify-between py-4">
+              <CardTitle className="text-xl">Buat Tahapan Baru</CardTitle>
+              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsLevelModalOpen(false)}>
+                <X className="h-5 w-5" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-6">
+              <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void submit(() => supabase.from("levels").insert({ program_id: programId, parent_level_id: null, code: levelForm.code.trim(), name: levelForm.name.trim(), order_no: Number(levelForm.order_no || 0) }), "Tahapan berhasil dibuat."); setLevelForm(emptyLevel); setIsLevelModalOpen(false); }}>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm font-semibold mb-1 block">Kode</label>
+                    <Input placeholder="Contoh: DASAR" required value={levelForm.code} onChange={e => setLevelForm(c => ({ ...c, code: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold mb-1 block">Urutan</label>
+                    <Input placeholder="1" type="number" value={levelForm.order_no} onChange={e => setLevelForm(c => ({ ...c, order_no: e.target.value }))} />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-semibold mb-1 block">Nama Tahapan</label>
+                  <Input placeholder="Contoh: Level 1 Dasar" required value={levelForm.name} onChange={e => setLevelForm(c => ({ ...c, name: e.target.value }))} />
+                </div>
+                <div className="pt-4 flex justify-end gap-3">
+                  <Button type="button" variant="outline" onClick={() => setIsLevelModalOpen(false)}>Batal</Button>
+                  <Button disabled={isSubmitting} type="submit">Tambahkan Tahapan</Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Mata Pelajaran */}
+      {isModuleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+            <CardHeader className="border-b flex flex-row items-center justify-between py-4">
+              <CardTitle className="text-xl">{editingModuleId ? "Edit Mata Pelajaran" : "Buat Mata Pelajaran"}</CardTitle>
+              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => { setIsModuleModalOpen(false); setEditingModuleId(null); setModuleForm(emptyModule); }}>
+                <X className="h-5 w-5" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-6">
+              <form className="space-y-4" onSubmit={(e) => {
+                e.preventDefault();
+                if (editingModuleId) {
+                  void submit(() => supabase.from("program_modules").update({ parent_module_id: moduleForm.parent_module_id || null, level_id: moduleForm.level_id || null, code: moduleForm.code.trim(), title: moduleForm.title.trim(), order_no: Number(moduleForm.order_no || 0) }).eq("id", editingModuleId), "Mata Pelajaran berhasil diperbarui.");
+                  setEditingModuleId(null);
+                } else {
+                  void submit(() => supabase.from("program_modules").insert({ program_id: programId, parent_module_id: moduleForm.parent_module_id || null, level_id: moduleForm.level_id || null, code: moduleForm.code.trim(), title: moduleForm.title.trim(), order_no: Number(moduleForm.order_no || 0) }), "Mata Pelajaran berhasil dibuat.");
+                }
+                setModuleForm(emptyModule);
+                setIsModuleModalOpen(false);
+              }}>
+                <div>
+                  <label className="text-sm font-semibold mb-1 block">Tahapan (Opsional)</label>
+                  <select className="field-control" value={moduleForm.level_id} onChange={e => setModuleForm(c => ({ ...c, level_id: e.target.value }))}>
+                    <option value="">-- Pilih Tahapan --</option>
+                    {levels.map(l => <option key={l.id} value={l.id}>{l.code} - {l.name}</option>)}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm font-semibold mb-1 block">Kode</label>
+                    <Input placeholder="THD-1" required value={moduleForm.code} onChange={e => setModuleForm(c => ({ ...c, code: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold mb-1 block">Urutan</label>
+                    <Input placeholder="1" type="number" value={moduleForm.order_no} onChange={e => setModuleForm(c => ({ ...c, order_no: e.target.value }))} />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-semibold mb-1 block">Judul Mata Pelajaran</label>
+                  <Input placeholder="Contoh: Pengantar Tauhid" required value={moduleForm.title} onChange={e => setModuleForm(c => ({ ...c, title: e.target.value }))} />
+                </div>
+                <div className="pt-4 flex justify-end gap-3">
+                  <Button type="button" variant="outline" onClick={() => { setIsModuleModalOpen(false); setEditingModuleId(null); setModuleForm(emptyModule); }}>Batal</Button>
+                  <Button disabled={isSubmitting} type="submit">{editingModuleId ? "Simpan Perubahan" : "Tambahkan Mata Pelajaran"}</Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* ═══════════════ UNIFIED LESSON MODAL ═══════════════ */}
       {isLessonModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -727,7 +1140,9 @@ export function ProgramBuilderPage() {
             <CardHeader className="sticky top-0 bg-background/95 backdrop-blur z-10 border-b flex flex-row items-center justify-between py-4">
               <CardTitle className="text-xl flex items-center gap-2 text-primary">
                 <Presentation className="h-5 w-5" />
-                {editingLessonId ? "Edit Pertemuan / Materi" : "Buat Pertemuan / Materi Baru"}
+                {editingLessonId
+                  ? (lessonModalMode === "kuis" ? "Edit Kuis / Ujian" : "Edit Pertemuan / Materi")
+                  : (lessonModalMode === "kuis" ? "Buat Kuis / Ujian Baru" : "Buat Pertemuan / Materi Baru")}
               </CardTitle>
               <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsLessonModalOpen(false)}>
                 <X className="h-5 w-5" />
@@ -737,20 +1152,27 @@ export function ProgramBuilderPage() {
               <form className="space-y-5" onSubmit={handleLessonSubmit}>
                 {/* Title */}
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold">Judul Materi <span className="text-red-500">*</span></label>
-                  <Input placeholder="Contoh: Pengantar Tauhid - Pertemuan 1" required value={lessonForm.title} onChange={e => setLessonForm(c => ({ ...c, title: e.target.value }))} className="h-11" />
+                  <label className="text-sm font-semibold">{lessonModalMode === "kuis" ? "Judul Kuis / Ujian" : "Judul Materi"} <span className="text-red-500">*</span></label>
+                  <Input placeholder={lessonModalMode === "kuis" ? "Contoh: Ujian Akhir Semester" : "Contoh: Pengantar Tauhid - Pertemuan 1"} required value={lessonForm.title} onChange={e => setLessonForm(c => ({ ...c, title: e.target.value }))} className="h-11" />
                 </div>
 
                 {/* Type & Status */}
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold">Tipe Pertemuan</label>
+                    <label className="text-sm font-semibold">{lessonModalMode === "kuis" ? "Tipe Evaluasi" : "Tipe Pertemuan"}</label>
                     <select className="field-control h-11" value={lessonForm.lesson_type} onChange={e => setLessonForm(c => ({ ...c, lesson_type: e.target.value }))}>
-                      <option value="content">📖 Materi Pembelajaran</option>
-                      <option value="quiz">✍️ Kuis Harian</option>
-                      <option value="exam">🏆 Ujian</option>
-                      <option value="live_session">🎥 Sesi Live</option>
-                      <option value="assignment">📝 Tugas</option>
+                      {lessonModalMode === "materi" ? (
+                        <>
+                          <option value="content">📖 Materi Pembelajaran</option>
+                          <option value="live_session">🎥 Sesi Live</option>
+                          <option value="assignment">📝 Tugas</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="quiz">✍️ Kuis Harian</option>
+                          <option value="exam">🏆 Ujian</option>
+                        </>
+                      )}
                     </select>
                   </div>
                   <div className="space-y-2">
@@ -836,6 +1258,19 @@ export function ProgramBuilderPage() {
                       </div>
                     )}
                   </div>
+                ) : lessonModalMode === "kuis" ? (
+                  <div className="space-y-3 p-5 bg-orange-50/50 dark:bg-orange-950/20 rounded-xl border border-orange-100 dark:border-orange-900/50">
+                    <label className="text-sm font-semibold flex items-center gap-2 text-orange-700 dark:text-orange-400">
+                      <BookOpen className="h-4 w-4" /> Pengelolaan Soal
+                    </label>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      Kerangka kuis / ujian akan disimpan terlebih dahulu. Setelah disimpan, Anda dapat mengklik tombol <strong className="text-orange-600 font-semibold px-1.5 py-0.5 bg-orange-100 rounded">Kelola Soal</strong> pada daftar materi untuk:
+                    </p>
+                    <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1 ml-2">
+                      <li>Membuat soal secara mandiri (Manual)</li>
+                      <li>Mengimpor soal dari Bank Soal yang sudah ada</li>
+                    </ul>
+                  </div>
                 ) : (
                   <div className="space-y-3 p-4 bg-muted/30 rounded-xl border">
                     <label className="text-sm font-semibold flex items-center gap-2">
@@ -911,8 +1346,8 @@ export function ProgramBuilderPage() {
                 {/* Submit */}
                 <div className="flex justify-end gap-3 pt-4 border-t">
                   <Button type="button" variant="outline" onClick={() => setIsLessonModalOpen(false)}>Batal</Button>
-                  <Button disabled={isSubmitting} type="submit" className="px-8 shadow-md">
-                    {isSubmitting ? "Menyimpan..." : editingLessonId ? "Simpan Perubahan" : "Simpan Materi"}
+                  <Button disabled={isSubmitting} type="submit" className={`px-8 shadow-md ${lessonModalMode === "kuis" ? "bg-orange-600 hover:bg-orange-700" : ""}`}>
+                    {isSubmitting ? "Menyimpan..." : editingLessonId ? "Simpan Perubahan" : (lessonModalMode === "kuis" ? "Simpan Kuis" : "Simpan Materi")}
                   </Button>
                 </div>
               </form>
@@ -920,6 +1355,169 @@ export function ProgramBuilderPage() {
           </Card>
         </div>
       )}
+      {/* Modal Buat Soal Sendiri (Digunakan di Kuis dan Bank Soal) */}
+      {isCreateQuestionModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-3xl shadow-2xl animate-in zoom-in-95 duration-200">
+            <CardHeader className="border-b flex flex-row items-center justify-between py-4">
+              <CardTitle className="text-xl">Buat Soal Baru</CardTitle>
+              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsCreateQuestionModalOpen(false)}>
+                <X className="h-5 w-5" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-6">
+              <form className="space-y-4" onSubmit={submitQuestion}>
+                <div>
+                  <label className="text-sm font-semibold mb-1 block">Teks Soal / Pertanyaan <span className="text-red-500">*</span></label>
+                  <textarea className="field-control min-h-[100px]" required placeholder="Masukkan pertanyaan..." value={questionForm.question_text} onChange={e => setQuestionForm(c => ({ ...c, question_text: e.target.value }))} />
+                </div>
+                
+                <div className="space-y-3">
+                  <label className="text-sm font-semibold block">Pilihan Jawaban</label>
+                  <div className="grid gap-3">
+                    {["A", "B", "C", "D"].map(opt => (
+                      <div key={opt} className="flex gap-3 items-center">
+                        <div className="flex items-center gap-2">
+                          <input type="radio" name="correct_option" value={opt} checked={questionForm.correct_option === opt} onChange={e => setQuestionForm(c => ({ ...c, correct_option: e.target.value }))} className="w-4 h-4" />
+                          <span className="font-bold">{opt}.</span>
+                        </div>
+                        <Input
+                          required
+                          placeholder={`Pilihan ${opt}`}
+                          value={(questionForm as any)[`opt${opt}`]}
+                          onChange={e => setQuestionForm(c => ({ ...c, [`opt${opt}`]: e.target.value }))}
+                          className={questionForm.correct_option === opt ? "border-primary/50 bg-primary/5" : ""}
+                        />
+                        {questionForm.correct_option === opt && <span className="text-xs text-primary font-medium w-24 shrink-0">Jawaban Benar</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-semibold mb-1 block">Penjelasan (Opsional)</label>
+                  <textarea className="field-control min-h-[80px]" placeholder="Penjelasan kenapa jawaban tersebut benar..." value={questionForm.explanation} onChange={e => setQuestionForm(c => ({ ...c, explanation: e.target.value }))} />
+                </div>
+
+                <div className="pt-4 flex justify-end gap-3 border-t mt-6">
+                  <Button type="button" variant="outline" onClick={() => setIsCreateQuestionModalOpen(false)}>Batal</Button>
+                  <Button disabled={isSubmitting} type="submit">Simpan Soal</Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Kelola Butir Soal (Bank Soal) */}
+      {isManageBankItemsModalOpen && managingBankId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+            <CardHeader className="border-b flex flex-row items-center justify-between py-4 shrink-0">
+              <div>
+                <CardTitle className="text-xl">Kelola Butir Soal: {questionBanks.find(b => b.id === managingBankId)?.name}</CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">Total {bankItems.length} soal tersimpan di bank ini.</p>
+              </div>
+              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => { setIsManageBankItemsModalOpen(false); setManagingBankId(null); }}>
+                <X className="h-5 w-5" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-6 overflow-y-auto flex-1 bg-muted/10">
+              <div className="flex gap-4 mb-6">
+                <Button className="shadow-sm" onClick={() => { setQuestionTarget("bank"); setQuestionForm(emptyQuestion); setIsCreateQuestionModalOpen(true); }}>
+                  <Plus className="h-4 w-4 mr-2" /> Buat Soal Baru
+                </Button>
+              </div>
+
+              {bankItems.length === 0 ? (
+                <div className="text-center p-12 text-muted-foreground border rounded-lg border-dashed bg-background">
+                  <FileText className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                  <p>Belum ada soal di Bank Soal ini.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {bankItems.map((q, i) => (
+                    <Card key={q.id}>
+                      <div className="flex gap-4 p-4">
+                        <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0 font-bold">{i + 1}</div>
+                        <div className="flex-1">
+                          <p className="font-medium text-sm text-foreground mb-3">{q.question_text}</p>
+                          <div className="space-y-2">
+                            {(q.options || []).map((opt: string, idx: number) => (
+                              <div key={idx} className={`p-2 border rounded-md text-sm ${opt === q.correct_answer ? "bg-emerald-50 border-emerald-200 font-medium" : "bg-muted/30"}`}>
+                                {String.fromCharCode(65 + idx)}. {opt}
+                                {opt === q.correct_answer && <span className="float-right text-emerald-600 text-xs">Jawaban Benar</span>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-2 shrink-0">
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full" onClick={() => submit(async () => { await supabase.from("question_bank_items").delete().eq("id", q.id); const { data } = await supabase.from("question_bank_items").select("*").eq("question_bank_id", managingBankId).order("created_at"); setBankItems(data || []); return {error: null}; }, "Soal dihapus.")}><Trash2 className="h-4 w-4" /></Button>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Ambil dari Bank Soal (ke Kuis) */}
+      {isBankSelectModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+            <CardHeader className="border-b flex flex-row items-center justify-between py-4 shrink-0">
+              <div>
+                <CardTitle className="text-xl">Pilih Soal dari Bank</CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">Pilih soal yang ingin disalin ke kuis ini.</p>
+              </div>
+              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsBankSelectModalOpen(false)}>
+                <X className="h-5 w-5" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-6 overflow-y-auto flex-1 bg-muted/10">
+              {allBankItems.length === 0 ? (
+                <div className="text-center p-12 text-muted-foreground border rounded-lg border-dashed bg-background">
+                  <BookOpen className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                  <p>Tidak ada soal di Bank Soal manapun untuk program ini.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {allBankItems.map(q => (
+                    <Card key={q.id} className={`cursor-pointer transition-colors ${selectedBankItems[q.id] ? "border-primary bg-primary/5" : ""}`} onClick={() => setSelectedBankItems(prev => ({ ...prev, [q.id]: !prev[q.id] }))}>
+                      <div className="flex gap-4 p-4 items-center">
+                        <input type="checkbox" className="w-5 h-5 shrink-0" checked={!!selectedBankItems[q.id]} readOnly />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm text-foreground line-clamp-2">{q.question_text}</p>
+                          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                            <BookOpen className="h-3 w-3" /> {q.question_banks?.name} 
+                            <span className="opacity-50">•</span> 
+                            <span className="truncate">{q.question_banks?.programs?.title || "Program"}</span>
+                          </p>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+            <div className="p-4 border-t flex justify-between items-center bg-background shrink-0">
+              <span className="text-sm font-medium">{Object.values(selectedBankItems).filter(Boolean).length} soal dipilih</span>
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={() => setIsBankSelectModalOpen(false)}>Batal</Button>
+                <Button disabled={isSubmitting || Object.values(selectedBankItems).filter(Boolean).length === 0} onClick={submitImportBank}>Impor ke Kuis</Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+      {/* ═══════════════ TAB: PENDAFTARAN ═══════════════ */}
+      {activeTab === "pendaftaran" && (
+        <ProgramAdmissionBuilder programId={program.id} />
+      )}
+
     </div>
   );
 }

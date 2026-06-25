@@ -3,7 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 type SignedUrlRequest =
   | {
       operation: "upload";
-      lesson_id: string;
+      context?: "lesson" | "system";
+      lesson_id?: string;
       file_name: string;
       mime_type?: string;
     }
@@ -44,25 +45,44 @@ Deno.serve(async (request) => {
     }
 
     if (body.operation === "upload") {
-      const { data: canManage, error } = await supabase.rpc("can_manage_lesson_content", {
-        target_lesson_id: body.lesson_id,
-      });
+      const context = body.context || "lesson";
+      let objectKey = "";
 
-      if (error || !canManage) {
-        return json({ error: "Tidak memiliki akses upload untuk lesson ini." }, 403);
+      if (context === "system") {
+        const { data: isSuperAdmin, error } = await supabase.rpc("is_super_admin");
+        if (error || !isSuperAdmin) {
+          return json({ error: "Tidak memiliki akses upload sistem." }, 403);
+        }
+        objectKey = buildSystemObjectKey(body.file_name);
+      } else {
+        if (!body.lesson_id) {
+          return json({ error: "lesson_id required for lesson context" }, 400);
+        }
+        const { data: canManage, error } = await supabase.rpc("can_manage_lesson_content", {
+          target_lesson_id: body.lesson_id,
+        });
+
+        if (error || !canManage) {
+          return json({ error: "Tidak memiliki akses upload untuk lesson ini." }, 403);
+        }
+        objectKey = buildObjectKey(body.lesson_id, body.file_name);
       }
 
-      const objectKey = buildObjectKey(body.lesson_id, body.file_name);
       const signedUrl = await createS3SignedUrl({
         method: "PUT",
         objectKey,
         contentType: body.mime_type || "application/octet-stream",
       });
 
+      const endpoint = requiredEnv("S3_ENDPOINT").replace(/\/+$/g, "");
+      const bucket = requiredEnv("S3_BUCKET");
+      const publicUrl = `${endpoint}/${bucket}/${objectKey.split("/").map(encodeURIComponent).join("/")}`;
+
       return json({
-        bucket: requiredEnv("S3_BUCKET"),
+        bucket,
         objectKey,
         signedUrl,
+        publicUrl,
         expiresIn: Number(Deno.env.get("S3_SIGNED_URL_EXPIRES_SECONDS") ?? "900"),
       });
     }
@@ -130,6 +150,16 @@ function buildObjectKey(lessonId: string, fileName: string) {
     .slice(0, 120);
 
   return `lessons/${lessonId}/${crypto.randomUUID()}-${safeName || "file"}`;
+}
+
+function buildSystemObjectKey(fileName: string) {
+  const safeName = fileName
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+
+  return `system/${crypto.randomUUID()}-${safeName || "file"}`;
 }
 
 async function createS3SignedUrl({

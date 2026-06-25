@@ -46,6 +46,16 @@ const AdminProgramListPage = lazy(() =>
     default: module.AdminProgramListPage,
   })),
 );
+const AdminParticipantListPage = lazy(() =>
+  import("./admin/AdminParticipantListPage").then((module) => ({
+    default: module.AdminParticipantListPage,
+  })),
+);
+const AdminParticipantDetailPage = lazy(() =>
+  import("./admin/AdminParticipantDetailPage").then((module) => ({
+    default: module.AdminParticipantDetailPage,
+  })),
+);
 const ProgramBuilderPage = lazy(() =>
   import("./admin/ProgramBuilderPage").then((module) => ({
     default: module.ProgramBuilderPage,
@@ -66,12 +76,9 @@ const LearnerPlaceholderPage = lazy(() =>
     default: module.LearnerPlaceholderPage,
   })),
 );
-const HomePage = lazy(() =>
-  import("./public/HomePage").then((module) => ({ default: module.HomePage })),
-);
-const ProgramCatalogPage = lazy(() =>
-  import("./public/ProgramCatalogPage").then((module) => ({
-    default: module.ProgramCatalogPage,
+const AdmissionPortalPage = lazy(() =>
+  import("./public/AdmissionPortalPage").then((module) => ({
+    default: module.AdmissionPortalPage,
   })),
 );
 const ProgramDetailPage = lazy(() =>
@@ -79,9 +86,9 @@ const ProgramDetailPage = lazy(() =>
     default: module.ProgramDetailPage,
   })),
 );
-const ProgramRegistrationPage = lazy(() =>
-  import("./public/ProgramRegistrationPage").then((module) => ({
-    default: module.ProgramRegistrationPage,
+const AdmissionStatusPage = lazy(() =>
+  import("./public/AdmissionStatusPage").then((module) => ({
+    default: module.AdmissionStatusPage,
   })),
 );
 const SuperAdminDashboardPage = lazy(() =>
@@ -92,6 +99,11 @@ const SuperAdminDashboardPage = lazy(() =>
 const SuperAdminPlaceholderPage = lazy(() =>
   import("./superadmin/SuperAdminPlaceholderPage").then((module) => ({
     default: module.SuperAdminPlaceholderPage,
+  })),
+);
+const GlobalSettingsPage = lazy(() =>
+  import("./superadmin/GlobalSettingsPage").then((module) => ({
+    default: module.GlobalSettingsPage,
   })),
 );
 const TeacherDashboardPage = lazy(() =>
@@ -132,6 +144,9 @@ export function AppRoutes() {
             </PublicLayout>
           }
         />
+        <Route path="/pendaftaran/:programId" element={<PublicLayout><AdmissionPortalPage /></PublicLayout>} />
+        <Route path="/cek-status" element={<PublicLayout><AdmissionStatusPage /></PublicLayout>} />
+        <Route path="/katalog/:programId" element={<PublicLayout><ProgramDetailPage /></PublicLayout>} />
         <Route path="/dashboard" element={<DashboardRedirect />} />
 
         {/* ADMIN ROUTES */}
@@ -159,6 +174,22 @@ export function AppRoutes() {
             element={
               <ProtectedRoute allowedRoles={["admin"]}>
                 <AdminProgramListPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="peserta"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminParticipantListPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="peserta/:participantId"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminParticipantDetailPage />
               </ProtectedRoute>
             }
           />
@@ -218,8 +249,14 @@ export function AppRoutes() {
         >
           <Route index element={<SuperAdminDashboardPage />} />
           <Route path="pendaftaran" element={<AdminApplicantListPage />} />
+          <Route path="peserta" element={<AdminParticipantListPage />} />
+          <Route path="peserta/:participantId" element={<AdminParticipantDetailPage />} />
           <Route path="program" element={<AdminProgramListPage />} />
           <Route path="program/:programId" element={<ProgramBuilderPage />} />
+          <Route path="katalog/:programId" element={<ProgramDetailPage />} />
+          <Route path="pendaftaran/:programId" element={<AdmissionPortalPage />} />
+          <Route path="cek-status" element={<AdmissionStatusPage />} />
+          <Route path="pengaturan" element={<GlobalSettingsPage />} />
           <Route path="*" element={<SuperAdminPlaceholderPage />} />
         </Route>
 

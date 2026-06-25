@@ -6,15 +6,16 @@ export function SuperAdminDashboardPage() {
   return (
     <div className="page-stack">
       {/* Hero Banner */}
-      <section className="page-hero bg-slate-900 border-none">
+      <section className="page-hero border-none">
         <Badge variant="secondary" className="mb-4 bg-white/20 hover:bg-white/30 text-white border-white/10 backdrop-blur-sm">SUPERADMIN</Badge>
         <div className="flex items-center gap-4">
           <div className="hidden sm:flex h-16 w-16 rounded-2xl bg-white/10 backdrop-blur-md items-center justify-center border border-white/20">
             <Server className="h-8 w-8 text-white" />
           </div>
           <div>
+            <p className="text-white/70 text-sm font-medium mb-1">Assalamu'alaikum, Super Admin 👋</p>
             <h2 className="text-white">Pusat Kendali Sistem YPIA</h2>
-            <p className="text-slate-300">
+            <p className="text-white/70">
               Overview kesehatan server, pengaturan global, dan tata kelola unit secara keseluruhan.
             </p>
           </div>

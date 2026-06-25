@@ -309,14 +309,25 @@ export function AdminApplicantListPage() {
                     <p className="text-sm text-muted-foreground">Belum ada jawaban tambahan.</p>
                   ) : (
                     <div className="space-y-3">
-                      {answers.map((answer) => (
-                        <div className="rounded-lg border p-3" key={answer.id}>
-                          <p className="text-xs font-semibold uppercase text-muted-foreground">
-                            {answer.form_field_key}
-                          </p>
-                          <p className="mt-1 text-sm">{answer.value_text || "-"}</p>
-                        </div>
-                      ))}
+                      {answers.map((answer) => {
+                        const isFile = answer.value_text?.startsWith("applicants/");
+                        const publicUrl = isFile ? supabase.storage.from("admission_documents").getPublicUrl(answer.value_text!).data.publicUrl : "";
+                        
+                        return (
+                          <div className="rounded-lg border p-3" key={answer.id}>
+                            <p className="text-xs font-semibold uppercase text-muted-foreground">
+                              {answer.form_field_key}
+                            </p>
+                            {isFile ? (
+                              <a href={publicUrl} target="_blank" rel="noreferrer" className="mt-1 text-sm text-indigo-600 hover:underline flex items-center gap-1">
+                                📎 Unduh File Lampiran
+                              </a>
+                            ) : (
+                              <p className="mt-1 text-sm">{answer.value_text || "-"}</p>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

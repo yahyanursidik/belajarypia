@@ -18,24 +18,44 @@
   --color-ring: hsl(var(--ring));
 }
 
+/* ── Islamic LMS Color Palette ──────────────────────────────────────── */
 :root {
-  --background: 43 38% 96%;
-  --foreground: 158 33% 15%;
+  /* Zamrud (emerald mosque dome green) */
+  --primary: 160 55% 32%;
+  --primary-foreground: 40 60% 97%;
+
+  /* Warm gold accent (kaligrafi / ornament) */
+  --gold: 42 70% 50%;
+  --gold-foreground: 42 20% 12%;
+
+  /* Body & surface */
+  --background: 38 35% 96%;
+  --foreground: 160 30% 14%;
   --card: 0 0% 100%;
-  --card-foreground: 158 33% 15%;
-  --primary: 158 45% 30%;
-  --primary-foreground: 42 50% 96%;
-  --secondary: 42 38% 90%;
-  --secondary-foreground: 158 33% 18%;
-  --muted: 42 30% 91%;
-  --muted-foreground: 158 12% 42%;
-  --accent: 153 28% 88%;
-  --accent-foreground: 158 40% 18%;
-  --border: 42 24% 84%;
-  --input: 42 24% 84%;
-  --ring: 158 45% 30%;
+  --card-foreground: 160 30% 14%;
+
+  /* Muted / secondary */
+  --secondary: 40 35% 92%;
+  --secondary-foreground: 160 28% 18%;
+  --muted: 38 28% 92%;
+  --muted-foreground: 160 10% 44%;
+
+  /* Accent (soft sage) */
+  --accent: 155 22% 90%;
+  --accent-foreground: 160 35% 18%;
+
+  /* Borders */
+  --border: 38 22% 85%;
+  --input: 38 22% 85%;
+  --ring: 160 55% 32%;
+
+  /* Typography */
+  --font-body: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-arabic: 'Amiri', 'Traditional Arabic', serif;
+
   color: hsl(var(--foreground));
   background: hsl(var(--background));
+  font-family: var(--font-body);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -51,8 +71,10 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: #f8fafc; /* Lighter background for the app */
-  background: radial-gradient(circle at top left, rgba(31, 122, 92, 0.05), transparent 32rem), #f8fafc;
+  background: hsl(var(--background));
+  background-image:
+    radial-gradient(circle at 0% 0%, hsla(160, 55%, 32%, 0.04), transparent 36rem),
+    radial-gradient(circle at 100% 100%, hsla(42, 70%, 50%, 0.03), transparent 36rem);
 }
 
 a {
@@ -60,23 +82,74 @@ a {
   text-decoration: none;
 }
 
-/* App Shell Structure */
+/* ── App Shell Structure ────────────────────────────────────────────── */
 .app-shell {
   display: grid;
   min-height: 100vh;
   grid-template-columns: 280px minmax(0, 1fr);
 }
 
+/* ── Sidebar ────────────────────────────────────────────────────────── */
 .app-shell__sider {
   position: sticky;
   top: 0;
   height: 100vh;
   padding: 24px 16px;
-  background: #0f172a; /* Deep modern dark slate */
+  background: linear-gradient(180deg, #0a1f1a 0%, #0d2a22 50%, #081a15 100%);
   color: #ffffff;
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+}
+
+/* Subtle Islamic geometric overlay on sidebar */
+.app-shell__sider::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.03;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 40px,
+      rgba(255,255,255,0.5) 40px,
+      rgba(255,255,255,0.5) 41px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 40px,
+      rgba(255,255,255,0.5) 40px,
+      rgba(255,255,255,0.5) 41px
+    ),
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 56px,
+      rgba(255,255,255,0.3) 56px,
+      rgba(255,255,255,0.3) 57px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 56px,
+      rgba(255,255,255,0.3) 56px,
+      rgba(255,255,255,0.3) 57px
+    );
+}
+
+/* Gold accent line at top of sidebar */
+.app-shell__sider::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, hsl(42 70% 50%), hsl(42 80% 65%), hsl(42 70% 50%));
 }
 
 .app-shell__brand {
@@ -84,8 +157,10 @@ a {
   gap: 12px;
   align-items: center;
   min-height: 64px;
-  margin-bottom: 32px;
+  margin-bottom: 12px;
   padding: 0 8px;
+  position: relative;
+  z-index: 1;
 }
 
 .app-shell__brand-icon {
@@ -94,10 +169,10 @@ a {
   height: 44px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 12px;
-  background: linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05));
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  background: linear-gradient(135deg, hsla(160, 55%, 32%, 0.5), hsla(160, 55%, 20%, 0.3));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .app-shell__brand-title,
@@ -113,15 +188,35 @@ a {
 
 .app-shell__brand-subtitle {
   max-width: 182px;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.55);
   font-size: 12px;
   line-height: 1.4;
   font-weight: 500;
 }
 
+/* Bismillah section in sidebar */
+.app-shell__bismillah {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: 10px 8px 18px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.app-shell__bismillah-text {
+  font-family: var(--font-arabic);
+  font-size: 18px;
+  line-height: 1.6;
+  color: hsla(42, 70%, 65%, 0.85);
+  letter-spacing: 0.02em;
+}
+
 .app-shell__menu {
   display: grid;
-  gap: 8px;
+  gap: 4px;
+  position: relative;
+  z-index: 1;
 }
 
 .app-shell__menu-item {
@@ -129,25 +224,41 @@ a {
   align-items: center;
   gap: 12px;
   border-radius: 10px;
-  padding: 12px 14px;
-  color: rgba(255, 255, 255, 0.65);
-  font-size: 14px;
+  padding: 11px 14px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13.5px;
   font-weight: 600;
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
 }
 
 .app-shell__menu-item:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.07);
   color: #ffffff;
   transform: translateX(4px);
 }
 
 .app-shell__menu-item.is-active {
-  background: hsl(var(--primary));
+  background: linear-gradient(135deg, hsl(var(--primary)), hsl(160 45% 26%));
   color: #ffffff;
-  box-shadow: 0 4px 12px rgba(20, 83, 62, 0.4);
+  box-shadow:
+    0 4px 16px rgba(10, 80, 60, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
+/* Gold left-bar indicator for active item */
+.app-shell__menu-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 25%;
+  bottom: 25%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: hsl(42 70% 55%);
+}
+
+/* ── Main area ──────────────────────────────────────────────────────── */
 .app-shell__main {
   min-width: 0;
   display: flex;
@@ -164,8 +275,8 @@ a {
   gap: 16px;
   min-height: 72px;
   padding: 0 32px;
-  border-bottom: 1px solid rgba(0,0,0,0.06);
-  background: rgba(255, 255, 255, 0.85);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  background: hsla(38, 35%, 97%, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
@@ -194,9 +305,10 @@ a {
 .app-shell__content {
   padding: 32px;
   flex-grow: 1;
+  animation: fadeInUp 0.35s ease-out;
 }
 
-/* Page Stack & Containers */
+/* ── Page Stack & Containers ────────────────────────────────────────── */
 .page-stack {
   display: flex;
   flex-direction: column;
@@ -209,16 +321,29 @@ a {
   margin: 0 auto;
 }
 
-/* LMS Modern Page Hero (Banner) */
+/* ── LMS Modern Page Hero (Banner) ──────────────────────────────────── */
 .page-hero {
   position: relative;
   width: 100%;
   padding: 40px;
   border-radius: 20px;
-  background: linear-gradient(135deg, hsl(var(--primary)) 0%, #0d2b24 100%);
+  background: linear-gradient(135deg, hsl(160 55% 28%) 0%, #081a15 100%);
   color: white;
   overflow: hidden;
-  box-shadow: 0 10px 25px -5px rgba(20, 83, 62, 0.3), 0 8px 10px -6px rgba(20, 83, 62, 0.1);
+  box-shadow:
+    0 10px 25px -5px rgba(10, 80, 60, 0.25),
+    0 8px 10px -6px rgba(10, 80, 60, 0.08);
+}
+
+/* Decorative radial + gold stripe */
+.page-hero::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, hsl(42 70% 55% / 0.6), transparent);
 }
 
 .page-hero::after {
@@ -228,7 +353,7 @@ a {
   right: -10%;
   width: 400px;
   height: 400px;
-  background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 60%);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.10) 0%, transparent 60%);
   border-radius: 50%;
   pointer-events: none;
 }
@@ -247,14 +372,14 @@ a {
 .page-hero p {
   max-width: 600px;
   margin: 0;
-  color: rgba(255,255,255,0.85);
+  color: rgba(255, 255, 255, 0.82);
   font-size: 16px;
   line-height: 1.6;
   position: relative;
   z-index: 1;
 }
 
-/* Grids */
+/* ── Grids ──────────────────────────────────────────────────────────── */
 .feature-grid,
 .metric-grid {
   display: grid;
@@ -264,14 +389,14 @@ a {
 
 /* Cards customization for metric grid */
 .metric-grid .rounded-xl {
-  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
-  border: 1px solid rgba(0,0,0,0.04);
-  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.04), 0 1px 2px rgb(0 0 0 / 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
 }
 
 .metric-grid .rounded-xl:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.04);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 24px -4px rgb(0 0 0 / 0.08), 0 4px 8px -4px rgb(0 0 0 / 0.04);
 }
 
 .clean-list {
@@ -283,7 +408,7 @@ a {
   margin-top: 8px;
 }
 
-/* Data Tables */
+/* ── Data Tables ────────────────────────────────────────────────────── */
 .table-wrap {
   width: 100%;
   overflow-x: auto;
@@ -307,7 +432,7 @@ a {
 }
 
 .data-table th {
-  background: rgba(0,0,0,0.02);
+  background: rgba(0, 0, 0, 0.02);
   color: hsl(var(--muted-foreground));
   font-size: 0.75rem;
   font-weight: 700;
@@ -315,15 +440,15 @@ a {
   letter-spacing: 0.05em;
 }
 
-/* Detail Grids */
+/* ── Detail Grids ───────────────────────────────────────────────────── */
 .detail-grid {
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  background: rgba(0,0,0,0.015);
+  background: rgba(0, 0, 0, 0.015);
   padding: 16px;
   border-radius: 12px;
-  border: 1px solid rgba(0,0,0,0.04);
+  border: 1px solid rgba(0, 0, 0, 0.04);
 }
 
 .detail-grid dt {
@@ -352,7 +477,45 @@ a {
   top: 96px; /* Below header */
 }
 
-/* Responsive */
+/* ── Form controls ──────────────────────────────────────────────────── */
+.field-control {
+  display: flex;
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid hsl(var(--input));
+  background: hsl(var(--background));
+  padding: 10px 14px;
+  font-size: 0.875rem;
+  font-family: var(--font-body);
+  color: hsl(var(--foreground));
+  transition: border-color 0.2s, box-shadow 0.2s;
+  resize: vertical;
+}
+
+.field-control:focus {
+  outline: none;
+  border-color: hsl(var(--ring));
+  box-shadow: 0 0 0 3px hsla(var(--ring), 0.12);
+}
+
+/* ── Animations ─────────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────── */
 @media (max-width: 1024px) {
   .feature-grid,
   .metric-grid {
@@ -370,7 +533,16 @@ a {
     height: auto;
     padding: 16px;
     border-right: none;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .app-shell__sider::before,
+  .app-shell__sider::after {
+    display: none;
+  }
+
+  .app-shell__bismillah {
+    display: none;
   }
 
   .app-shell__menu {
@@ -402,7 +574,7 @@ a {
   .page-hero h2 {
     font-size: 28px;
   }
-  
+
   .feature-grid,
   .metric-grid,
   .detail-grid {

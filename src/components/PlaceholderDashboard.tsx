@@ -33,6 +33,7 @@ export function PlaceholderDashboard({
             <LayoutDashboard className="h-8 w-8 text-white" />
           </div>
           <div>
+            <p className="text-white/70 text-sm font-medium mb-1">Assalamu'alaikum, {role} 👋</p>
             <h2>{title}</h2>
             <p>{description}</p>
           </div>

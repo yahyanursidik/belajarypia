@@ -15,17 +15,19 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
         { href: "/system", label: "Pusat Kendali", icon: menuIcon.dashboard },
         { href: "/system/pengguna", label: "Akses & Pengguna", icon: menuIcon.user },
         { href: "/system/pendaftaran", label: "Pendaftaran", icon: menuIcon.team },
+        { href: "/system/peserta", label: "Data Peserta", icon: menuIcon.user },
         { href: "/system/program", label: "Program", icon: menuIcon.book },
-        { href: "/system/keuangan", label: "Keuangan", icon: menuIcon.settings },
-        { href: "/system/helpdesk", label: "Helpdesk", icon: menuIcon.team },
-        { href: "/system/konten", label: "Review Konten", icon: menuIcon.book },
-        { href: "/system/audit", label: "Audit Sistem", icon: menuIcon.book },
+        { href: "/system/keuangan", label: "Keuangan", icon: menuIcon.finance },
+        { href: "/system/helpdesk", label: "Helpdesk", icon: menuIcon.helpdesk },
+        { href: "/system/konten", label: "Review Konten", icon: menuIcon.contentReview },
+        { href: "/system/audit", label: "Audit Sistem", icon: menuIcon.audit },
         { href: "/system/pengaturan", label: "Pengaturan Global", icon: menuIcon.settings },
       ];
     case "admin":
       return [
         { href: "/admin", label: "Dashboard", icon: menuIcon.dashboard },
         { href: "/admin/pendaftaran", label: "Pendaftaran", icon: menuIcon.team },
+        { href: "/admin/peserta", label: "Data Peserta", icon: menuIcon.user },
         { href: "/admin/program", label: "Program", icon: menuIcon.book },
       ];
     case "finance":

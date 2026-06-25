@@ -59,6 +59,33 @@ export async function requestSignedUploadUrl({
   };
 }
 
+export async function requestSystemSignedUploadUrl({
+  file,
+}: {
+  file: File;
+}) {
+  const { data, error } = await supabase.functions.invoke("document-signed-url", {
+    body: {
+      operation: "upload",
+      context: "system",
+      file_name: file.name,
+      mime_type: file.type || "application/octet-stream",
+    },
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return data as {
+    bucket: string;
+    objectKey: string;
+    signedUrl: string;
+    publicUrl: string;
+    expiresIn: number;
+  };
+}
+
 export async function requestSignedDownloadUrl(fileId: string) {
   const { data, error } = await supabase.functions.invoke("document-signed-url", {
     body: {
