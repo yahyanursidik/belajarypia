@@ -17,6 +17,7 @@ export type Participant = {
   status: ParticipantStatus;
   joined_at: string;
   created_at: string;
+  phone?: string | null;
   profiles?: Profile | null;
 };
 

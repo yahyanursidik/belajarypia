@@ -21,7 +21,7 @@ export function ProgramDetailPage() {
 
       const { data } = await supabase
         .from("programs")
-        .select("id, unit_id, code, name, description, program_type, curriculum_model, delivery_mode, status, feature_flags, units(code, name)")
+        .select("id, unit_id, code, name, description, syllabus, program_type, curriculum_model, delivery_mode, status, feature_flags, units(code, name)")
         .eq("id", programId)
         .eq("status", "active")
         .maybeSingle();
@@ -86,6 +86,19 @@ export function ProgramDetailPage() {
           </dl>
         </CardContent>
       </Card>
+
+      {program.syllabus && (
+        <Card className="mt-8">
+          <CardHeader>
+            <CardTitle>Silabus Program</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="prose prose-sm max-w-none text-slate-700 whitespace-pre-wrap font-sans">
+              {program.syllabus}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

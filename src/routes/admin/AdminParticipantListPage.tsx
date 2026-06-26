@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, User, Filter, MapPin, GraduationCap, Phone } from "lucide-react";
+import { Plus, Search, User, Filter, MapPin, GraduationCap, Phone, Upload, Download, Users, UserCheck, PieChart, BadgeCheck, Clock, Ban } from "lucide-react";
+import Papa from "papaparse";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
+import { Badge } from "../../components/ui/badge";
 import { supabase } from "../../lib/supabase";
 import type { Participant } from "../../lib/participant";
 import type { Program } from "../../lib/organization";
@@ -29,6 +31,9 @@ export function AdminParticipantListPage() {
   
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMassUploadOpen, setIsMassUploadOpen] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [massUploadProgress, setMassUploadProgress] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [form, setForm] = useState({
     global_participant_number: "",
@@ -36,7 +41,9 @@ export function AdminParticipantListPage() {
     gender: "Laki-laki",
     participant_type: "adult",
     city: "",
-    education_level: ""
+    education_level: "",
+    phone: "",
+    birth_date: ""
   });
 
   useEffect(() => {
@@ -70,17 +77,20 @@ export function AdminParticipantListPage() {
     
     const nis = form.global_participant_number.trim() || `NIS-${Date.now().toString().slice(-6)}`;
 
-    const { error } = await supabase.from("participants").insert([
-      {
-        global_participant_number: nis,
-        display_name: form.display_name,
-        gender: form.gender,
-        participant_type: form.participant_type,
-        city: form.city,
-        education_level: form.education_level,
-        status: "active"
-      }
-    ]).select().single();
+    const payload: any = {
+      global_participant_number: nis,
+      display_name: form.display_name,
+      gender: form.gender,
+      participant_type: form.participant_type,
+      city: form.city,
+      education_level: form.education_level,
+      status: "active"
+    };
+
+    if (form.phone) payload.phone = form.phone;
+    if (form.birth_date) payload.birth_date = form.birth_date;
+
+    const { error } = await supabase.from("participants").insert([payload]).select().single();
 
     if (error) {
       if (error.code === '23505') {
@@ -91,10 +101,78 @@ export function AdminParticipantListPage() {
     } else {
       toast.success("Peserta berhasil ditambahkan");
       setIsModalOpen(false);
-      setForm({ global_participant_number: "", display_name: "", gender: "Laki-laki", participant_type: "adult", city: "", education_level: "" });
+      setForm({ global_participant_number: "", display_name: "", gender: "Laki-laki", participant_type: "adult", city: "", education_level: "", phone: "", birth_date: "" });
       fetchInitialData();
     }
     setIsSubmitting(false);
+  };
+
+  const handleDownloadTemplate = () => {
+    const csvContent = "Nama Lengkap,Nomor Induk,Jenis Kelamin,Tipe Peserta,Kota,Pendidikan,No WhatsApp\nJohn Doe,,Laki-laki,adult,Jakarta,S1,081234567890";
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'Template_Upload_Peserta.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleMassUpload = async () => {
+    if (!csvFile) return toast.error("Pilih file CSV terlebih dahulu");
+    setIsSubmitting(true);
+    setMassUploadProgress("Membaca file...");
+
+    Papa.parse(csvFile, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        const rows = results.data as any[];
+        let successCount = 0;
+        let failCount = 0;
+        
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          setMassUploadProgress(`Memproses data ${i + 1} dari ${rows.length}...`);
+          
+          if (!row["Nama Lengkap"]) {
+            failCount++;
+            continue;
+          }
+          
+          const nis = (row["Nomor Induk"]?.trim()) || `NIS-${Date.now().toString().slice(-4)}${i}`;
+          
+          const { error } = await supabase.from("participants").insert({
+            global_participant_number: nis,
+            display_name: row["Nama Lengkap"],
+            gender: row["Jenis Kelamin"] || "Laki-laki",
+            participant_type: row["Tipe Peserta"] || "adult",
+            city: row["Kota"] || "",
+            education_level: row["Pendidikan"] || "",
+            status: "active"
+          });
+          
+          if (error) {
+            failCount++;
+          } else {
+            successCount++;
+          }
+        }
+        
+        setIsSubmitting(false);
+        toast.success(`Selesai! Berhasil: ${successCount}, Gagal: ${failCount}`);
+        setIsMassUploadOpen(false);
+        setCsvFile(null);
+        setMassUploadProgress("");
+        fetchInitialData();
+      },
+      error: (err) => {
+        toast.error("Gagal membaca file: " + err.message);
+        setIsSubmitting(false);
+        setMassUploadProgress("");
+      }
+    });
   };
 
   const filteredParticipants = participants.filter(p => {
@@ -106,68 +184,135 @@ export function AdminParticipantListPage() {
     return matchesSearch && matchesStatus && matchesProgram;
   });
 
+  // Analytics
+  const totalParticipants = participants.length;
+  const activeParticipants = participants.filter(p => p.status === 'active').length;
+  const maleCount = participants.filter(p => p.gender === 'Laki-laki').length;
+  const femaleCount = participants.filter(p => p.gender === 'Perempuan').length;
+
   return (
-    <div className="space-y-6 animate-in fade-in duration-300 max-w-7xl mx-auto">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-            <div className="h-10 w-10 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center">
-              <User className="h-5 w-5" />
+    <div className="space-y-6 animate-in fade-in duration-300 max-w-7xl mx-auto pb-10">
+      <section className="page-hero">
+        <Badge variant="secondary" className="mb-4 bg-white/20 text-white border-white/30 backdrop-blur-sm shadow-sm">PESERTA & PROFIL</Badge>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <div className="hidden sm:flex h-16 w-16 rounded-2xl bg-white/10 items-center justify-center border border-white/20 backdrop-blur-sm shadow-inner">
+              <Users className="h-8 w-8 text-white" />
             </div>
-            Direktori Peserta
-          </h1>
-          <p className="text-slate-500 mt-1 text-sm ml-12">Kelola data seluruh peserta dari berbagai program.</p>
+            <div>
+              <h2 className="text-white text-3xl font-bold tracking-tight">Direktori Peserta</h2>
+              <p className="text-white/80 max-w-xl text-sm md:text-base mt-1">
+                Pusat manajemen profil, kontak, dan riwayat pendaftaran peserta.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button 
+              onClick={() => setIsMassUploadOpen(true)}
+              className="bg-white/20 text-white hover:bg-white/30 border border-white/20 shadow-sm rounded-full px-6"
+            >
+              <Upload className="w-4 h-4 mr-2" /> Upload Massal
+            </Button>
+            <Button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-white text-primary hover:bg-white/90 shadow-lg rounded-full font-semibold px-6"
+            >
+              <Plus className="w-4 h-4 mr-2" /> Peserta Baru
+            </Button>
+          </div>
         </div>
-        <Button onClick={() => setIsModalOpen(true)} className="shadow-md bg-indigo-600 hover:bg-indigo-700">
-          <Plus className="mr-2 h-4 w-4" />
-          Peserta Baru
-        </Button>
+      </section>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+        <Card className="bg-primary/5 border-primary/20 shadow-sm relative overflow-hidden group">
+          <div className="absolute right-0 top-0 w-24 h-24 bg-primary/10 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-primary text-sm flex items-center gap-2">
+              <Users className="w-4 h-4" /> Total Peserta
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold text-foreground">{totalParticipants}</p>
+          </CardContent>
+        </Card>
+        <Card className="shadow-sm relative overflow-hidden group">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-muted-foreground text-sm flex items-center gap-2">
+              <UserCheck className="w-4 h-4" /> Peserta Aktif
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold text-foreground">{activeParticipants}</p>
+          </CardContent>
+        </Card>
+        <Card className="shadow-sm relative overflow-hidden">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-muted-foreground text-sm flex items-center gap-2">
+              <PieChart className="w-4 h-4" /> Demografi Gender
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4">
+              <div>
+                <p className="text-xl font-bold text-slate-700">{maleCount}</p>
+                <p className="text-xs text-muted-foreground">Laki-laki</p>
+              </div>
+              <div className="w-px h-8 bg-border"></div>
+              <div>
+                <p className="text-xl font-bold text-slate-700">{femaleCount}</p>
+                <p className="text-xs text-muted-foreground">Perempuan</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <Card className="shadow-sm border-slate-200 overflow-hidden">
-        <CardContent className="p-0">
-          {/* Top Filter Bar */}
-          <div className="flex flex-col lg:flex-row gap-4 p-4 border-b bg-slate-50/50">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input 
-                placeholder="Cari nama, NIS..." 
-                className="pl-9 bg-white border-slate-200 focus-visible:ring-indigo-500"
+      <Card className="mt-8 shadow-sm border-slate-200 overflow-hidden">
+        <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4 bg-white">
+          <div>
+            <CardTitle>Daftar Profil Peserta</CardTitle>
+            <CardDescription>Menampilkan {filteredParticipants.length} data peserta terdaftar.</CardDescription>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Cari nama atau NIS..."
+                className="pl-9 h-10 bg-muted/30 border-muted/50 focus:bg-white"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            
-            <div className="flex flex-col sm:flex-row items-center gap-3">
-              <div className="relative w-full sm:w-64">
-                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <select 
-                  className="w-full pl-9 h-10 rounded-md border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={programFilter}
-                  onChange={(e) => setProgramFilter(e.target.value)}
-                >
-                  <option value="all">Semua Program ({participants.length})</option>
-                  {programs.map(prog => (
-                    <option key={prog.id} value={prog.id}>{prog.name}</option>
-                  ))}
-                </select>
-              </div>
-
+            <div className="flex items-center gap-2 bg-muted/20 px-3 py-1.5 rounded-lg border border-muted/40 h-10">
+              <Filter className="h-4 w-4 text-muted-foreground hidden sm:block" />
               <select 
-                className="w-full sm:w-40 h-10 rounded-md border border-slate-200 bg-white text-sm px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="bg-transparent border-none text-sm font-medium focus:ring-0 outline-none cursor-pointer text-slate-700"
+                value={programFilter}
+                onChange={(e) => setProgramFilter(e.target.value)}
+              >
+                <option value="all">Semua Program</option>
+                {programs.map(prog => (
+                  <option key={prog.id} value={prog.id}>{prog.name}</option>
+                ))}
+              </select>
+              <div className="w-px h-4 bg-border mx-1"></div>
+              <select 
+                className="bg-transparent border-none text-sm font-medium focus:ring-0 outline-none cursor-pointer text-slate-700"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
               >
-                <option value="all">Status: Semua</option>
-                <option value="active">Status: Aktif</option>
-                <option value="inactive">Status: Tidak Aktif</option>
+                <option value="all">Semua Status</option>
+                <option value="active">Aktif</option>
+                <option value="inactive">Tidak Aktif</option>
               </select>
             </div>
           </div>
+        </CardHeader>
 
+        <CardContent className="p-0">
           <div className="overflow-x-auto min-h-[400px]">
             <table className="w-full text-sm text-left">
-              <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
+              <thead className="bg-slate-50/80 border-b border-border/50 text-slate-500 text-xs uppercase tracking-wider">
                 <tr>
                   <th className="px-6 py-4 font-semibold">Profil Peserta</th>
                   <th className="px-6 py-4 font-semibold">Kontak & Domisili</th>
@@ -181,7 +326,7 @@ export function AdminParticipantListPage() {
                   <tr>
                     <td colSpan={5} className="px-6 py-20 text-center text-slate-500">
                       <div className="flex flex-col items-center justify-center gap-3">
-                        <div className="h-8 w-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+                        <div className="h-8 w-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
                         <p className="font-medium">Memuat direktori...</p>
                       </div>
                     </td>
@@ -196,14 +341,14 @@ export function AdminParticipantListPage() {
                   </tr>
                 ) : (
                   filteredParticipants.map((p) => (
-                    <tr key={p.id} className="hover:bg-slate-50/80 transition-colors group">
+                    <tr key={p.id} className="hover:bg-primary/5 transition-colors group border-b border-slate-100 last:border-0">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-4">
-                          <div className="h-12 w-12 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-indigo-700 font-bold text-lg shrink-0 shadow-inner">
+                          <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg shrink-0 shadow-inner">
                             {p.display_name.charAt(0).toUpperCase()}
                           </div>
                           <div>
-                            <p className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{p.display_name}</p>
+                            <p className="font-bold text-slate-900 group-hover:text-primary transition-colors">{p.display_name}</p>
                             <div className="flex items-center gap-2 mt-1">
                               <span className="text-xs text-slate-500 font-mono bg-slate-100 px-1.5 py-0.5 rounded">{p.global_participant_number}</span>
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
@@ -217,10 +362,10 @@ export function AdminParticipantListPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="space-y-1.5">
-                          {p.profiles?.phone && (
+                          {(p.profiles?.phone || p.phone) && (
                             <div className="flex items-center gap-2 text-slate-600">
                               <Phone className="h-3.5 w-3.5 text-slate-400" />
-                              <span className="text-xs">{p.profiles.phone}</span>
+                              <span className="text-xs">{p.profiles?.phone || p.phone}</span>
                             </div>
                           )}
                           <div className="flex items-center gap-2 text-slate-600">
@@ -236,7 +381,7 @@ export function AdminParticipantListPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-center">
-                        <div className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-indigo-50 text-indigo-700 font-bold text-sm ring-4 ring-white shadow-sm">
+                        <div className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-primary/10 text-primary font-bold text-sm ring-4 ring-white shadow-sm">
                           {p.enrollments?.length || 0}
                         </div>
                       </td>
@@ -244,7 +389,7 @@ export function AdminParticipantListPage() {
                         <Button 
                           variant="ghost" 
                           size="sm"
-                          className="hover:bg-indigo-50 hover:text-indigo-600"
+                          className="hover:bg-primary/10 hover:text-primary"
                           onClick={() => navigate(`/system/peserta/${p.id}`)}
                         >
                           Lihat Detail
@@ -261,35 +406,38 @@ export function AdminParticipantListPage() {
 
       {/* Modal Tambah Peserta */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="w-full max-w-lg shadow-2xl border-0 animate-in zoom-in-95 duration-200">
-            <CardHeader className="border-b bg-slate-50/50 py-4 px-6">
-              <CardTitle className="text-xl text-slate-800">Tambah Peserta Baru</CardTitle>
-            </CardHeader>
-            <CardContent className="p-6">
-              <form onSubmit={handleCreateParticipant} className="space-y-4">
-                <div>
-                  <label className="text-sm font-semibold mb-1.5 block text-slate-700">Nomor Induk (NIS) <span className="text-slate-400 font-normal text-xs ml-1">(Kosongkan untuk otomatis)</span></label>
-                  <Input 
-                    placeholder="Contoh: NIS-2026001" 
-                    value={form.global_participant_number} 
-                    onChange={e => setForm({...form, global_participant_number: e.target.value})} 
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-semibold mb-1.5 block text-slate-700">Nama Lengkap <span className="text-red-500">*</span></label>
-                  <Input 
-                    required 
-                    placeholder="Masukkan nama lengkap peserta" 
-                    value={form.display_name} 
-                    onChange={e => setForm({...form, display_name: e.target.value})} 
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-semibold mb-1.5 block text-slate-700">Jenis Kelamin</label>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-2xl shadow-2xl overflow-hidden border-none animate-in zoom-in-95 duration-200">
+            <div className="bg-primary p-6 text-primary-foreground">
+              <CardTitle className="text-2xl mb-1 text-white">Tambah Peserta Baru</CardTitle>
+              <CardDescription className="text-white/80">Daftarkan profil peserta baru ke dalam sistem direktori.</CardDescription>
+            </div>
+            <CardContent className="p-6 bg-white">
+              <form onSubmit={handleCreateParticipant} className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Nomor Induk (NIS) <span className="text-muted-foreground font-normal text-xs ml-1">(Kosongkan untuk otomatis)</span></label>
+                    <Input 
+                      placeholder="Contoh: NIS-2026001" 
+                      className="h-10"
+                      value={form.global_participant_number} 
+                      onChange={e => setForm({...form, global_participant_number: e.target.value})} 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Nama Lengkap <span className="text-red-500">*</span></label>
+                    <Input 
+                      required 
+                      placeholder="Masukkan nama lengkap peserta" 
+                      className="h-10"
+                      value={form.display_name} 
+                      onChange={e => setForm({...form, display_name: e.target.value})} 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Jenis Kelamin</label>
                     <select 
-                      className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+                      className="w-full h-10 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" 
                       value={form.gender} 
                       onChange={e => setForm({...form, gender: e.target.value})}
                     >
@@ -297,10 +445,32 @@ export function AdminParticipantListPage() {
                       <option value="Perempuan">Perempuan</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="text-sm font-semibold mb-1.5 block text-slate-700">Pendidikan Terakhir</label>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Tanggal Lahir</label>
+                    <Input 
+                      type="date"
+                      className="h-10"
+                      value={form.birth_date} 
+                      onChange={e => setForm({...form, birth_date: e.target.value})} 
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">No. WhatsApp</label>
+                    <Input 
+                      type="tel"
+                      placeholder="Contoh: 08123456789"
+                      className="h-10"
+                      value={form.phone} 
+                      onChange={e => setForm({...form, phone: e.target.value})} 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Pendidikan Terakhir</label>
                     <select 
-                      className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+                      className="w-full h-10 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" 
                       value={form.education_level} 
                       onChange={e => setForm({...form, education_level: e.target.value})}
                     >
@@ -315,22 +485,76 @@ export function AdminParticipantListPage() {
                     </select>
                   </div>
                 </div>
-                <div>
-                  <label className="text-sm font-semibold mb-1.5 block text-slate-700">Kota / Domisili</label>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-slate-700">Kota / Domisili</label>
                   <Input 
                     placeholder="Contoh: Jakarta Selatan" 
+                    className="h-10"
                     value={form.city} 
                     onChange={e => setForm({...form, city: e.target.value})} 
                   />
                 </div>
 
-                <div className="pt-4 flex justify-end gap-3 border-t mt-6">
-                  <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>Batal</Button>
-                  <Button type="submit" disabled={isSubmitting} className="bg-indigo-600 hover:bg-indigo-700">
+                <div className="pt-4 flex justify-end gap-3 border-t border-border/50 mt-6">
+                  <Button type="button" variant="outline" className="px-6" onClick={() => setIsModalOpen(false)}>Batal</Button>
+                  <Button type="submit" disabled={isSubmitting} className="bg-primary hover:bg-primary/90 text-primary-foreground px-6">
                     {isSubmitting ? "Menyimpan..." : "Simpan Peserta"}
                   </Button>
                 </div>
               </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Mass Upload */}
+      {isMassUploadOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-lg shadow-2xl border-none overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-primary p-6 text-primary-foreground">
+              <CardTitle className="text-2xl mb-1 text-white">Upload Massal Peserta</CardTitle>
+              <CardDescription className="text-white/80">Impor banyak data peserta sekaligus menggunakan file CSV.</CardDescription>
+            </div>
+            <CardContent className="p-6 bg-white">
+              <div className="space-y-5">
+                <div className="bg-primary/5 text-primary p-4 rounded-lg text-sm border border-primary/20 shadow-sm">
+                  <p className="font-semibold mb-2 flex items-center gap-2"><BadgeCheck className="w-4 h-4" /> Panduan Import:</p>
+                  <ul className="list-disc list-inside space-y-1 text-slate-700 ml-1">
+                    <li>Gunakan format CSV yang dipisahkan dengan koma (,).</li>
+                    <li>Baris pertama harus berisi judul kolom (Header).</li>
+                    <li>Kolom <strong>Nama Lengkap</strong> wajib diisi.</li>
+                  </ul>
+                  <Button 
+                    variant="link" 
+                    className="p-0 h-auto text-primary font-bold mt-3 hover:text-primary/80"
+                    onClick={handleDownloadTemplate}
+                  >
+                    <Download className="w-4 h-4 mr-1 inline" /> Unduh Template CSV
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold block text-slate-700">Pilih File CSV</label>
+                  <Input 
+                    type="file" 
+                    accept=".csv" 
+                    className="h-10 cursor-pointer"
+                    onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+                    disabled={isSubmitting}
+                  />
+                  {massUploadProgress && (
+                    <p className="text-xs text-primary mt-2 font-medium animate-pulse">{massUploadProgress}</p>
+                  )}
+                </div>
+
+                <div className="pt-4 flex justify-end gap-3 border-t border-border/50 mt-6">
+                  <Button type="button" variant="outline" className="px-6" onClick={() => setIsMassUploadOpen(false)} disabled={isSubmitting}>Batal</Button>
+                  <Button onClick={handleMassUpload} disabled={isSubmitting || !csvFile} className="bg-primary hover:bg-primary/90 text-primary-foreground px-6">
+                    {isSubmitting ? "Memproses..." : "Mulai Upload"}
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>

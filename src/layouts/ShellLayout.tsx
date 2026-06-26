@@ -1,10 +1,13 @@
 import { BookOpen, GraduationCap, Settings, User, Users, Bell, LogOut } from "lucide-react";
 import type { ComponentType, PropsWithChildren } from "react";
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuthSession } from "../app/providers/authSessionContext";
 import { Button } from "../components/ui/button";
+import { FullPageLoader } from "../components/ui/full-page-loader";
 import { appName } from "../lib/constants";
+import { getThemeStyles } from "../lib/theme";
+import { useSystemSettings } from "../lib/useSystemSettings";
 import { cn } from "../lib/utils";
 
 type ShellLayoutProps = PropsWithChildren<{
@@ -26,14 +29,7 @@ const iconByVariant = {
   superadmin: Settings,
 } as const;
 
-const ContentFallback = () => (
-  <div className="flex h-[50vh] w-full items-center justify-center text-muted-foreground">
-    <div className="flex flex-col items-center gap-3">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-r-transparent"></div>
-      <p className="text-sm">Memuat halaman...</p>
-    </div>
-  </div>
-);
+const ContentFallback = () => <FullPageLoader message="Memuat antarmuka..." />;
 
 export function ShellLayout({
   children,
@@ -45,6 +41,7 @@ export function ShellLayout({
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, primaryRole, signOut } = useAuthSession();
+  const { settings } = useSystemSettings();
   const BrandIcon = iconByVariant[variant];
   const displayName = profile?.full_name ?? profile?.email ?? "Pengguna";
   
@@ -56,6 +53,23 @@ export function ShellLayout({
     .join('')
     .toUpperCase();
 
+  const themeKey = settings?.portal_themes?.[variant === "superadmin" ? "admin" : variant];
+  const themeStyles = getThemeStyles(themeKey);
+
+  useEffect(() => {
+    if (Object.keys(themeStyles).length === 0) return;
+    const root = document.documentElement;
+    Object.entries(themeStyles).forEach(([key, value]) => {
+      root.style.setProperty(key, value as string);
+    });
+    
+    return () => {
+      Object.keys(themeStyles).forEach((key) => {
+        root.style.removeProperty(key);
+      });
+    };
+  }, [themeStyles]);
+
   return (
     <div className={`app-shell app-shell-${variant}`}>
       <aside className="app-shell__sider">
@@ -64,9 +78,9 @@ export function ShellLayout({
             <BrandIcon className="h-6 w-6 text-white" />
           </span>
           <span className="min-w-0">
-            <span className="app-shell__brand-title">{appName}</span>
+            <span className="app-shell__brand-title">{settings?.institution_name || appName}</span>
             <span className="app-shell__brand-subtitle">
-              Yayasan Pendidikan Islam Asy-Syukriyyah
+              {settings?.institution_profile || "Yayasan Pendidikan Islam Asy-Syukriyyah"}
             </span>
           </span>
         </Link>

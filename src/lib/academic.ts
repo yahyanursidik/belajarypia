@@ -44,6 +44,9 @@ export type Lesson = {
   release_at: string | null;
   due_at: string | null;
   visibility_status: LessonVisibilityStatus;
+  passing_grade?: number | null;
+  duration_minutes?: number | null;
+  max_attempts?: number | null;
   program_modules?: Pick<ProgramModule, "id" | "title" | "code" | "program_id"> & {
     programs?: Pick<Program, "name" | "code"> | null;
   };
@@ -122,6 +125,7 @@ export type QuestionBankItem = {
   options: string[] | any;
   correct_answer: string | null;
   explanation: string | null;
+  points: number;
 };
 
 export type QuizQuestion = {
@@ -133,4 +137,5 @@ export type QuizQuestion = {
   correct_answer: string | null;
   explanation: string | null;
   order_no: number;
+  points: number;
 };

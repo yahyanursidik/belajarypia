@@ -119,7 +119,7 @@ export function AdminParticipantDetailPage() {
 
   if (isLoading) return (
     <div className="flex flex-col items-center justify-center p-20 gap-4">
-      <div className="h-8 w-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+      <div className="h-8 w-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
       <p className="text-slate-500 font-medium">Memuat profil peserta...</p>
     </div>
   );
@@ -131,18 +131,18 @@ export function AdminParticipantDetailPage() {
     <div className="space-y-6 animate-in fade-in duration-300 pb-12 max-w-7xl mx-auto">
       {/* Header Profile Banner */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="h-32 bg-gradient-to-r from-indigo-500 to-purple-600" />
+        <div className="h-32 bg-gradient-to-r from-primary to-primary/70" />
         <div className="px-6 pb-6 relative">
           <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
             <div className="-mt-16 h-32 w-32 rounded-2xl bg-white p-1.5 shadow-md border border-slate-100 shrink-0">
-              <div className="h-full w-full rounded-xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-4xl text-indigo-700 font-bold">
+              <div className="h-full w-full rounded-xl bg-primary/10 flex items-center justify-center text-4xl text-primary font-bold">
                 {participant.display_name.charAt(0).toUpperCase()}
               </div>
             </div>
             <div className="flex-1 mt-2 text-center md:text-left">
               <h1 className="text-2xl font-bold text-slate-900">{participant.display_name}</h1>
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 mt-2">
-                <span className="font-mono text-xs font-semibold bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-md border border-indigo-100">
+                <span className="font-mono text-xs font-semibold bg-primary/10 text-primary px-2.5 py-1 rounded-md border border-primary/20">
                   {participant.global_participant_number}
                 </span>
                 <span className="text-xs font-medium bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md uppercase tracking-wide">
@@ -169,19 +169,19 @@ export function AdminParticipantDetailPage() {
       <div className="flex gap-2 border-b border-slate-200 bg-white/50 px-2 pt-2 sticky top-0 z-10 backdrop-blur-sm">
         <button 
           onClick={() => setActiveTab("profile")} 
-          className={`px-5 py-3 text-sm font-medium border-b-2 transition-all ${activeTab === "profile" ? "border-indigo-600 text-indigo-600 bg-indigo-50/50" : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50"}`}
+          className={`px-5 py-3 text-sm font-medium border-b-2 transition-all ${activeTab === "profile" ? "border-primary text-primary bg-primary/5" : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50"}`}
         >
           <div className="flex items-center gap-2"><User className="h-4 w-4" /> Profil & Biodata</div>
         </button>
         <button 
           onClick={() => setActiveTab("guardians")} 
-          className={`px-5 py-3 text-sm font-medium border-b-2 transition-all ${activeTab === "guardians" ? "border-indigo-600 text-indigo-600 bg-indigo-50/50" : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50"}`}
+          className={`px-5 py-3 text-sm font-medium border-b-2 transition-all ${activeTab === "guardians" ? "border-primary text-primary bg-primary/5" : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50"}`}
         >
           <div className="flex items-center gap-2"><Users className="h-4 w-4" /> Relasi Wali <span className="bg-slate-100 text-slate-600 px-1.5 rounded-full text-xs ml-1">{guardianRels.length}</span></div>
         </button>
         <button 
           onClick={() => setActiveTab("enrollments")} 
-          className={`px-5 py-3 text-sm font-medium border-b-2 transition-all ${activeTab === "enrollments" ? "border-indigo-600 text-indigo-600 bg-indigo-50/50" : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50"}`}
+          className={`px-5 py-3 text-sm font-medium border-b-2 transition-all ${activeTab === "enrollments" ? "border-primary text-primary bg-primary/5" : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50"}`}
         >
           <div className="flex items-center gap-2"><BookOpen className="h-4 w-4" /> Riwayat Program <span className="bg-slate-100 text-slate-600 px-1.5 rounded-full text-xs ml-1">{enrollments.length}</span></div>
         </button>
@@ -194,7 +194,7 @@ export function AdminParticipantDetailPage() {
           <Card className="md:col-span-2 shadow-sm border-slate-200">
             <CardHeader className="bg-slate-50/50 border-b">
               <CardTitle className="text-lg text-slate-800 flex items-center gap-2">
-                <FileText className="h-5 w-5 text-indigo-500" />
+                <FileText className="h-5 w-5 text-primary" />
                 Informasi Pribadi & Kontak
               </CardTitle>
             </CardHeader>
@@ -248,18 +248,18 @@ export function AdminParticipantDetailPage() {
           </Card>
 
           {/* Connected Account Card */}
-          <Card className="shadow-sm border-indigo-100 bg-gradient-to-b from-indigo-50/50 to-white h-fit">
+          <Card className="shadow-sm border-primary/20 bg-gradient-to-b from-primary/5 to-white h-fit">
             <CardHeader className="pb-4">
-              <CardTitle className="text-lg flex items-center gap-2 text-indigo-900">
-                <ShieldCheck className="h-5 w-5 text-indigo-600" /> Akun Sistem
+              <CardTitle className="text-lg flex items-center gap-2 text-foreground">
+                <ShieldCheck className="h-5 w-5 text-primary" /> Akun Sistem
               </CardTitle>
               <CardDescription className="text-xs">Akun login (Profiles) yang terhubung dengan data direktori peserta ini.</CardDescription>
             </CardHeader>
             <CardContent>
               {profileData ? (
                 <div className="space-y-4">
-                  <div className="flex flex-col items-center gap-3 p-4 bg-white rounded-xl border border-indigo-100 shadow-sm text-center">
-                    <div className="h-14 w-14 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xl ring-4 ring-white shadow-sm">
+                  <div className="flex flex-col items-center gap-3 p-4 bg-white rounded-xl border border-primary/20 shadow-sm text-center">
+                    <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xl ring-4 ring-white shadow-sm">
                       {profileData.full_name?.charAt(0) || "U"}
                     </div>
                     <div>
@@ -269,7 +269,7 @@ export function AdminParticipantDetailPage() {
                       </p>
                     </div>
                   </div>
-                  <Button variant="outline" className="w-full text-xs h-8 border-indigo-200 text-indigo-700 hover:bg-indigo-50">
+                  <Button variant="outline" className="w-full text-xs h-8 border-primary/30 text-primary hover:bg-primary/5">
                     Reset Password
                   </Button>
                 </div>
@@ -280,7 +280,7 @@ export function AdminParticipantDetailPage() {
                   </div>
                   <p className="text-sm text-slate-500 font-medium mb-1">Belum Ada Akun</p>
                   <p className="text-xs text-slate-400 mb-4">Peserta ini belum ditautkan dengan akun login sistem.</p>
-                  <Button size="sm" className="w-full bg-indigo-600 hover:bg-indigo-700">Tautkan Akun</Button>
+                  <Button size="sm" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">Tautkan Akun</Button>
                 </div>
               )}
             </CardContent>
@@ -296,7 +296,7 @@ export function AdminParticipantDetailPage() {
               <CardTitle className="text-lg text-slate-800">Relasi Wali (Guardian)</CardTitle>
               <CardDescription>Kelola akun wali atau orang tua dari peserta ini.</CardDescription>
             </div>
-            <Button onClick={loadProfilesForGuardian} size="sm" className="bg-indigo-600 hover:bg-indigo-700">
+            <Button onClick={loadProfilesForGuardian} size="sm" className="bg-primary hover:bg-primary/90 text-primary-foreground">
               <Plus className="h-4 w-4 mr-2" /> Tautkan Wali
             </Button>
           </CardHeader>
@@ -310,7 +310,7 @@ export function AdminParticipantDetailPage() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {guardianRels.map(rel => (
-                  <div key={rel.id} className="flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:border-indigo-300 transition-colors bg-white shadow-sm hover:shadow-md">
+                  <div key={rel.id} className="flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:border-primary/30 transition-colors bg-white shadow-sm hover:shadow-md">
                     <div className="flex items-center gap-4">
                       <div className="h-12 w-12 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 text-emerald-700 flex items-center justify-center font-bold text-lg shrink-0">
                         {rel.guardians?.profiles?.full_name?.charAt(0) || "W"}
@@ -318,7 +318,7 @@ export function AdminParticipantDetailPage() {
                       <div>
                         <div className="flex items-center gap-2 mb-0.5">
                           <p className="font-bold text-slate-900">{rel.guardians?.profiles?.full_name}</p>
-                          {rel.is_primary && <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] uppercase font-bold rounded-md">Utama</span>}
+                          {rel.is_primary && <span className="px-2 py-0.5 bg-primary/10 text-primary text-[10px] uppercase font-bold rounded-md">Utama</span>}
                         </div>
                         <div className="flex flex-col gap-0.5 mt-1">
                           {rel.guardians?.profiles?.phone && (
@@ -361,6 +361,7 @@ export function AdminParticipantDetailPage() {
                       <th className="px-6 py-4 font-semibold">Penempatan Kelas</th>
                       <th className="px-6 py-4 font-semibold">Status Pendaftaran</th>
                       <th className="px-6 py-4 font-semibold">Tgl. Daftar</th>
+                      <th className="px-6 py-4 font-semibold text-right">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-slate-50/20">
@@ -368,7 +369,7 @@ export function AdminParticipantDetailPage() {
                       <tr key={en.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
                           <div className="flex items-start gap-3">
-                            <div className="mt-1 h-8 w-8 rounded bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                            <div className="mt-1 h-8 w-8 rounded bg-primary/10 flex items-center justify-center text-primary shrink-0">
                               <BookOpen className="h-4 w-4" />
                             </div>
                             <div>
@@ -394,7 +395,7 @@ export function AdminParticipantDetailPage() {
                                 <p className="text-xs text-slate-500 flex items-center gap-1.5"><Users className="h-3 w-3 text-slate-400"/> {(en as any).halaqahs?.name}</p>
                               )}
                               {(en as any).classes?.profiles?.full_name && (
-                                <p className="text-xs text-indigo-600 flex items-center gap-1.5 font-medium"><User className="h-3 w-3"/> {(en as any).classes?.profiles?.full_name}</p>
+                                <p className="text-xs text-primary flex items-center gap-1.5 font-medium"><User className="h-3 w-3"/> {(en as any).classes?.profiles?.full_name}</p>
                               )}
                             </div>
                           )}
@@ -411,6 +412,17 @@ export function AdminParticipantDetailPage() {
                         </td>
                         <td className="px-6 py-4 text-slate-500 font-medium text-xs">
                           {en.created_at ? new Date(en.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : "-"}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="text-xs text-primary border-primary/30 hover:bg-primary/5"
+                            onClick={() => navigate(`/system/peserta/${participantId}/transkrip/${en.id}`)}
+                          >
+                            <FileText className="h-3 w-3 mr-1.5" />
+                            Transkrip
+                          </Button>
                         </td>
                       </tr>
                     ))}
@@ -435,7 +447,7 @@ export function AdminParticipantDetailPage() {
                   <label className="text-sm font-semibold mb-1.5 block text-slate-700">Pilih Akun Wali <span className="text-red-500">*</span></label>
                   <select 
                     required
-                    className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+                    className="w-full h-10 rounded-md border border-input bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring" 
                     value={selectedProfileId} 
                     onChange={e => setSelectedProfileId(e.target.value)}
                   >
@@ -449,7 +461,7 @@ export function AdminParticipantDetailPage() {
 
                 <div className="pt-4 flex justify-end gap-3 border-t mt-6">
                   <Button type="button" variant="outline" onClick={() => setIsGuardianModalOpen(false)}>Batal</Button>
-                  <Button type="submit" disabled={isSubmitting} className="bg-indigo-600 hover:bg-indigo-700">
+                  <Button type="submit" disabled={isSubmitting} className="bg-primary hover:bg-primary/90 text-primary-foreground">
                     {isSubmitting ? "Menyimpan..." : "Tautkan Wali"}
                   </Button>
                 </div>

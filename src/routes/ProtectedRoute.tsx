@@ -1,7 +1,7 @@
 import type { PropsWithChildren } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuthSession } from "../app/providers/authSessionContext";
-import { Card, CardContent } from "../components/ui/card";
+import { FullPageLoader } from "../components/ui/full-page-loader";
 import { canAccessPath, getDashboardPathForRole, type RoleCode } from "../lib/auth";
 
 type ProtectedRouteProps = PropsWithChildren<{
@@ -19,13 +19,7 @@ export function ProtectedRoute({ allowedRoles, children }: ProtectedRouteProps) 
   const { isLoading, session, roles, primaryRole } = useAuthSession();
 
   if (isLoading) {
-    return (
-      <Card className="m-6">
-        <CardContent className="pt-6 text-sm text-muted-foreground">
-          Memeriksa sesi login...
-        </CardContent>
-      </Card>
-    );
+    return <FullPageLoader message="Memeriksa sesi login..." />;
   }
 
   if (!session) {
@@ -48,13 +42,7 @@ export function DashboardRedirect() {
   const { isLoading, session, primaryRole } = useAuthSession();
 
   if (isLoading) {
-    return (
-      <Card className="m-6">
-        <CardContent className="pt-6 text-sm text-muted-foreground">
-          Mengarahkan dashboard...
-        </CardContent>
-      </Card>
-    );
+    return <FullPageLoader message="Mengarahkan dashboard..." />;
   }
 
   if (!session) {

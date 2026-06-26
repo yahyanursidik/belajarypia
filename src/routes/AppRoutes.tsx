@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes, Outlet } from "react-router-dom";
-import { Card, CardContent } from "../components/ui/card";
+import { FullPageLoader } from "../components/ui/full-page-loader";
 import { DashboardRedirect, ProtectedRoute } from "./ProtectedRoute";
 
 const AdminLayout = lazy(() =>
@@ -56,14 +56,34 @@ const AdminParticipantDetailPage = lazy(() =>
     default: module.AdminParticipantDetailPage,
   })),
 );
+const AdminTranscriptPage = lazy(() =>
+  import("./admin/AdminTranscriptPage").then((module) => ({
+    default: module.AdminTranscriptPage,
+  })),
+);
 const ProgramBuilderPage = lazy(() =>
   import("./admin/ProgramBuilderPage").then((module) => ({
     default: module.ProgramBuilderPage,
   })),
 );
+const AdminProgramReportPage = lazy(() =>
+  import("./admin/AdminProgramReportPage").then((module) => ({
+    default: module.AdminProgramReportPage,
+  })),
+);
+const AdminFinancePage = lazy(() =>
+  import("./admin/AdminFinancePage").then((module) => ({
+    default: module.AdminFinancePage,
+  })),
+);
 const LearnerDashboardPage = lazy(() =>
   import("./learner/LearnerDashboardPage").then((module) => ({
     default: module.LearnerDashboardPage,
+  })),
+);
+const LearnerTranscriptPage = lazy(() =>
+  import("./learner/LearnerTranscriptPage").then((module) => ({
+    default: module.LearnerTranscriptPage,
   })),
 );
 const LearnerProgramLessonsPage = lazy(() =>
@@ -106,6 +126,11 @@ const GlobalSettingsPage = lazy(() =>
     default: module.GlobalSettingsPage,
   })),
 );
+const SystemAuditPage = lazy(() =>
+  import("./superadmin/SystemAuditPage").then((module) => ({
+    default: module.SystemAuditPage,
+  })),
+);
 const TeacherDashboardPage = lazy(() =>
   import("./teacher/TeacherDashboardPage").then((module) => ({
     default: module.TeacherDashboardPage,
@@ -118,13 +143,7 @@ const TeacherPlaceholderPage = lazy(() =>
 );
 
 function RouteFallback() {
-  return (
-    <Card className="m-6">
-      <CardContent className="pt-6 text-sm text-muted-foreground">
-        Memuat halaman...
-      </CardContent>
-    </Card>
-  );
+  return <FullPageLoader message="Memuat halaman..." />;
 }
 
 export function AppRoutes() {
@@ -194,10 +213,26 @@ export function AppRoutes() {
             }
           />
           <Route
+            path="peserta/:participantId/transkrip/:enrollmentId"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminTranscriptPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="program/:programId"
             element={
               <ProtectedRoute allowedRoles={["admin"]}>
                 <ProgramBuilderPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="keuangan"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "finance"]}>
+                <AdminFinancePage />
               </ProtectedRoute>
             }
           />
@@ -233,6 +268,7 @@ export function AppRoutes() {
         >
           <Route index element={<LearnerDashboardPage />} />
           <Route path="program-saya" element={<LearnerProgramLessonsPage />} />
+          <Route path="transkrip/:enrollmentId" element={<LearnerTranscriptPage />} />
           <Route path="*" element={<LearnerPlaceholderPage />} />
         </Route>
 
@@ -251,11 +287,15 @@ export function AppRoutes() {
           <Route path="pendaftaran" element={<AdminApplicantListPage />} />
           <Route path="peserta" element={<AdminParticipantListPage />} />
           <Route path="peserta/:participantId" element={<AdminParticipantDetailPage />} />
+          <Route path="peserta/:participantId/transkrip/:enrollmentId" element={<AdminTranscriptPage />} />
           <Route path="program" element={<AdminProgramListPage />} />
           <Route path="program/:programId" element={<ProgramBuilderPage />} />
+          <Route path="program/:programId/report" element={<AdminProgramReportPage />} />
           <Route path="katalog/:programId" element={<ProgramDetailPage />} />
           <Route path="pendaftaran/:programId" element={<AdmissionPortalPage />} />
           <Route path="cek-status" element={<AdmissionStatusPage />} />
+          <Route path="audit" element={<SystemAuditPage />} />
+          <Route path="keuangan" element={<AdminFinancePage />} />
           <Route path="pengaturan" element={<GlobalSettingsPage />} />
           <Route path="*" element={<SuperAdminPlaceholderPage />} />
         </Route>

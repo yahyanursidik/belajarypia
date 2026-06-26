@@ -1,17 +1,18 @@
 import { useEffect, useState } from "react";
-import { Save, Building2, ImageIcon, Settings, Info, Upload } from "lucide-react";
+import { Save, Building2, ImageIcon, Settings, Info, Upload, Palette, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { fetchSystemSettings, updateSystemSettings, type SystemSettings } from "../../lib/settings";
-import { requestSystemSignedUploadUrl } from "../../lib/documents";
+import { THEME_OPTIONS, type ThemeKey, type PortalThemeConfig } from "../../lib/theme";
 import { useRef } from "react";
+import { supabase } from "../../lib/supabase";
 
 export function GlobalSettingsPage() {
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [formData, setFormData] = useState<Partial<SystemSettings>>({});
-  const [activeTab, setActiveTab] = useState<"identitas" | "branding">("identitas");
+  const [activeTab, setActiveTab] = useState<"identitas" | "branding" | "themes">("identitas");
   
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -31,18 +32,22 @@ export function GlobalSettingsPage() {
     setErrorMessage(null);
 
     try {
-      const { signedUrl, publicUrl } = await requestSystemSignedUploadUrl({ file });
-      const uploadRes = await fetch(signedUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type || "application/octet-stream" }
-      });
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${field}-${Date.now()}.${fileExt}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from("system_assets")
+        .upload(fileName, file, { upsert: true });
 
-      if (!uploadRes.ok) {
-        throw new Error("Gagal mengunggah file ke server.");
+      if (uploadError) {
+        throw new Error("Gagal mengunggah file ke Supabase Storage: " + uploadError.message);
       }
 
-      setFormData(prev => ({ ...prev, [field]: publicUrl }));
+      const { data: publicUrlData } = supabase.storage
+        .from("system_assets")
+        .getPublicUrl(fileName);
+
+      setFormData(prev => ({ ...prev, [field]: publicUrlData.publicUrl }));
       setMessage(`Berhasil mengunggah ${file.name}`);
       setTimeout(() => setMessage(null), 3000);
     } catch (err: any) {
@@ -81,11 +86,23 @@ export function GlobalSettingsPage() {
     } else if (data) {
       setSettings(data);
       setFormData(data);
-      setMessage("Pengaturan berhasil disimpan.");
-      setTimeout(() => setMessage(null), 3000);
+      setMessage("Pengaturan berhasil disimpan. Menerapkan perubahan...");
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
     }
     
     setIsSubmitting(false);
+  };
+
+  const handleThemeChange = (portal: keyof PortalThemeConfig, themeId: string) => {
+    setFormData(prev => ({
+      ...prev,
+      portal_themes: {
+        ...(prev.portal_themes || { admin: "indigo", learner: "emerald", teacher: "rose", public: "amber" }),
+        [portal]: themeId as ThemeKey
+      }
+    }));
   };
 
   if (isLoading) {
@@ -140,6 +157,13 @@ export function GlobalSettingsPage() {
           className="rounded-full whitespace-nowrap"
         >
           <ImageIcon className="w-4 h-4 mr-2" /> Branding & Visual
+        </Button>
+        <Button
+          variant={activeTab === "themes" ? "default" : "outline"}
+          onClick={() => setActiveTab("themes")}
+          className="rounded-full whitespace-nowrap"
+        >
+          <Palette className="w-4 h-4 mr-2" /> Tema & Warna
         </Button>
       </div>
 
@@ -331,6 +355,56 @@ export function GlobalSettingsPage() {
                 )}
               </CardContent>
             </Card>
+          </div>
+        )}
+
+        {activeTab === "themes" && (
+          <div className="grid gap-6">
+            <Alert className="bg-amber-50 text-amber-900 border-amber-200">
+              <Info className="h-4 w-4" />
+              <AlertTitle className="font-bold">Tema Warna Terpisah</AlertTitle>
+              <AlertDescription>
+                Pilih warna berbeda untuk setiap portal agar pengguna mudah membedakannya. Warna yang disarankan telah dikalibrasi agar nyaman dipandang.
+              </AlertDescription>
+            </Alert>
+
+            {([
+              { key: "admin", label: "Portal Pusat Kendali & Admin", desc: "Digunakan oleh Super Admin dan Admin Lembaga." },
+              { key: "learner", label: "Portal Peserta (Learner)", desc: "Digunakan oleh santri / peserta didik." },
+              { key: "teacher", label: "Portal Pengajar (Teacher)", desc: "Digunakan oleh guru / mentor / musyrif." },
+              { key: "public", label: "Portal Publik (Pendaftaran)", desc: "Halaman yang dilihat oleh calon pendaftar." },
+            ] as const).map((portal) => {
+              const currentTheme = formData.portal_themes?.[portal.key] || "indigo";
+              return (
+                <Card key={portal.key}>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg">{portal.label}</CardTitle>
+                    <CardDescription>{portal.desc}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                      {THEME_OPTIONS.map((theme) => {
+                        const isSelected = currentTheme === theme.id;
+                        return (
+                          <div 
+                            key={theme.id}
+                            onClick={() => handleThemeChange(portal.key, theme.id)}
+                            className={`cursor-pointer rounded-xl border-2 p-3 transition-all ${
+                              isSelected ? 'border-primary ring-2 ring-primary/20 bg-primary/5' : 'border-border hover:border-primary/50'
+                            }`}
+                          >
+                            <div className={`h-12 w-full rounded-md mb-2 ${theme.color} flex items-center justify-center`}>
+                              {isSelected && <CheckCircle2 className="text-white h-5 w-5" />}
+                            </div>
+                            <p className="text-xs font-medium text-center">{theme.name}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
 

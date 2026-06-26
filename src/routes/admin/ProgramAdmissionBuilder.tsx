@@ -10,6 +10,7 @@ const toast = { success: alert, error: alert };
 export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
   const [form, setForm] = useState<any>(null);
   const [fields, setFields] = useState<any[]>([]);
+  const [program, setProgram] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -19,6 +20,17 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
 
   const loadForm = async () => {
     setIsLoading(true);
+    // Fetch program
+    const { data: programData } = await supabase
+      .from("programs")
+      .select("id, feature_flags")
+      .eq("id", programId)
+      .single();
+    
+    if (programData) {
+      setProgram(programData);
+    }
+
     // Fetch main form
     let { data: formData, error: formError } = await supabase
       .from("registration_forms")
@@ -92,12 +104,56 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
     await supabase.from("registration_form_fields").delete().eq("id", id);
   };
 
+  const toggleDirectEnrollment = async (checked: boolean) => {
+    if (!program) return;
+    setIsSaving(true);
+    const newFlags = { ...(program.feature_flags || {}), use_direct_enrollment: checked };
+    const { error } = await supabase.from("programs").update({ feature_flags: newFlags }).eq("id", program.id);
+    if (!error) {
+      setProgram({ ...program, feature_flags: newFlags });
+      toast.success(checked ? "Pendaftaran langsung diaktifkan" : "Pendaftaran menggunakan form diaktifkan");
+    } else {
+      toast.error("Gagal mengubah pengaturan pendaftaran");
+    }
+    setIsSaving(false);
+  };
+
   if (isLoading) return <div className="p-8 text-center text-slate-500">Memuat Form Builder...</div>;
+
+  const isDirectEnrollment = program?.feature_flags?.use_direct_enrollment === true;
 
   return (
     <div className="space-y-6">
-      <Card className="border-indigo-100 shadow-sm">
-        <CardHeader className="bg-indigo-50/50 border-b">
+      <Card className="border-primary/20 shadow-sm">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-slate-800">Mode Pendaftaran</h3>
+              <p className="text-sm text-slate-500 mt-1">Pilih bagaimana calon peserta mendaftar ke program ini.</p>
+            </div>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <span className={`text-sm font-medium ${!isDirectEnrollment ? 'text-primary' : 'text-slate-500'}`}>Gunakan Form</span>
+              <div className="relative">
+                <input type="checkbox" className="sr-only" checked={isDirectEnrollment} onChange={e => toggleDirectEnrollment(e.target.checked)} disabled={isSaving} />
+                <div className={`block w-14 h-8 rounded-full transition-colors ${isDirectEnrollment ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
+                <div className={`absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${isDirectEnrollment ? 'transform translate-x-6' : ''}`}></div>
+              </div>
+              <span className={`text-sm font-medium ${isDirectEnrollment ? 'text-emerald-700' : 'text-slate-500'}`}>Daftar Langsung (1-Klik)</span>
+            </label>
+          </div>
+          
+          {isDirectEnrollment && (
+            <div className="mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-sm">
+              <p className="font-semibold mb-1">Pendaftaran Langsung Aktif</p>
+              <p>Program ini akan muncul di Dashboard Peserta (Learner Dashboard). Peserta yang sudah login dapat langsung klik "Daftar" dan otomatis terdaftar tanpa mengisi form pendaftaran di bawah.</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className={`transition-opacity ${isDirectEnrollment ? 'opacity-50 pointer-events-none' : ''}`}>
+        <Card className="border-primary/20 shadow-sm">
+        <CardHeader className="bg-primary/5 border-b">
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-lg">Pengaturan Formulir Pendaftaran</CardTitle>
@@ -126,7 +182,7 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1.5">Deskripsi / Instruksi</label>
               <textarea 
-                className="w-full min-h-[100px] p-3 rounded-md border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                className="w-full min-h-[100px] p-3 rounded-md border border-input focus:outline-none focus:ring-2 focus:ring-ring text-sm"
                 value={form?.description || ""} 
                 onChange={e => setForm({...form, description: e.target.value})} 
                 onBlur={() => supabase.from("registration_forms").update({ description: form.description }).eq("id", form.id)}
@@ -139,7 +195,7 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
 
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-bold text-slate-800">Field Tambahan (Custom Fields)</h3>
-        <Button onClick={addField} size="sm" className="bg-indigo-600 hover:bg-indigo-700">
+        <Button onClick={addField} size="sm" className="bg-primary hover:bg-primary/90 text-primary-foreground">
           <Plus className="h-4 w-4 mr-2" /> Tambah Field
         </Button>
       </div>
@@ -154,8 +210,8 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
         </div>
 
         {fields.map((field) => (
-          <Card key={field.id} className="relative overflow-hidden group border-slate-200 hover:border-indigo-300 transition-colors">
-            <div className="absolute left-0 top-0 bottom-0 w-10 bg-slate-50 flex items-center justify-center border-r border-slate-100 cursor-move text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-400">
+          <Card key={field.id} className="relative overflow-hidden group border-slate-200 hover:border-primary/30 transition-colors">
+            <div className="absolute left-0 top-0 bottom-0 w-10 bg-slate-50 flex items-center justify-center border-r border-slate-100 cursor-move text-slate-400 group-hover:bg-primary/5 group-hover:text-primary">
               <GripVertical className="h-5 w-5" />
             </div>
             <CardContent className="p-5 pl-14">
@@ -173,7 +229,7 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
                     <div className="flex-1">
                       <label className="text-xs font-semibold text-slate-500 mb-1 block">Tipe Field</label>
                       <select 
-                        className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full h-10 rounded-md border border-input bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         value={field.field_type}
                         onChange={e => updateField(field.id, { field_type: e.target.value })}
                       >
@@ -189,7 +245,7 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
                           type="checkbox" 
                           checked={field.is_required} 
                           onChange={e => updateField(field.id, { is_required: e.target.checked })}
-                          className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                          className="rounded text-primary focus:ring-primary h-4 w-4"
                         />
                         <span className="text-sm font-medium text-slate-700">Wajib Diisi</span>
                       </label>
@@ -229,6 +285,7 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
             Tidak ada field tambahan. Hanya form standar yang akan ditampilkan.
           </div>
         )}
+      </div>
       </div>
     </div>
   );

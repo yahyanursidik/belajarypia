@@ -5,6 +5,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getDashboardPathForRole, type RoleCode } from "../../lib/auth";
+import { appName } from "../../lib/constants";
+import { useSystemSettings } from "../../lib/useSystemSettings";
+import { getThemeStyles } from "../../lib/theme";
 import { GraduationCap, Loader2, Users, BookOpen } from "lucide-react";
 
 export type PortalType = "admin" | "teacher" | "learner";
@@ -51,10 +54,28 @@ export function LoginPage({ portal }: LoginPageProps) {
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { settings } = useSystemSettings();
   const dashboardPath = getDashboardPathForRole(primaryRole);
   
   const config = portalConfig[portal];
   const Icon = config.Icon;
+
+  const themeKey = settings?.portal_themes?.[portal];
+  const themeStyles = getThemeStyles(themeKey);
+
+  useEffect(() => {
+    if (Object.keys(themeStyles).length === 0) return;
+    const root = document.documentElement;
+    Object.entries(themeStyles).forEach(([key, value]) => {
+      root.style.setProperty(key, value as string);
+    });
+    
+    return () => {
+      Object.keys(themeStyles).forEach((key) => {
+        root.style.removeProperty(key);
+      });
+    };
+  }, [themeStyles]);
 
   useEffect(() => {
     // If already logged in and it's valid for this portal, redirect to dashboard.
@@ -72,7 +93,7 @@ export function LoginPage({ portal }: LoginPageProps) {
   return (
     <div className="min-h-screen w-full flex flex-col lg:flex-row bg-background">
       {/* Left Column: Brand & Visuals */}
-      <div className={`hidden lg:flex flex-col flex-1 ${config.themeColor} bg-gradient-to-br ${config.gradient} text-white p-12 lg:p-24 justify-between relative overflow-hidden`}>
+      <div className="hidden lg:flex flex-col flex-1 bg-primary text-primary-foreground p-12 lg:p-24 justify-between relative overflow-hidden">
         {/* Abstract background shapes */}
         <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
           <div className="absolute top-[-10%] left-[-10%] w-96 h-96 rounded-full bg-white/5 blur-3xl" />
@@ -101,7 +122,7 @@ export function LoginPage({ portal }: LoginPageProps) {
             </div>
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-white">{config.title}</h1>
-              <p className="text-white/80 text-sm font-medium">YPIA LMS</p>
+              <p className="text-white/80 text-sm font-medium">{settings?.institution_name || appName}</p>
             </div>
           </div>
 
@@ -110,14 +131,14 @@ export function LoginPage({ portal }: LoginPageProps) {
               {config.subtitle}
             </h2>
             <p className="text-lg text-white/80 leading-relaxed">
-              Silakan login untuk mengakses fitur dan layanan sesuai dengan peran Anda di Yayasan Pendidikan Islam Asy-Syukriyyah.
+              Silakan login untuk mengakses fitur dan layanan sesuai dengan peran Anda di {settings?.institution_profile || "Yayasan Pendidikan Islam Asy-Syukriyyah"}.
             </p>
           </div>
         </div>
 
         <div className="relative z-10 mt-auto pt-12">
           <p className="text-sm text-white/60">
-            &copy; {new Date().getFullYear()} Yayasan Pendidikan Islam Asy-Syukriyyah.
+            &copy; {new Date().getFullYear()} {settings?.institution_profile || "Yayasan Pendidikan Islam Asy-Syukriyyah"}.
           </p>
         </div>
       </div>

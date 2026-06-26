@@ -72,6 +72,7 @@ Deno.serve(async (request) => {
         method: "PUT",
         objectKey,
         contentType: body.mime_type || "application/octet-stream",
+        acl: context === "system" ? "public-read" : undefined,
       });
 
       const endpoint = requiredEnv("S3_ENDPOINT").replace(/\/+$/g, "");
@@ -166,10 +167,12 @@ async function createS3SignedUrl({
   method,
   objectKey,
   contentType,
+  acl,
 }: {
   method: "GET" | "PUT";
   objectKey: string;
   contentType?: string;
+  acl?: string;
 }) {
   const endpoint = requiredEnv("S3_ENDPOINT").replace(/\/+$/g, "");
   const region = Deno.env.get("S3_REGION") ?? "us-east-1";
@@ -184,7 +187,10 @@ async function createS3SignedUrl({
   const encodedKey = objectKey.split("/").map(encodeURIComponent).join("/");
   const canonicalUri = `/${bucket}/${encodedKey}`;
   const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
-  const signedHeaders = method === "PUT" ? "content-type;host" : "host";
+  let signedHeaders = method === "PUT" ? "content-type;host" : "host";
+  if (acl && method === "PUT") {
+    signedHeaders = "content-type;host;x-amz-acl";
+  }
   const query = new URLSearchParams({
     "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
     "X-Amz-Credential": `${accessKeyId}/${credentialScope}`,
@@ -193,10 +199,13 @@ async function createS3SignedUrl({
     "X-Amz-SignedHeaders": signedHeaders,
   });
   const canonicalQueryString = query.toString().replace(/\+/g, "%20");
-  const canonicalHeaders =
+  let canonicalHeaders =
     method === "PUT"
       ? `content-type:${contentType}\nhost:${host}\n`
       : `host:${host}\n`;
+  if (acl && method === "PUT") {
+    canonicalHeaders = `content-type:${contentType}\nhost:${host}\nx-amz-acl:${acl}\n`;
+  }
   const canonicalRequest = [
     method,
     canonicalUri,

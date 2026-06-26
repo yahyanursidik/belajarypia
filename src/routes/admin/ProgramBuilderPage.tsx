@@ -22,7 +22,7 @@ import type {
 import { inferFileCategory, requestSignedUploadUrl, requestSignedDownloadUrl } from "../../lib/documents";
 import type { Program } from "../../lib/organization";
 import { supabase } from "../../lib/supabase";
-import { ProgramAdmissionBuilder } from "./ProgramAdmissionBuilder";
+import { ProgramParticipants } from "./ProgramParticipants";
 
 /* ───────────────── Empty Form Templates ───────────────── */
 
@@ -41,8 +41,11 @@ const emptyLesson = {
   visibility_status: "draft" as LessonVisibilityStatus,
   content_body: "",
   external_url: "",
+  passing_grade: "",
+  duration_minutes: "",
+  max_attempts: ""
 };
-const emptyQuestion = { question_text: "", optA: "", optB: "", optC: "", optD: "", correct_option: "A", explanation: "" };
+const emptyQuestion = { question_text: "", optA: "", optB: "", optC: "", optD: "", correct_option: "A", explanation: "", points: 10 };
 
 /* ───────────────── Component ───────────────── */
 
@@ -75,7 +78,7 @@ export function ProgramBuilderPage() {
   const [lessonModalMode, setLessonModalMode] = useState<"materi" | "kuis">("materi");
 
   /* ── UI State ── */
-  const [activeTab, setActiveTab] = useState<"info" | "kurikulum" | "angkatan" | "bank_soal" | "pendaftaran">("info");
+  const [activeTab, setActiveTab] = useState<"info" | "kurikulum" | "peserta" | "angkatan" | "bank_soal" | "silabus" | "kelulusan">("info");
   const [isLessonModalOpen, setIsLessonModalOpen] = useState(false);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
@@ -97,7 +100,12 @@ export function ProgramBuilderPage() {
   const [allBankItems, setAllBankItems] = useState<any[]>([]);
   const [selectedBankItems, setSelectedBankItems] = useState<Record<string, boolean>>({});
 
+  const [syllabusForm, setSyllabusForm] = useState("");
+  const [isSavingSyllabus, setIsSavingSyllabus] = useState(false);
+
   const [bankForm, setBankForm] = useState({ name: "", description: "" });
+  const [gradingRubricForm, setGradingRubricForm] = useState<any[]>([]);
+  const [isSavingRubric, setIsSavingRubric] = useState(false);
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
   const [uploadSource, setUploadSource] = useState<"url" | "upload">("url");
   const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
@@ -162,7 +170,17 @@ export function ProgramBuilderPage() {
       supabase.from("question_banks").select("*").eq("program_id", programId).order("created_at"),
     ]);
 
-    if (prog) setProgram(prog as unknown as Program);
+    if (prog) {
+      setProgram(prog as unknown as Program);
+      setSyllabusForm((prog as unknown as Program).syllabus || "");
+      setGradingRubricForm((prog as unknown as Program).grading_rubric || [
+        { min_score: 90, max_score: 100, label: "Mumtaz (Istimewa)" },
+        { min_score: 80, max_score: 89.9, label: "Jayyid Jiddan (Baik Sekali)" },
+        { min_score: 65, max_score: 79.9, label: "Jayyid (Baik)" },
+        { min_score: 40, max_score: 64.9, label: "Maqbul (Cukup)" },
+        { min_score: 0, max_score: 39.9, label: "Rasib (Gagal/Mengulang)" }
+      ]);
+    }
     setBatches((batchRows ?? []) as AcademicBatch[]);
     setClasses((classRows ?? []) as AcademicClass[]);
     setHalaqahs((halaqahRows ?? []) as unknown as AcademicHalaqah[]);
@@ -249,6 +267,9 @@ export function ProgramBuilderPage() {
       visibility_status: lesson.visibility_status,
       content_body: lesson.content_body || "",
       external_url: lesson.external_url || "",
+      passing_grade: lesson.passing_grade?.toString() || "",
+      duration_minutes: lesson.duration_minutes?.toString() || "",
+      max_attempts: lesson.max_attempts?.toString() || ""
     });
     setEditingLessonId(lesson.id);
     setIsLessonModalOpen(true);
@@ -305,6 +326,7 @@ export function ProgramBuilderPage() {
           options: opts,
           correct_answer: correct,
           explanation: questionForm.explanation || null,
+          points: Number(questionForm.points || 10),
           order_no: quizQuestions.length + 1
         };
         const res = await supabase.from("quiz_questions").insert(payload);
@@ -322,6 +344,7 @@ export function ProgramBuilderPage() {
           options: opts,
           correct_answer: correct,
           explanation: questionForm.explanation || null,
+          points: Number(questionForm.points || 10),
         };
         const res = await supabase.from("question_bank_items").insert(payload);
         if (!res.error) {
@@ -349,6 +372,7 @@ export function ProgramBuilderPage() {
       options: item.options,
       correct_answer: item.correct_answer,
       explanation: item.explanation,
+      points: Number(item.points || 10),
       order_no: startOrder + idx + 1
     }));
 
@@ -419,6 +443,9 @@ export function ProgramBuilderPage() {
       visibility_status: lessonForm.visibility_status,
       content_body: lessonForm.content_body.trim() || null,
       external_url: uploadSource === "url" ? (lessonForm.external_url.trim() || null) : null,
+      passing_grade: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? (lessonForm.passing_grade ? Number(lessonForm.passing_grade) : null) : null,
+      duration_minutes: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? (lessonForm.duration_minutes ? Number(lessonForm.duration_minutes) : null) : null,
+      max_attempts: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? (lessonForm.max_attempts ? Number(lessonForm.max_attempts) : null) : null,
     };
 
     const request = editingLessonId
@@ -476,6 +503,40 @@ export function ProgramBuilderPage() {
 
   /* ───────────────── Render ───────────────── */
 
+  const handleSaveSyllabus = async () => {
+    if (!program) return;
+    setIsSavingSyllabus(true);
+    const { error } = await supabase
+      .from("programs")
+      .update({ syllabus: syllabusForm })
+      .eq("id", program.id);
+      
+    if (error) {
+      setErrorMessage("Gagal menyimpan silabus");
+    } else {
+      setMessage("Silabus berhasil disimpan");
+      setProgram(prev => prev ? { ...prev, syllabus: syllabusForm } : prev);
+    }
+    setIsSavingSyllabus(false);
+  };
+
+  const handleSaveRubric = async () => {
+    if (!program) return;
+    setIsSavingRubric(true);
+    const { error } = await supabase
+      .from("programs")
+      .update({ grading_rubric: gradingRubricForm })
+      .eq("id", program.id);
+      
+    if (error) {
+      setErrorMessage("Gagal menyimpan rubrik kelulusan");
+    } else {
+      setMessage("Rubrik kelulusan berhasil disimpan");
+      setProgram(prev => prev ? { ...prev, grading_rubric: gradingRubricForm } : prev);
+    }
+    setIsSavingRubric(false);
+  };
+
   if (isLoading && !program) {
     return (
       <div className="page-stack flex items-center justify-center min-h-[40vh]">
@@ -507,6 +568,7 @@ export function ProgramBuilderPage() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="min-w-0">
+
           <div className="flex items-center gap-2 mb-1">
             <Badge className="shrink-0">{program.code}</Badge>
             <Badge variant={program.status === "active" ? "default" : "secondary"} className="capitalize shrink-0">{program.status}</Badge>
@@ -519,10 +581,12 @@ export function ProgramBuilderPage() {
       <div className="flex gap-2 border-b pb-4 mb-6 overflow-x-auto">
         {([
           { key: "info" as const, label: "📝 Info Program" },
+          { key: "silabus" as const, label: "📋 Silabus" },
           { key: "kurikulum" as const, label: "📚 Kurikulum & Materi" },
           ...(program.curriculum_model === "angkatan" ? [{ key: "angkatan" as const, label: "👥 Angkatan & Kelas" }] : []),
           { key: "bank_soal" as const, label: "🏦 Bank Soal" },
-          { key: "pendaftaran" as const, label: "📝 Pendaftaran" },
+          { key: "peserta" as const, label: "👥 Info Peserta" },
+          { key: "kelulusan" as const, label: "🏆 Kelulusan" },
         ]).map(tab => (
           <Button
             key={tab.key}
@@ -1259,17 +1323,45 @@ export function ProgramBuilderPage() {
                     )}
                   </div>
                 ) : lessonModalMode === "kuis" ? (
-                  <div className="space-y-3 p-5 bg-orange-50/50 dark:bg-orange-950/20 rounded-xl border border-orange-100 dark:border-orange-900/50">
+                  <div className="space-y-4 p-5 bg-orange-50/50 dark:bg-orange-950/20 rounded-xl border border-orange-100 dark:border-orange-900/50">
                     <label className="text-sm font-semibold flex items-center gap-2 text-orange-700 dark:text-orange-400">
-                      <BookOpen className="h-4 w-4" /> Pengelolaan Soal
+                      <BookOpen className="h-4 w-4" /> Pengaturan Nilai & Evaluasi
                     </label>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      Kerangka kuis / ujian akan disimpan terlebih dahulu. Setelah disimpan, Anda dapat mengklik tombol <strong className="text-orange-600 font-semibold px-1.5 py-0.5 bg-orange-100 rounded">Kelola Soal</strong> pada daftar materi untuk:
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground">Passing Grade (Nilai Kelulusan)</label>
+                        <Input
+                          type="number"
+                          placeholder="Misal: 70"
+                          value={lessonForm.passing_grade}
+                          onChange={e => setLessonForm(c => ({ ...c, passing_grade: e.target.value }))}
+                          className="h-11"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground">Durasi (Menit)</label>
+                        <Input
+                          type="number"
+                          placeholder="Kosong = Tanpa Batas"
+                          value={lessonForm.duration_minutes}
+                          onChange={e => setLessonForm(c => ({ ...c, duration_minutes: e.target.value }))}
+                          className="h-11"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground">Batas Percobaan Ulang</label>
+                        <Input
+                          type="number"
+                          placeholder="Kosong = Tanpa Batas"
+                          value={lessonForm.max_attempts}
+                          onChange={e => setLessonForm(c => ({ ...c, max_attempts: e.target.value }))}
+                          className="h-11"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed mt-2 bg-orange-100/50 p-2 rounded">
+                      💡 <strong>Kelola Soal:</strong> Setelah kuis ini disimpan, Anda dapat mengklik tombol <strong>Kelola Soal</strong> di daftar materi untuk membuat soal secara manual atau mengimpor dari Bank Soal.
                     </p>
-                    <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1 ml-2">
-                      <li>Membuat soal secara mandiri (Manual)</li>
-                      <li>Mengimpor soal dari Bank Soal yang sudah ada</li>
-                    </ul>
                   </div>
                 ) : (
                   <div className="space-y-3 p-4 bg-muted/30 rounded-xl border">
@@ -1398,6 +1490,12 @@ export function ProgramBuilderPage() {
                   <label className="text-sm font-semibold mb-1 block">Penjelasan (Opsional)</label>
                   <textarea className="field-control min-h-[80px]" placeholder="Penjelasan kenapa jawaban tersebut benar..." value={questionForm.explanation} onChange={e => setQuestionForm(c => ({ ...c, explanation: e.target.value }))} />
                 </div>
+                
+                <div>
+                  <label className="text-sm font-semibold mb-1 block">Bobot Nilai (Points)</label>
+                  <Input type="number" required value={questionForm.points} onChange={e => setQuestionForm(c => ({ ...c, points: Number(e.target.value) }))} className="w-32" />
+                  <p className="text-xs text-muted-foreground mt-1">Bobot standar adalah 10. Bisa diubah jika soal ini lebih sulit.</p>
+                </div>
 
                 <div className="pt-4 flex justify-end gap-3 border-t mt-6">
                   <Button type="button" variant="outline" onClick={() => setIsCreateQuestionModalOpen(false)}>Batal</Button>
@@ -1513,9 +1611,128 @@ export function ProgramBuilderPage() {
           </Card>
         </div>
       )}
-      {/* ═══════════════ TAB: PENDAFTARAN ═══════════════ */}
-      {activeTab === "pendaftaran" && (
-        <ProgramAdmissionBuilder programId={program.id} />
+      {/* Removed Pendaftaran Tab */}
+
+      {/* ═══════════════ TAB: INFO PESERTA ═══════════════ */}
+      {activeTab === "peserta" && (
+        <ProgramParticipants programId={program.id} />
+      )}
+
+      {/* ═══════════════ TAB: SILABUS ═══════════════ */}
+      {activeTab === "silabus" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Silabus Program</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Tuliskan silabus, materi pembelajaran, tata tertib, atau deskripsi panjang terkait program ini. 
+              Peserta dapat membaca informasi ini sebelum dan sesudah mereka mendaftar di Katalog Program.
+            </p>
+            <textarea
+              className="w-full min-h-[400px] p-4 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-primary font-mono resize-y"
+              placeholder="Tuliskan isi silabus di sini..."
+              value={syllabusForm}
+              onChange={(e) => setSyllabusForm(e.target.value)}
+            />
+            <div className="flex justify-end">
+              <Button onClick={handleSaveSyllabus} disabled={isSavingSyllabus}>
+                {isSavingSyllabus ? "Menyimpan..." : "Simpan Silabus"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ═══════════════ TAB: KELULUSAN ═══════════════ */}
+      {activeTab === "kelulusan" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Rubrik Kelulusan & Predikat</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Atur rentang nilai dan predikat kelulusan (contoh: Mumtaz, Jayyid) untuk laporan akademik akhir peserta.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-muted/30 border rounded-lg p-4">
+              <div className="grid grid-cols-12 gap-4 font-semibold text-sm mb-3 px-2">
+                <div className="col-span-3">Minimal Nilai</div>
+                <div className="col-span-3">Maksimal Nilai</div>
+                <div className="col-span-5">Predikat / Label</div>
+                <div className="col-span-1"></div>
+              </div>
+              
+              <div className="space-y-3">
+                {gradingRubricForm.map((item, idx) => (
+                  <div key={idx} className="grid grid-cols-12 gap-4 items-center">
+                    <div className="col-span-3">
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={item.min_score}
+                        onChange={(e) => {
+                          const newForm = [...gradingRubricForm];
+                          newForm[idx].min_score = Number(e.target.value);
+                          setGradingRubricForm(newForm);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={item.max_score}
+                        onChange={(e) => {
+                          const newForm = [...gradingRubricForm];
+                          newForm[idx].max_score = Number(e.target.value);
+                          setGradingRubricForm(newForm);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-5">
+                      <Input
+                        value={item.label}
+                        onChange={(e) => {
+                          const newForm = [...gradingRubricForm];
+                          newForm[idx].label = e.target.value;
+                          setGradingRubricForm(newForm);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-1 text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                        onClick={() => {
+                          const newForm = [...gradingRubricForm];
+                          newForm.splice(idx, 1);
+                          setGradingRubricForm(newForm);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <Button
+                variant="outline"
+                className="mt-4 w-full border-dashed"
+                onClick={() => setGradingRubricForm([...gradingRubricForm, { min_score: 0, max_score: 0, label: "" }])}
+              >
+                <Plus className="h-4 w-4 mr-2" /> Tambah Rentang Nilai
+              </Button>
+            </div>
+
+            <div className="flex justify-end pt-4">
+              <Button onClick={handleSaveRubric} disabled={isSavingRubric}>
+                {isSavingRubric ? "Menyimpan..." : "Simpan Rubrik"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
     </div>

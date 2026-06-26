@@ -73,8 +73,8 @@ body {
   min-height: 100vh;
   background: hsl(var(--background));
   background-image:
-    radial-gradient(circle at 0% 0%, hsla(160, 55%, 32%, 0.04), transparent 36rem),
-    radial-gradient(circle at 100% 100%, hsla(42, 70%, 50%, 0.03), transparent 36rem);
+    radial-gradient(circle at 0% 0%, hsl(var(--primary) / 0.08), transparent 36rem),
+    radial-gradient(circle at 100% 100%, hsl(var(--ring) / 0.05), transparent 36rem);
 }
 
 a {
@@ -95,7 +95,7 @@ a {
   top: 0;
   height: 100vh;
   padding: 24px 16px;
-  background: linear-gradient(180deg, #0a1f1a 0%, #0d2a22 50%, #081a15 100%);
+  background: linear-gradient(180deg, hsl(var(--primary) / 0.95) 0%, hsl(var(--primary)) 100%);
   color: #ffffff;
   border-right: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
@@ -171,7 +171,7 @@ a {
   place-items: center;
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 12px;
-  background: linear-gradient(135deg, hsla(160, 55%, 32%, 0.5), hsla(160, 55%, 20%, 0.3));
+  background: linear-gradient(135deg, hsl(var(--primary) / 0.5), hsl(var(--primary) / 0.8));
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
@@ -239,10 +239,10 @@ a {
 }
 
 .app-shell__menu-item.is-active {
-  background: linear-gradient(135deg, hsl(var(--primary)), hsl(160 45% 26%));
+  background: linear-gradient(135deg, hsl(var(--primary) / 0.9), hsl(var(--primary)));
   color: #ffffff;
   box-shadow:
-    0 4px 16px rgba(10, 80, 60, 0.4),
+    0 4px 16px hsl(var(--primary) / 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
@@ -327,12 +327,13 @@ a {
   width: 100%;
   padding: 40px;
   border-radius: 20px;
-  background: linear-gradient(135deg, hsl(160 55% 28%) 0%, #081a15 100%);
+  background: hsl(var(--primary));
+  background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.85) 100%);
   color: white;
   overflow: hidden;
   box-shadow:
-    0 10px 25px -5px rgba(10, 80, 60, 0.25),
-    0 8px 10px -6px rgba(10, 80, 60, 0.08);
+    0 10px 25px -5px hsl(var(--primary) / 0.25),
+    0 8px 10px -6px hsl(var(--primary) / 0.08);
 }
 
 /* Decorative radial + gold stripe */

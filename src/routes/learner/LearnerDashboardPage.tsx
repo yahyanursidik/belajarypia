@@ -4,7 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BookOpen, Award, IdCard, GraduationCap } from "lucide-react";
+import { BookOpen, Award, IdCard, GraduationCap, Wallet } from "lucide-react";
 import type { Enrollment, OnboardingProgress, Participant, WhatsappGroup } from "../../lib/enrollment";
 import { mergeWithDefaultFeatureFlags } from "../../lib/organization";
 import { supabase } from "../../lib/supabase";
@@ -15,7 +15,9 @@ export function LearnerDashboardPage() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [onboarding, setOnboarding] = useState<OnboardingProgress[]>([]);
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsappGroup[]>([]);
+  const [availablePrograms, setAvailablePrograms] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isEnrolling, setIsEnrolling] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -102,11 +104,42 @@ export function LearnerDashboardPage() {
         setWhatsappGroups((waRows ?? []) as WhatsappGroup[]);
       }
 
+      const { data: allProgramsData } = await supabase
+        .from("programs")
+        .select("id, name, code, description, feature_flags")
+        .eq("status", "active")
+        .order("created_at", { ascending: false });
+
+      if (allProgramsData) {
+        const enrolledProgramIds = nextEnrollments.map((e) => e.program_id);
+        const available = allProgramsData.filter((p) => !enrolledProgramIds.includes(p.id));
+        setAvailablePrograms(available);
+      }
+
       setIsLoading(false);
     }
 
     void loadLearnerData();
   }, [user]);
+
+  const handleDirectEnroll = async (programId: string) => {
+    if (!participant) return;
+    setIsEnrolling(programId);
+    try {
+      const { error } = await supabase.rpc("direct_enroll_participant", {
+        target_participant_id: participant.id,
+        target_program_id: programId,
+      });
+      if (error) throw error;
+      
+      alert("Pendaftaran berhasil!");
+      window.location.reload();
+    } catch (err: any) {
+      alert("Gagal mendaftar: " + err.message);
+    } finally {
+      setIsEnrolling(null);
+    }
+  };
 
   const activeEnrollments = enrollments.filter(
     (enrollment) => enrollment.enrollment_status === "active",
@@ -208,6 +241,9 @@ export function LearnerDashboardPage() {
             <div className="space-y-4">
               {enrollments.map((enrollment) => {
                 const currentOnboarding = onboardingByEnrollment.get(enrollment.id);
+                const flags = mergeWithDefaultFeatureFlags(enrollment.programs?.feature_flags);
+                const isSpp = flags.payment_type === "spp";
+                
                 const relatedGroups = whatsappGroups.filter((group) =>
                   [
                     enrollment.program_id,
@@ -248,6 +284,29 @@ export function LearnerDashboardPage() {
                         <dd>{currentOnboarding?.status ?? "not_started"}</dd>
                       </div>
                     </dl>
+
+                    {isSpp && (
+                      <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-900 flex items-start gap-3">
+                        <Wallet className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="w-full">
+                          <h4 className="font-semibold text-sm">Pengingat SPP Bulanan</h4>
+                          <p className="text-xs mt-1 text-amber-800 leading-relaxed">
+                            Program ini menggunakan sistem Sumbangan Pembinaan Pendidikan (SPP) bulanan 
+                            sebesar <strong>Rp {(flags.payment_amount || 0).toLocaleString("id-ID")}</strong>. 
+                            Mohon siapkan infak SPP Anda agar kegiatan belajar mengajar berjalan lancar.
+                          </p>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="mt-3 bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800 w-full sm:w-auto"
+                            onClick={() => window.open(`https://wa.me/6281234567890?text=Assalamu'alaikum, saya ${participant?.display_name || "Peserta"} (NIM: ${participant?.global_participant_number || "-"}) ingin mengkonfirmasi pembayaran SPP untuk program ${enrollment.programs?.name}.`, "_blank")}
+                          >
+                            Konfirmasi Pembayaran via WhatsApp
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
                     {relatedGroups.length > 0 ? (
                       <div className="mt-4 flex flex-wrap gap-2">
                         {relatedGroups.map((group) => (
@@ -259,6 +318,52 @@ export function LearnerDashboardPage() {
                         ))}
                       </div>
                     ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="mt-8">
+        <CardHeader>
+          <CardTitle>Katalog Program</CardTitle>
+          <p className="text-sm text-muted-foreground">Program yang tersedia untuk Anda ikuti.</p>
+        </CardHeader>
+        <CardContent>
+          {availablePrograms.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Saat ini tidak ada program baru yang tersedia.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {availablePrograms.map((program) => {
+                const isDirectEnroll = program.feature_flags?.use_direct_enrollment === true;
+                return (
+                  <div className="rounded-lg border p-4 flex flex-col justify-between" key={program.id}>
+                    <div>
+                      <h3 className="font-semibold text-lg">{program.name}</h3>
+                      <Badge variant="outline" className="mb-2">{program.code}</Badge>
+                      <p className="text-sm text-muted-foreground line-clamp-3 mb-4">{program.description || "Tidak ada deskripsi."}</p>
+                    </div>
+                    <div>
+                      {isDirectEnroll ? (
+                        <Button 
+                          className="w-full" 
+                          onClick={() => handleDirectEnroll(program.id)}
+                          disabled={isEnrolling === program.id}
+                        >
+                          {isEnrolling === program.id ? "Mendaftar..." : "Daftar Langsung"}
+                        </Button>
+                      ) : (
+                        <Button 
+                          className="w-full" 
+                          variant="outline" 
+                          asChild
+                        >
+                          <a href={`/program/${program.id}`}>Lihat Form Pendaftaran</a>
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 );
               })}

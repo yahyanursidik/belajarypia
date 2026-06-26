@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Plus, BookOpen, Clock, Settings, X, ArrowRight, Filter, GraduationCap, Edit2, Archive } from "lucide-react";
+import { Search, Plus, BookOpen, Clock, Settings, X, ArrowRight, Filter, GraduationCap, Edit2, Archive, LayoutGrid, List } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,6 +54,10 @@ export function AdminProgramListPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12;
+  const [sortBy, setSortBy] = useState("name-asc");
   
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -67,7 +71,7 @@ export function AdminProgramListPage() {
     const [{ data: unitRows, error: unitError }, { data: programRows, error: programError }] =
       await Promise.all([
         supabase.from("units").select("id, organization_id, code, name, description, status").order("name"),
-        supabase.from("programs").select("id, unit_id, code, name, description, program_type, curriculum_model, delivery_mode, status, feature_flags, units(code, name)").order("name"),
+        supabase.from("programs").select("id, unit_id, code, name, description, program_type, curriculum_model, delivery_mode, status, feature_flags, created_at, units(code, name)").order("name"),
       ]);
 
     if (unitError || programError) {
@@ -104,7 +108,28 @@ export function AdminProgramListPage() {
     const matchesType = filterType === "all" || p.curriculum_model === filterType;
     const matchesStatus = filterStatus === "all" || p.status === filterStatus;
     return matchesSearch && matchesType && matchesStatus;
+  }).sort((a, b) => {
+    if (sortBy === "name-asc") return (a.name || "").localeCompare(b.name || "");
+    if (sortBy === "name-desc") return (b.name || "").localeCompare(a.name || "");
+    if (sortBy === "newest") {
+      const dateA = (a as any).created_at ? new Date((a as any).created_at).getTime() : 0;
+      const dateB = (b as any).created_at ? new Date((b as any).created_at).getTime() : 0;
+      return dateB - dateA;
+    }
+    if (sortBy === "oldest") {
+      const dateA = (a as any).created_at ? new Date((a as any).created_at).getTime() : 0;
+      const dateB = (b as any).created_at ? new Date((b as any).created_at).getTime() : 0;
+      return dateA - dateB;
+    }
+    return 0;
   });
+
+  const totalPages = Math.ceil(filteredPrograms.length / itemsPerPage);
+  const currentPrograms = filteredPrograms.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterType, filterStatus, sortBy]);
 
   const openCreateModal = () => {
     setForm(initialProgramForm);
@@ -171,30 +196,31 @@ export function AdminProgramListPage() {
       )}
 
       {/* Filters & Search Toolbar */}
-      <Card className="border-muted bg-muted/20 shadow-sm">
-        <CardContent className="p-4 flex flex-col md:flex-row gap-4 items-center">
-          <div className="relative flex-1 w-full">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input 
-              placeholder="Cari nama atau kode program..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 bg-white border-muted-foreground/20"
-            />
-          </div>
-          <div className="flex items-center gap-2 w-full md:w-auto">
-            <Filter className="h-4 w-4 text-muted-foreground" />
+      <div className="bg-white/80 backdrop-blur-md border border-muted/60 shadow-sm rounded-xl p-4 mb-6 flex flex-col md:flex-row gap-4 items-center justify-between">
+        <div className="relative flex-1 w-full max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input 
+            placeholder="Cari nama atau kode program..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 bg-white/50 focus:bg-white border-muted/40 h-11 rounded-lg transition-all shadow-sm"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+          <div className="flex items-center gap-2 bg-muted/20 px-3 py-1.5 rounded-lg border border-muted/40">
+            <Filter className="h-4 w-4 text-muted-foreground hidden sm:block" />
             <select 
-              className="field-control bg-white h-10 w-full md:w-48 text-sm border-muted-foreground/20"
+              className="bg-transparent border-none text-sm font-medium focus:ring-0 outline-none cursor-pointer text-slate-700"
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
             >
-              <option value="all">Semua Tipe Program</option>
-              <option value="mandiri">Mandiri (Evergreen)</option>
-              <option value="angkatan">Terjadwal (Angkatan)</option>
+              <option value="all">Semua Tipe</option>
+              <option value="mandiri">Mandiri</option>
+              <option value="angkatan">Terjadwal</option>
             </select>
+            <div className="w-px h-4 bg-border mx-1"></div>
             <select 
-              className="field-control bg-white h-10 w-full md:w-40 text-sm border-muted-foreground/20"
+              className="bg-transparent border-none text-sm font-medium focus:ring-0 outline-none cursor-pointer text-slate-700"
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
             >
@@ -203,9 +229,36 @@ export function AdminProgramListPage() {
               <option value="draft">Draft</option>
               <option value="archived">Diarsipkan</option>
             </select>
+            <div className="w-px h-4 bg-border mx-1"></div>
+            <select 
+              className="bg-transparent border-none text-sm font-medium focus:ring-0 outline-none cursor-pointer text-slate-700"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+            >
+              <option value="name-asc">A-Z</option>
+              <option value="name-desc">Z-A</option>
+              <option value="newest">Terbaru</option>
+              <option value="oldest">Terlama</option>
+            </select>
           </div>
-        </CardContent>
-      </Card>
+          <div className="flex border border-muted/40 rounded-lg overflow-hidden bg-white shrink-0 p-0.5 shadow-sm">
+            <button 
+              className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted/50'}`}
+              onClick={() => setViewMode('grid')}
+              title="Tampilan Grid"
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+            <button 
+              className={`p-2 rounded-md transition-colors ${viewMode === 'table' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted/50'}`}
+              onClick={() => setViewMode('table')}
+              title="Tampilan Tabel"
+            >
+              <List className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Program Grid */}
       {isLoading ? (
@@ -224,54 +277,168 @@ export function AdminProgramListPage() {
           )}
         </div>
       ) : (
-        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {filteredPrograms.map((program) => (
-            <Card key={program.id} className="overflow-hidden hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 border-border/50 group flex flex-col bg-card/95 backdrop-blur">
-              <div className={`h-2 w-full ${program.status === 'active' ? 'bg-gradient-to-r from-emerald-500 to-emerald-400' : program.status === 'draft' ? 'bg-gradient-to-r from-amber-400 to-amber-300' : 'bg-slate-300'}`} />
-              <CardHeader className="pb-4">
-                <div className="flex justify-between items-start mb-2">
-                  <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 font-semibold tracking-wider text-[10px]">
-                    {program.code}
-                  </Badge>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={program.status === "active" ? "default" : "secondary"} className="capitalize shadow-sm">
-                      {program.status}
-                    </Badge>
-                    <div className="flex gap-1 ml-1">
-                      <Button variant="ghost" className="h-8 w-8 p-0 rounded-full text-blue-500 hover:text-blue-700 hover:bg-blue-50" onClick={() => openEditModal(program)}>
-                        <Edit2 className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" className={`h-8 w-8 p-0 rounded-full ${program.status === 'archived' ? 'text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50' : 'text-red-500 hover:text-red-700 hover:bg-red-50'}`} onClick={() => archiveProgram(program.id, program.status)}>
-                        {program.status === 'archived' ? <BookOpen className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-                      </Button>
+        <div className="space-y-6">
+          {viewMode === 'grid' ? (
+            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+              {currentPrograms.map((program) => (
+                <Card key={program.id} className="overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300 border-border/40 group flex flex-col bg-white">
+                  <div className={`h-1.5 w-full ${program.status === 'active' ? 'bg-primary' : program.status === 'draft' ? 'bg-amber-400' : 'bg-slate-300'}`} />
+                  <CardHeader className="pb-4">
+                    <div className="flex justify-between items-start mb-2">
+                      <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 font-semibold tracking-wider text-[10px]">
+                        {program.code}
+                      </Badge>
+                      <div className="flex items-center gap-1 bg-muted/20 rounded-full p-1 border border-muted/40 transition-opacity opacity-80 group-hover:opacity-100">
+                        <Link to={`/system/program/${program.id}/report`} title="Laporan">
+                          <Button variant="ghost" className="h-7 w-7 p-0 rounded-full text-slate-500 hover:text-primary hover:bg-primary/10">
+                            <BookOpen className="h-3.5 w-3.5" />
+                          </Button>
+                        </Link>
+                        <Button variant="ghost" title="Edit Program" className="h-7 w-7 p-0 rounded-full text-slate-500 hover:text-blue-700 hover:bg-blue-50" onClick={() => openEditModal(program)}>
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" title={program.status === 'archived' ? 'Aktifkan' : 'Arsipkan'} className={`h-7 w-7 p-0 rounded-full text-slate-500 ${program.status === 'archived' ? 'hover:text-emerald-700 hover:bg-emerald-50' : 'hover:text-amber-700 hover:bg-amber-50'}`} onClick={() => archiveProgram(program.id, program.status)}>
+                          <Archive className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
+                    <CardTitle className="text-xl leading-tight group-hover:text-primary transition-colors">
+                      {program.name}
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground line-clamp-2 mt-2 h-10">
+                      {program.description || "Belum ada deskripsi untuk program ini."}
+                    </p>
+                  </CardHeader>
+                  <CardContent className="pb-4 flex-1">
+                    <div className="flex items-center justify-between text-sm text-muted-foreground mb-1 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
+                      <div className="flex items-center gap-2">
+                        {program.curriculum_model === "mandiri" ? (
+                          <><Clock className="h-4 w-4 text-blue-500" /> <span className="font-medium text-slate-700">Mandiri</span></>
+                        ) : (
+                          <><GraduationCap className="h-4 w-4 text-primary" /> <span className="font-medium text-slate-700">Angkatan</span></>
+                        )}
+                      </div>
+                      <Badge variant={program.status === "active" ? "default" : "secondary"} className="capitalize text-[10px] h-5 shadow-sm">
+                        {program.status}
+                      </Badge>
+                    </div>
+                  </CardContent>
+                  <div className="p-4 pt-0 mt-auto">
+                    <Link to={`/system/program/${program.id}`} className="block">
+                      <Button variant="default" className="w-full rounded-xl shadow-md group-hover:shadow-lg transition-all bg-primary hover:bg-primary/90 text-primary-foreground h-11">
+                        Kelola Program <ArrowRight className="ml-2 h-4 w-4" />
+                      </Button>
+                    </Link>
                   </div>
-                </div>
-                <CardTitle className="text-xl leading-tight group-hover:text-primary transition-colors">
-                  {program.name}
-                </CardTitle>
-                <p className="text-sm text-muted-foreground line-clamp-2 mt-2 h-10">
-                  {program.description || "Belum ada deskripsi untuk program ini."}
-                </p>
-              </CardHeader>
-              <CardContent className="pb-4 flex-1">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3 bg-muted/30 p-2 rounded-lg">
-                  {program.curriculum_model === "mandiri" ? (
-                    <><Clock className="h-4 w-4 text-blue-500" /> <span className="font-medium text-foreground">Mandiri (Self-Paced)</span></>
-                  ) : (
-                    <><GraduationCap className="h-4 w-4 text-emerald-500" /> <span className="font-medium text-foreground">Terjadwal (Angkatan)</span></>
-                  )}
-                </div>
-              </CardContent>
-              <div className="pt-0 border-t bg-muted/5 p-4 mt-auto">
-                <Link to={`/system/program/${program.id}`} className="w-full">
-                  <Button variant="default" className="w-full rounded-lg shadow-sm group-hover:bg-primary/90 transition-colors">
-                    Kelola Program <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </Link>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card className="border-border/50 shadow-sm overflow-hidden bg-white rounded-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50/80 border-b border-border/50 text-slate-500 text-xs uppercase tracking-wider">
+                    <tr>
+                      <th className="px-6 py-4 font-semibold">Program</th>
+                      <th className="px-6 py-4 font-semibold">Tipe</th>
+                      <th className="px-6 py-4 font-semibold">Status</th>
+                      <th className="px-6 py-4 font-semibold text-right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/40 bg-white">
+                    {currentPrograms.map((program) => (
+                      <tr key={program.id} className="hover:bg-primary/5 transition-colors group">
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-slate-800 text-base group-hover:text-primary transition-colors">{program.name}</span>
+                            <span className="font-mono text-xs text-slate-500 mt-1">{program.code}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2 text-slate-600 bg-slate-50 px-3 py-1.5 rounded-full inline-flex border border-slate-100">
+                            {program.curriculum_model === "mandiri" ? (
+                              <><Clock className="h-3.5 w-3.5 text-blue-500" /> <span className="text-xs font-medium">Mandiri</span></>
+                            ) : (
+                              <><GraduationCap className="h-3.5 w-3.5 text-primary" /> <span className="text-xs font-medium">Angkatan</span></>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <Badge variant={program.status === "active" ? "default" : "secondary"} className="capitalize">
+                            {program.status}
+                          </Badge>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
+                            <Link to={`/system/program/${program.id}`}>
+                              <Button variant="default" size="sm" className="h-8 text-xs px-4 rounded-full shadow-sm bg-primary/90 hover:bg-primary">Kelola</Button>
+                            </Link>
+                            <div className="w-px h-5 bg-border mx-1"></div>
+                            <Link to={`/system/program/${program.id}/report`} title="Laporan">
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-full text-slate-400 hover:text-primary hover:bg-primary/10"><BookOpen className="h-4 w-4" /></Button>
+                            </Link>
+                            <Button variant="ghost" title="Edit" className="h-8 w-8 p-0 rounded-full text-slate-400 hover:text-blue-600 hover:bg-blue-50" onClick={() => openEditModal(program)}>
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" title="Arsip" className={`h-8 w-8 p-0 rounded-full text-slate-400 ${program.status === 'archived' ? 'hover:text-emerald-600 hover:bg-emerald-50' : 'hover:text-amber-600 hover:bg-amber-50'}`} onClick={() => archiveProgram(program.id, program.status)}>
+                              <Archive className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </Card>
-          ))}
+          )}
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between pt-2 pb-8 gap-4">
+              <p className="text-sm text-slate-500">
+                Menampilkan <span className="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span> hingga <span className="font-medium">{Math.min(currentPage * itemsPerPage, filteredPrograms.length)}</span> dari <span className="font-medium">{filteredPrograms.length}</span> program
+              </p>
+              <div className="flex flex-wrap justify-center gap-1">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  className="hidden sm:inline-flex"
+                >
+                  Sebelumnya
+                </Button>
+                
+                {/* Simple pagination numbers - could be optimized for many pages, but good enough for now */}
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
+                  .map((page, i, arr) => (
+                    <div key={page} className="flex items-center">
+                      {i > 0 && arr[i - 1] !== page - 1 && <span className="px-2 text-slate-400">...</span>}
+                      <Button
+                        variant={currentPage === page ? "default" : "outline"}
+                        size="sm"
+                        className={currentPage === page ? "pointer-events-none" : ""}
+                        onClick={() => setCurrentPage(page)}
+                      >
+                        {page}
+                      </Button>
+                    </div>
+                ))}
+
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  className="hidden sm:inline-flex"
+                >
+                  Selanjutnya
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -394,7 +561,48 @@ export function AdminProgramListPage() {
                   </div>
                 </div>
 
-                <div className="space-y-3 pt-4 border-t">
+                <div className="grid gap-4 md:grid-cols-2 p-4 bg-amber-50/50 rounded-xl border border-amber-100 mt-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-amber-900 flex items-center gap-2">
+                      Sistem Pembayaran / SPP
+                    </label>
+                    <select
+                      className="field-control bg-white h-10 border-amber-200 focus:border-amber-400 focus:ring-amber-400/20"
+                      onChange={(event) => setForm((current) => ({
+                        ...current,
+                        feature_flags: {
+                          ...current.feature_flags,
+                          payment_type: event.target.value as "free" | "spp"
+                        }
+                      }))}
+                      value={form.feature_flags.payment_type || "free"}
+                    >
+                      <option value="free">Gratis (Tanpa SPP)</option>
+                      <option value="spp">Berbayar (Sumbangan Pembinaan Pendidikan)</option>
+                    </select>
+                  </div>
+                  {form.feature_flags.payment_type === "spp" && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-amber-900">Nominal SPP (Rp)</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        className="h-10 border-amber-200 focus:border-amber-400 focus:ring-amber-400/20"
+                        placeholder="Contoh: 150000"
+                        onChange={(event) => setForm((current) => ({
+                          ...current,
+                          feature_flags: {
+                            ...current.feature_flags,
+                            payment_amount: Number(event.target.value)
+                          }
+                        }))}
+                        value={form.feature_flags.payment_amount || ""}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3 pt-6 border-t mt-6">
                   <label className="text-sm font-semibold flex items-center justify-between pb-2">
                     <span>Fitur Tambahan (MVP)</span>
                     <span className="text-xs text-muted-foreground font-normal">Pilih fitur yang ingin diaktifkan</span>

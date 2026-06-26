@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import type { PortalThemeConfig } from "./theme";
 
 export type SystemSettings = {
   id: string;
@@ -10,6 +11,7 @@ export type SystemSettings = {
   contact_email: string | null;
   contact_phone: string | null;
   address: string | null;
+  portal_themes?: PortalThemeConfig;
   created_at: string;
   updated_at: string;
 };
@@ -24,6 +26,7 @@ export const emptySettings: SystemSettings = {
   contact_email: null,
   contact_phone: null,
   address: null,
+  portal_themes: { admin: "indigo", learner: "emerald", teacher: "rose", public: "amber" },
   created_at: "",
   updated_at: "",
 };

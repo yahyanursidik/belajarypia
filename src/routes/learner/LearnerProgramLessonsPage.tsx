@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuthSession } from "../../app/providers/authSessionContext";
+import { FileText } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import type { DocumentFile, Lesson, ProgramModule } from "../../lib/academic";
 import { requestSignedDownloadUrl } from "../../lib/documents";
 import type { Enrollment, Participant } from "../../lib/enrollment";
@@ -22,6 +24,7 @@ type LessonPrerequisiteRow = {
 };
 
 export function LearnerProgramLessonsPage() {
+  const navigate = useNavigate();
   const { user } = useAuthSession();
   const [participant, setParticipant] = useState<Participant | null>(null);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
@@ -265,10 +268,22 @@ export function LearnerProgramLessonsPage() {
 
           return (
             <Card key={program.id}>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>
                   {program.code} - {program.name}
                 </CardTitle>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="text-xs text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                  onClick={() => {
+                    const enrollment = enrollments.find(e => e.program_id === program.id);
+                    if (enrollment) navigate(`/learner/transkrip/${enrollment.id}`);
+                  }}
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  Lihat Transkrip
+                </Button>
               </CardHeader>
               <CardContent>
                 {programModules.length === 0 ? (

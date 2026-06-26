@@ -12,6 +12,7 @@ import {
 } from "../../lib/admission";
 import type { Batch, ClassGroup, Halaqah } from "../../lib/enrollment";
 import { supabase } from "../../lib/supabase";
+import { ProgramAdmissionBuilder } from "./ProgramAdmissionBuilder";
 
 type ApplicantListRow = ApplicantProgramChoice & {
   applicants: Applicant;
@@ -44,6 +45,20 @@ export function AdminApplicantListPage() {
     class_id: "",
     halaqah_id: "",
   });
+  
+  const [activeTab, setActiveTab] = useState<"review" | "settings">("review");
+  const [programs, setPrograms] = useState<any[]>([]);
+  const [selectedProgramIdForSettings, setSelectedProgramIdForSettings] = useState<string | null>(null);
+
+  // Pagination & Filters
+  const [page, setPage] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
+  const pageSize = 10;
+  
+  const [filterProgram, setFilterProgram] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchInput, setSearchInput] = useState<string>("");
 
   const selectedRow = useMemo(
     () => rows.find((row) => row.applicant_id === selectedApplicantId) ?? null,
@@ -54,17 +69,37 @@ export function AdminApplicantListPage() {
     setIsLoading(true);
     setErrorMessage(null);
 
-    const { data, error } = await supabase
+    let query = supabase
       .from("applicant_program_choices")
       .select(
-        "id, applicant_id, program_id, preferred_schedule, notes, applicants(id, full_name, email, phone, city, gender, birth_date, source_channel, status, submitted_at, created_at), programs(id, code, name, status)",
+        "id, applicant_id, program_id, preferred_schedule, notes, applicants!inner(id, full_name, email, phone, city, gender, birth_date, source_channel, status, submitted_at, created_at), programs(id, code, name, status)",
+        { count: "exact" }
       )
       .order("created_at", { ascending: false });
+
+    if (filterProgram !== "all") {
+      query = query.eq("program_id", filterProgram);
+    }
+    
+    if (filterStatus !== "all") {
+      query = query.eq("applicants.status", filterStatus);
+    }
+
+    if (searchQuery) {
+      query = query.or(`full_name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%`, { foreignTable: "applicants" });
+    }
+
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    query = query.range(from, to);
+
+    const { data, count, error } = await query;
 
     if (error) {
       setErrorMessage(error.message);
     } else {
       setRows((data ?? []) as unknown as ApplicantListRow[]);
+      setTotalRows(count ?? 0);
     }
 
     setIsLoading(false);
@@ -124,9 +159,66 @@ export function AdminApplicantListPage() {
     setHalaqahs((data ?? []) as Halaqah[]);
   };
 
+  const loadPrograms = async () => {
+    const { data } = await supabase.from("programs").select("id, name, code, status").order("created_at", { ascending: false });
+    if (data) setPrograms(data);
+  };
+
   useEffect(() => {
     void loadApplicants();
+  }, [page, filterProgram, filterStatus, searchQuery]);
+
+  useEffect(() => {
+    void loadPrograms();
   }, []);
+
+  const handleSearch = () => {
+    setSearchQuery(searchInput);
+    setPage(1);
+  };
+
+  const exportToCSV = async () => {
+    let query = supabase
+      .from("applicant_program_choices")
+      .select(
+        "id, applicant_id, program_id, preferred_schedule, notes, applicants!inner(id, full_name, email, phone, city, gender, birth_date, source_channel, status, submitted_at, created_at), programs(id, code, name, status)"
+      )
+      .order("created_at", { ascending: false });
+
+    if (filterProgram !== "all") query = query.eq("program_id", filterProgram);
+    if (filterStatus !== "all") query = query.eq("applicants.status", filterStatus);
+    if (searchQuery) query = query.or(`full_name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%`, { foreignTable: "applicants" });
+
+    const { data, error } = await query;
+    if (error) {
+      alert("Gagal export CSV: " + error.message);
+      return;
+    }
+
+    const csvRows = [
+      ["Nama", "Email", "No. HP", "Kota", "Program", "Status", "Tanggal Daftar"]
+    ];
+    for (const row of (data as unknown as ApplicantListRow[])) {
+      csvRows.push([
+        `"${row.applicants.full_name}"`,
+        `"${row.applicants.email}"`,
+        `"${row.applicants.phone || ""}"`,
+        `"${row.applicants.city || ""}"`,
+        `"${row.programs?.name || ""}"`,
+        `"${applicantStatusLabels[row.applicants.status] || ""}"`,
+        `"${new Date(row.applicants.submitted_at || row.applicants.created_at).toLocaleString('id-ID')}"`
+      ]);
+    }
+    const csvString = csvRows.map(r => r.join(",")).join("\n");
+    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `Data_Pendaftar_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const updateStatus = async (status: ApplicantStatus) => {
     if (!selectedRow) {
@@ -203,12 +295,69 @@ export function AdminApplicantListPage() {
         </Alert>
       ) : null}
 
-      <div className="split-panel">
-        <Card>
-          <CardHeader>
-            <CardTitle>Daftar Pendaftar</CardTitle>
-          </CardHeader>
-          <CardContent>
+      <div className="flex border-b mb-6 overflow-x-auto hide-scrollbar">
+        <button className={`px-6 py-3 font-semibold text-sm whitespace-nowrap transition-colors ${activeTab === "review" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setActiveTab("review")}>
+          Review Pendaftar
+        </button>
+        <button className={`px-6 py-3 font-semibold text-sm whitespace-nowrap transition-colors ${activeTab === "settings" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setActiveTab("settings")}>
+          Pengaturan Form Pendaftaran
+        </button>
+      </div>
+
+      {activeTab === "review" && (
+        <div className="space-y-6">
+          <Card className="border-indigo-100 shadow-sm bg-slate-50/50">
+            <CardContent className="p-4 flex flex-wrap items-end gap-4">
+              <div className="flex-1 min-w-[200px]">
+                <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Cari Pendaftar</label>
+                <div className="flex gap-2">
+                  <input 
+                    type="text"
+                    placeholder="Nama atau email..."
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                    className="field-control flex-1 text-sm"
+                  />
+                  <Button size="sm" onClick={handleSearch}>Cari</Button>
+                </div>
+              </div>
+              <div className="w-full sm:w-[200px]">
+                <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Filter Program</label>
+                <select 
+                  className="field-control text-sm w-full"
+                  value={filterProgram}
+                  onChange={(e) => { setFilterProgram(e.target.value); setPage(1); }}
+                >
+                  <option value="all">Semua Program</option>
+                  {programs.map(p => <option key={p.id} value={p.id}>{p.code}</option>)}
+                </select>
+              </div>
+              <div className="w-full sm:w-[200px]">
+                <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Filter Status</label>
+                <select 
+                  className="field-control text-sm w-full"
+                  value={filterStatus}
+                  onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
+                >
+                  <option value="all">Semua Status</option>
+                  {Object.entries(applicantStatusLabels).map(([val, label]) => (
+                    <option key={val} value={val}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <Button size="sm" variant="outline" onClick={exportToCSV} className="text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 border-emerald-200">
+                Export CSV
+              </Button>
+            </CardContent>
+          </Card>
+
+          <div className="split-panel">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>Daftar Pendaftar <span className="text-sm font-normal text-muted-foreground ml-2">({totalRows} total)</span></CardTitle>
+              </CardHeader>
+              <CardContent>
             {isLoading ? (
               <p className="text-sm text-muted-foreground">Memuat pendaftar...</p>
             ) : rows.length === 0 ? (
@@ -258,6 +407,17 @@ export function AdminApplicantListPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+            {totalRows > pageSize && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                <span className="text-sm text-muted-foreground">
+                  Menampilkan {Math.min((page - 1) * pageSize + 1, totalRows)} - {Math.min(page * pageSize, totalRows)} dari {totalRows}
+                </span>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Sebelumnya</Button>
+                  <Button size="sm" variant="outline" onClick={() => setPage(p => p + 1)} disabled={page * pageSize >= totalRows}>Selanjutnya</Button>
+                </div>
               </div>
             )}
           </CardContent>
@@ -431,6 +591,37 @@ export function AdminApplicantListPage() {
           </CardContent>
         </Card>
       </div>
+      </div>
+      )}
+
+      {activeTab === "settings" && (
+        <Card className="max-w-4xl mx-auto w-full border-none shadow-none bg-transparent">
+          <CardHeader className="px-0">
+            <CardTitle>Pilih Program</CardTitle>
+            <p className="text-sm text-muted-foreground">Pilih program yang ingin diatur form pendaftarannya.</p>
+          </CardHeader>
+          <CardContent className="px-0">
+            <select
+              className="field-control w-full mb-6 text-sm"
+              value={selectedProgramIdForSettings || ""}
+              onChange={(e) => setSelectedProgramIdForSettings(e.target.value)}
+            >
+              <option value="">-- Pilih Program --</option>
+              {programs.map((p) => (
+                <option key={p.id} value={p.id}>{p.code} - {p.name} {p.status === 'active' ? '' : `(${p.status})`}</option>
+              ))}
+            </select>
+            
+            {selectedProgramIdForSettings ? (
+              <ProgramAdmissionBuilder programId={selectedProgramIdForSettings} />
+            ) : (
+              <div className="text-center p-12 text-muted-foreground border-2 border-dashed border-slate-200 rounded-lg bg-white">
+                Silakan pilih program terlebih dahulu.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

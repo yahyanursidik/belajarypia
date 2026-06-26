@@ -14,9 +14,20 @@ export type MvpFeatureFlagKey =
   | "use_document_upload"
   | "use_ai_assist"
   | "use_audio_submission"
-  | "use_video_submission";
+  | "use_video_submission"
+  | "use_direct_enrollment"
+  | "use_custom_enrollment_number";
 
-export type MvpFeatureFlags = Record<MvpFeatureFlagKey, boolean>;
+export type MvpFeatureFlags = Record<MvpFeatureFlagKey, boolean> & {
+  payment_type?: "free" | "spp";
+  payment_amount?: number;
+};
+
+export type GradingRubricItem = {
+  min_score: number;
+  max_score: number;
+  label: string;
+};
 
 export type Organization = {
   id: string;
@@ -41,11 +52,13 @@ export type Program = {
   code: string;
   name: string;
   description: string | null;
+  syllabus?: string | null;
   program_type: string;
   curriculum_model: string;
   delivery_mode: string;
   status: ProgramStatus;
   feature_flags: MvpFeatureFlags;
+  grading_rubric?: GradingRubricItem[] | null;
   units?: Pick<Unit, "name" | "code"> | null;
 };
 
@@ -63,6 +76,10 @@ export const defaultMvpFeatureFlags: MvpFeatureFlags = {
   use_ai_assist: false,
   use_audio_submission: false,
   use_video_submission: false,
+  use_direct_enrollment: false,
+  use_custom_enrollment_number: false,
+  payment_type: "free",
+  payment_amount: 0,
 };
 
 export const mvpFeatureFlagLabels: Record<MvpFeatureFlagKey, string> = {
@@ -79,6 +96,8 @@ export const mvpFeatureFlagLabels: Record<MvpFeatureFlagKey, string> = {
   use_ai_assist: "AI Assist",
   use_audio_submission: "Audio Submission",
   use_video_submission: "Video Submission",
+  use_direct_enrollment: "Pendaftaran Langsung",
+  use_custom_enrollment_number: "NIM Kustom Otomatis",
 };
 
 export const allowedMvpFeatureFlags = Object.keys(

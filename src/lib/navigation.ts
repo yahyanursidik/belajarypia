@@ -33,7 +33,7 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
     case "finance":
       return [
         { href: "/admin", label: "Dashboard", icon: menuIcon.dashboard },
-        { href: "/admin/keuangan", label: "Keuangan", icon: menuIcon.settings },
+        { href: "/admin/keuangan", label: "Keuangan", icon: menuIcon.finance },
       ];
     case "helpdesk":
       return [
