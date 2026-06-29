@@ -153,6 +153,15 @@ export function ShellLayout({
             {children}
           </Suspense>
         </main>
+        
+        <footer className="mt-auto py-6 text-center text-sm text-slate-500 border-t border-slate-200 print:hidden w-full bg-slate-50/50">
+          <p>
+            Disusun dan dikembangkan oleh{' '}
+            <a href="https://yahyanursidik.my.id/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-semibold transition-colors">
+              Yahya Nursidik
+            </a>
+          </p>
+        </footer>
       </div>
       
       {/* Mobile Bottom Navigation (Learner Only) */}
