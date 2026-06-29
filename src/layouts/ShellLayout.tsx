@@ -72,7 +72,7 @@ export function ShellLayout({
 
   return (
     <div className={`app-shell app-shell-${variant}`}>
-      <aside className={cn("app-shell__sider print:hidden", variant === "learner" && "hidden md:flex")}>
+      <aside className={cn("app-shell__sider print:hidden", variant === "learner" && "!hidden md:!flex")}>
         <Link to="/" className="app-shell__brand" aria-label={appName}>
           <span className="app-shell__brand-icon">
             <BrandIcon className="h-6 w-6 text-white" />
