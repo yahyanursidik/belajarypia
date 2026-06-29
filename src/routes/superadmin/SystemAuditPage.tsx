@@ -74,8 +74,7 @@ export function SystemAuditPage() {
 
         if (filterAction !== "all") query = query.eq("action", filterAction);
         if (filterEntity !== "all") query = query.eq("entity_type", filterEntity);
-        if (searchQuery.trim()) query = query.or(`profiles.full_name.ilike.%${searchQuery}%`);
-
+        
         const { data, error, count } = await query;
         if (error) throw error;
         setLogs(data as any);
@@ -87,7 +86,7 @@ export function SystemAuditPage() {
       }
     }
     fetchLogs();
-  }, [page, filterAction, filterEntity, searchQuery]);
+  }, [page, filterAction, filterEntity]);
 
   const totalPages = Math.ceil(totalCount / pageSize);
 

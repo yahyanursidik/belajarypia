@@ -319,7 +319,7 @@ export function LearnerLessonPage() {
                       </div>
                       <div>
                         {attempt.status === 'submitted' ? (
-                          <Badge variant={attempt.score >= (lesson.passing_grade || 0) ? "default" : "secondary"} className={attempt.score >= (lesson.passing_grade || 0) ? "" : "bg-red-100 text-red-700"} className="px-2">
+                          <Badge variant={attempt.score >= (lesson.passing_grade || 0) ? "default" : "secondary"} className={`px-2 ${attempt.score >= (lesson.passing_grade || 0) ? "" : "bg-red-100 text-red-700"}`}>
                             {attempt.score}
                           </Badge>
                         ) : (

@@ -107,7 +107,7 @@ export function SystemUsersPage() {
 
       // 2. Remove roles
       if (toRemove.length > 0) {
-        const removeRoleIds = toRemove.map(code => roles.find(r => r.code === code)?.id).filter(Boolean);
+        const removeRoleIds = toRemove.map((code: string) => roles.find(r => r.code === code)?.id).filter(Boolean);
         const { error: removeError } = await supabase
           .from("user_roles")
           .delete()

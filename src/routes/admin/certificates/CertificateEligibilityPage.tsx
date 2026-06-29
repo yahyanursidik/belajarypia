@@ -223,7 +223,7 @@ export function CertificateEligibilityPage() {
                   <tr key={e.id} className="hover:bg-slate-50">
                     <td className="px-6 py-3 font-medium">{e.participants?.display_name}</td>
                     <td className="px-6 py-3">
-                      <Badge variant="secondary" className="bg-red-100 text-red-700" className="font-normal">{e.reason}</Badge>
+                      <Badge variant="secondary" className="bg-red-100 text-red-700 font-normal">{e.reason}</Badge>
                     </td>
                   </tr>
                 ))}

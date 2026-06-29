@@ -26,7 +26,7 @@ export function AdminProfilePage() {
   useEffect(() => {
     if (profile) {
       setFullName(profile.full_name || "");
-      setPhone(profile.phone || "");
+      // setPhone((profile as any).phone || "");
     }
   }, [profile]);
 

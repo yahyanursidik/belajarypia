@@ -43,7 +43,7 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
     }
 
     // Fetch main form
-    let { data: formData, error: formError } = await supabase
+    let { data: formData } = await supabase
       .from("registration_forms")
       .select("*")
       .eq("program_id", programId)

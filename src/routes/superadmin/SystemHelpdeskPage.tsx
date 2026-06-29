@@ -446,7 +446,7 @@ export function SystemHelpdeskPage() {
               <div className="absolute inset-0 bg-slate-50/90 z-0" />
               
               <div className="relative z-10 space-y-6">
-                {messages.map((msg, i) => {
+                {messages.map((msg, _i) => {
                   const isStaffMessage = msg.sender_id !== selectedTicket.reporter_id;
                   
                   return (

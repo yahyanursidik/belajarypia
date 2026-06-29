@@ -19,15 +19,7 @@ type ApplicantListRow = ApplicantProgramChoice & {
   applicants: Applicant;
 };
 
-const reviewActions: Array<{
-  status: ApplicantStatus;
-  label: string;
-  variant?: "default" | "outline" | "secondary";
-}> = [
-  { status: "under_review", label: "Mulai Review", variant: "outline" },
-  { status: "revision_requested", label: "Minta Revisi", variant: "secondary" },
-  { status: "rejected", label: "Reject", variant: "outline" },
-];
+
 
 export function AdminApplicantListPage() {
   const [rows, setRows] = useState<ApplicantListRow[]>([]);

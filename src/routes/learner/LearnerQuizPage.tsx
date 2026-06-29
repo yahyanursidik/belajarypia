@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
 import { useAuthSession } from "../../app/providers/authSessionContext";
 import { supabase } from "../../lib/supabase";
 import { ArrowLeft, Clock, CheckCircle2, AlertTriangle, BookOpen, Trophy, XCircle, ChevronRight, LayoutGrid, AlertCircle } from "lucide-react";
@@ -444,7 +445,7 @@ export function LearnerQuizPage() {
               return (
                 <Card 
                   key={q.id} 
-                  ref={el => questionRefs.current[q.id] = el}
+                  ref={el => { questionRefs.current[q.id] = el; }}
                   className={`border-slate-200 shadow-sm overflow-hidden transition-all duration-300 ${!showReview && hasAnswered ? 'border-primary/20 bg-slate-50/30' : ''}`}
                 >
                   <div className={`px-6 py-4 border-b flex items-center justify-between ${showReview ? (isCorrect ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100') : 'bg-slate-50/80 border-slate-100'}`}>

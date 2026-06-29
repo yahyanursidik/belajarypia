@@ -218,7 +218,7 @@ export function ProgramBuilderPage() {
       setIsImportModalOpen(false);
       setImportText("");
       setImportPreview([]);
-      await loadBankItems(managingBankId);
+      // await loadBankItems(managingBankId);
     }
     setIsSubmitting(false);
   };
@@ -354,7 +354,8 @@ export function ProgramBuilderPage() {
       duration_minutes: lesson.duration_minutes?.toString() || "",
       max_attempts: lesson.max_attempts?.toString() || "",
       is_strict_mode: lesson.is_strict_mode || false,
-      max_tab_switches: lesson.max_tab_switches?.toString() || "3"
+      max_tab_switches: lesson.max_tab_switches?.toString() || "3",
+      randomized_questions_count: lesson.randomized_questions_count?.toString() || "0"
     });
     setEditingLessonId(lesson.id);
     setIsLessonModalOpen(true);
