@@ -4,7 +4,7 @@ import { format } from "date-fns";
 import { 
   Server, ShieldCheck, Users, Activity, Building, Database, 
   ArrowRight, BookOpen, Users as UsersIcon, FileText, BadgeDollarSign, 
-  Headset, FileCheck, ShieldAlert, GraduationCap, BarChart3
+  FileCheck, ShieldAlert, GraduationCap, BarChart3
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";

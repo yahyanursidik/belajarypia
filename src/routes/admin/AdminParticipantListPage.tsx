@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, User, Filter, MapPin, GraduationCap, Phone, Upload, Download, Users, UserCheck, PieChart, BadgeCheck, Clock, Ban, Settings, Key, X, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, Search, User, Filter, MapPin, GraduationCap, Phone, Upload, Download, Users, UserCheck, PieChart, BadgeCheck, Settings, Key, X, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import Papa from "papaparse";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../components/ui/card";
@@ -742,7 +742,7 @@ export function AdminParticipantListPage() {
                     <li>Kolom <strong>Nama Lengkap</strong> wajib diisi.</li>
                   </ul>
                   <Button 
-                    variant="link" 
+                    variant="ghost" 
                     className="p-0 h-auto text-primary font-bold mt-3 hover:text-primary/80"
                     onClick={handleDownloadTemplate}
                   >

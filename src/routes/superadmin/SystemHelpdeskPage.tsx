@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { 
   MessageCircleQuestion, 
   Search, 
-  MoreVertical, 
   Send, 
   Paperclip, 
   AlertCircle,
@@ -15,7 +14,6 @@ import {
   ListFilter,
   Calendar,
   Tag,
-  ChevronDown,
   Image as ImageIcon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";

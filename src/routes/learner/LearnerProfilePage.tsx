@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthSession } from "../../app/providers/authSessionContext";
 import { supabase } from "../../lib/supabase";
-import { User, Phone, MapPin, GraduationCap, Calendar, Hash, BadgeCheck, AlertCircle, Edit, Save, X, Loader2, LogOut } from "lucide-react";
+import { User, Phone, MapPin, GraduationCap, Calendar, Hash, BadgeCheck, AlertCircle, Edit, Save, Loader2, LogOut } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 

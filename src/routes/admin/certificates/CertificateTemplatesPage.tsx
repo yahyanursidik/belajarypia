@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Plus, Edit2, Trash, Award } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "../../../lib/supabase";
 

@@ -662,7 +662,7 @@ export function AdminApplicantListPage() {
                     disabled={isUpdating}
                     onClick={() => void updateStatus("rejected")}
                     size="sm"
-                    variant="destructive"
+                    variant="secondary" className="bg-red-100 text-red-700 hover:bg-red-200"
                   >
                     <XCircle className="h-4 w-4 mr-2" /> Reject
                   </Button>

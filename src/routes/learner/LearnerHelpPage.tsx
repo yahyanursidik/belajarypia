@@ -74,7 +74,7 @@ export function LearnerHelpPage() {
   const [isCreatingTicket, setIsCreatingTicket] = useState(false);
   const [newTicketSubject, setNewTicketSubject] = useState("");
   const [newTicketCategory, setNewTicketCategory] = useState("technical_issue");
-  const [newTicketPriority, setNewTicketPriority] = useState("medium");
+  const [newTicketPriority] = useState("medium");
   const [newTicketMessage, setNewTicketMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<{title: string, desc: string, type: 'success' | 'error'} | null>(null);

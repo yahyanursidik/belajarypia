@@ -37,8 +37,7 @@ type Lesson = {
 };
 
 export function SystemContentReviewPage() {
-  const { user } = useAuthSession();
-  const [lessons, setLessons] = useState<Lesson[]>([]);
+    const [lessons, setLessons] = useState<Lesson[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);

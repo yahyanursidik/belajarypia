@@ -137,9 +137,9 @@ export function ProgramRegistrationPage() {
                 <CardTitle className="text-lg flex items-center gap-2">
                   <span>Bergabung dengan Grup {registrationForm.group_settings.platform === 'whatsapp' ? 'WhatsApp' : 'Telegram'}</span>
                 </CardTitle>
-                <CardDescription>
+                <AlertDescription>
                   Silakan bergabung ke grup komunitas untuk mendapatkan informasi selanjutnya.
-                </CardDescription>
+                </AlertDescription>
               </CardHeader>
               <CardContent className="p-6">
                 <div className="flex flex-col gap-3">

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
-import { BadgeDollarSign, Search, Filter, Plus, Calendar, CheckCircle2, MoreVertical, Loader2, Ban, Clock, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { BadgeDollarSign, Search, Filter, Plus, CheckCircle2, Loader2, Ban, Clock, ArrowDownRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";

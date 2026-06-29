@@ -9,8 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ShieldAlert, Activity, Search, Filter, ChevronLeft, ChevronRight, Clock, FileEdit, Trash2, Plus } from "lucide-react";
+import { ShieldAlert, Activity, Filter, ChevronLeft, ChevronRight, Clock, FileEdit, Trash2, Plus } from "lucide-react";
 
 type AuditLog = {
   id: string;
@@ -47,8 +46,7 @@ export function SystemAuditPage() {
   const [page, setPage] = useState(1);
   const [filterAction, setFilterAction] = useState("all");
   const [filterEntity, setFilterEntity] = useState("all");
-  const [searchQuery, setSearchQuery] = useState("");
-  const pageSize = 20;
+    const pageSize = 20;
 
   // Distinct values for filters
   const [actionOptions, setActionOptions] = useState<string[]>([]);

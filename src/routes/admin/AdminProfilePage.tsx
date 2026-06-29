@@ -8,7 +8,7 @@ import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 
 export function AdminProfilePage() {
-  const { session, profile, primaryRole } = useAuthSession();
+  const { profile, primaryRole } = useAuthSession();
   
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -303,10 +303,10 @@ export function AdminProfilePage() {
               <div className="pt-4 border-t border-border/50">
                 <p className="text-xs text-muted-foreground mb-2">Tingkat Hak Akses (Role)</p>
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-primary/10 text-primary text-sm font-bold uppercase tracking-wider">
-                  {primaryRole.replace('_', ' ')}
+                  {primaryRole?.replace('_', ' ')}
                 </div>
                 <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                  Akun Anda saat ini memiliki akses otorisasi sebagai <strong>{primaryRole.replace('_', ' ')}</strong> di sistem YPIA.
+                  Akun Anda saat ini memiliki akses otorisasi sebagai <strong>{primaryRole?.replace('_', ' ')}</strong> di sistem YPIA.
                 </p>
               </div>
             </CardContent>

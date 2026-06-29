@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Badge } from "../../components/ui/badge";
-import { Megaphone, Plus, Trash2, Edit, Save, X, Loader2, Send, CheckCircle2, AlertCircle } from "lucide-react";
+import { Megaphone, Plus, Trash2, X, Loader2, Send, CheckCircle2, AlertCircle } from "lucide-react";
 
 export function AdminAnnouncementsPage() {
   const { profile } = useAuthSession();
