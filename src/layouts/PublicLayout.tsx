@@ -4,13 +4,10 @@ import { getNavigationForRole } from "../lib/navigation";
 
 export function PublicLayout({ children }: PropsWithChildren) {
   return (
-    <ShellLayout
-      title="Portal Publik"
-      subtitle="Informasi program dan akses awal LMS YPIA"
-      variant="public"
-      menuItems={getNavigationForRole(null)}
-    >
-      {children}
-    </ShellLayout>
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      <main className="flex-1 w-full">
+        {children}
+      </main>
+    </div>
   );
 }

@@ -47,7 +47,7 @@ export function ProgramDetailPage() {
   }
 
   return (
-    <div className="page-stack">
+    <div className="page-stack max-w-4xl mx-auto py-12 px-4 sm:px-6">
       <section className="page-hero">
         <Badge>{program.status}</Badge>
         <h2>{program.name}</h2>
