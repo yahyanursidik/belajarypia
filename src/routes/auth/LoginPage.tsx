@@ -131,14 +131,14 @@ export function LoginPage({ portal }: LoginPageProps) {
               {config.subtitle}
             </h2>
             <p className="text-lg text-white/80 leading-relaxed">
-              Silakan login untuk mengakses fitur dan layanan sesuai dengan peran Anda di {settings?.institution_profile || "Yayasan Pendidikan Islam Asy-Syukriyyah"}.
+              Silakan login untuk mengakses fitur dan layanan sesuai dengan peran Anda di {settings?.institution_profile || "Yayasan Pendidikan Ihsanul Adab (YPIA)"}.
             </p>
           </div>
         </div>
 
         <div className="relative z-10 mt-auto pt-12">
           <p className="text-sm text-white/60">
-            &copy; {new Date().getFullYear()} {settings?.institution_profile || "Yayasan Pendidikan Islam Asy-Syukriyyah"}.
+            &copy; {new Date().getFullYear()} {settings?.institution_profile || "Yayasan Pendidikan Ihsanul Adab (YPIA)"}.
           </p>
         </div>
       </div>

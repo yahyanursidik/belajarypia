@@ -567,6 +567,10 @@ a {
   .app-shell__content {
     padding: 20px;
   }
+  
+  .app-shell-learner .app-shell__main {
+    padding-bottom: 76px; /* Space for bottom nav */
+  }
 
   .page-hero {
     padding: 24px;
@@ -580,5 +584,42 @@ a {
   .metric-grid,
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  .app-shell__sider,
+  .app-shell__header {
+    display: none !important;
+  }
+  
+  .app-shell__main {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  
+  .app-shell__content {
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+  
+  .app-shell {
+    display: block !important;
+    height: auto !important;
+    min-height: auto !important;
+    background: white !important;
+    overflow: visible !important;
+  }
+  
+  body, html {
+    background: white !important;
+    height: auto !important;
+    overflow: visible !important;
   }
 }

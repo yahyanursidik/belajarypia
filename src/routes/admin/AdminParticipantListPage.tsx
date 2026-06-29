@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, User, Filter, MapPin, GraduationCap, Phone, Upload, Download, Users, UserCheck, PieChart, BadgeCheck, Clock, Ban } from "lucide-react";
+import { Plus, Search, User, Filter, MapPin, GraduationCap, Phone, Upload, Download, Users, UserCheck, PieChart, BadgeCheck, Clock, Ban, Settings, Key, X, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import Papa from "papaparse";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../components/ui/card";
@@ -9,8 +9,14 @@ import { Badge } from "../../components/ui/badge";
 import { supabase } from "../../lib/supabase";
 import type { Participant } from "../../lib/participant";
 import type { Program } from "../../lib/organization";
+import { fetchSystemSettings, updateSystemSettings, emptySettings } from "../../lib/settings";
+import type { SystemSettings } from "../../lib/settings";
 
-const toast = { success: alert, error: alert };
+
+const toast = { 
+  success: (msg: string) => window.alert(msg), 
+  error: (msg: string) => window.alert(msg) 
+};
 
 // Extended type to include enrollments
 type ParticipantRow = Participant & {
@@ -29,12 +35,27 @@ export function AdminParticipantListPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [programFilter, setProgramFilter] = useState<string>("all");
   
+  // Pagination & Debounce
+  const [page, setPage] = useState(1);
+  const [perPage] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [stats, setStats] = useState({ total: 0, active: 0, male: 0, female: 0 });
+
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMassUploadOpen, setIsMassUploadOpen] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [massUploadProgress, setMassUploadProgress] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Reset Password State
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [resetParticipant, setResetParticipant] = useState<ParticipantRow | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetFeedback, setResetFeedback] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+
   const [form, setForm] = useState({
     global_participant_number: "",
     display_name: "",
@@ -46,27 +67,180 @@ export function AdminParticipantListPage() {
     birth_date: ""
   });
 
+  // Debounce search query
+  const [isTranscriptConfigOpen, setIsTranscriptConfigOpen] = useState(false);
+  const [transcriptSettings, setTranscriptSettings] = useState<SystemSettings>(emptySettings);
+  const [isSavingTranscript, setIsSavingTranscript] = useState(false);
+  const [signatureFile, setSignatureFile] = useState<File | null>(null);
+  const [transcriptErrorMsg, setTranscriptErrorMsg] = useState("");
+  const [isSuccessState, setIsSuccessState] = useState(false);
+
+  // Load settings when modal opens
+  useEffect(() => {
+    if (isTranscriptConfigOpen) {
+      setIsSuccessState(false);
+      fetchSystemSettings().then(data => {
+         if (data) setTranscriptSettings(data);
+      });
+    }
+  }, [isTranscriptConfigOpen]);
+
+  const handleSaveTranscriptSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingTranscript(true);
+    setTranscriptErrorMsg("");
+    
+    try {
+      let signatureUrl = transcriptSettings.transcript_signature_url;
+
+      if (signatureFile) {
+        const fileExt = signatureFile.name.split('.').pop();
+        const fileName = `transcript_signature_${Date.now()}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from("system_assets")
+          .upload(fileName, signatureFile, { upsert: true });
+
+        if (uploadError) {
+          throw new Error("Gagal mengunggah tanda tangan: " + uploadError.message);
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from("system_assets")
+          .getPublicUrl(fileName);
+
+        signatureUrl = publicUrlData.publicUrl;
+      }
+
+      const { error } = await updateSystemSettings(transcriptSettings.id, {
+        transcript_header_text: transcriptSettings.transcript_header_text,
+        transcript_place_date_text: transcriptSettings.transcript_place_date_text,
+        transcript_official_name: transcriptSettings.transcript_official_name,
+        transcript_official_title: transcriptSettings.transcript_official_title,
+        transcript_signature_url: signatureUrl,
+      });
+
+      if (error) {
+        setTranscriptErrorMsg("Gagal menyimpan ke database: " + error.message);
+      } else {
+        setIsSuccessState(true);
+        setTimeout(() => {
+          setIsSuccessState(false);
+          setIsTranscriptConfigOpen(false);
+          setSignatureFile(null);
+        }, 2000);
+      }
+    } catch (err: any) {
+      setTranscriptErrorMsg(err.message || "Terjadi kesalahan saat menyimpan");
+    } finally {
+      setIsSavingTranscript(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetParticipant || resetPassword.length < 6) return;
+    
+    setIsResetting(true);
+    setResetFeedback(null);
+    
+    try {
+      const { error } = await supabase.rpc('admin_reset_user_password', {
+        target_user_id: resetParticipant.user_id,
+        new_password: resetPassword
+      });
+      
+      if (error) throw error;
+      
+      setResetFeedback({ message: "Kata sandi berhasil diubah secara paksa!", type: "success" });
+      setResetPassword("");
+      
+      // Auto close after 2.5 seconds
+      setTimeout(() => {
+        setIsResetModalOpen(false);
+      }, 2500);
+      
+    } catch (err: any) {
+      setResetFeedback({ message: "Gagal mereset sandi: " + err.message, type: "error" });
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearchQuery(searchQuery), 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearchQuery, statusFilter, programFilter]);
+
+  // Fetch data when dependencies change
+  useEffect(() => {
+    fetchParticipants();
+  }, [page, debouncedSearchQuery, statusFilter, programFilter]);
+
   useEffect(() => {
     fetchInitialData();
   }, []);
 
   const fetchInitialData = async () => {
-    setIsLoading(true);
-    
-    // Fetch programs for filter
     const { data: progData } = await supabase.from("programs").select("id, name").order("name");
     if (progData) setPrograms(progData as Program[]);
 
-    // Fetch participants with profile and enrollments
-    const { data: partData, error } = await supabase
+    const [
+      { count: total },
+      { count: active },
+      { count: male },
+      { count: female }
+    ] = await Promise.all([
+      supabase.from("participants").select('*', { count: 'exact', head: true }),
+      supabase.from("participants").select('*', { count: 'exact', head: true }).eq('status', 'active'),
+      supabase.from("participants").select('*', { count: 'exact', head: true }).eq('gender', 'Laki-laki'),
+      supabase.from("participants").select('*', { count: 'exact', head: true }).eq('gender', 'Perempuan')
+    ]);
+    
+    setStats({
+      total: total || 0,
+      active: active || 0,
+      male: male || 0,
+      female: female || 0
+    });
+  };
+
+  const fetchParticipants = async () => {
+    setIsLoading(true);
+    let query = supabase
       .from("participants")
-      .select("*, profiles(full_name, email, phone), enrollments(program_id)")
-      .order("created_at", { ascending: false });
+      .select("*, profiles(full_name, email, phone), enrollments(program_id)", { count: 'exact' });
+
+    if (programFilter !== "all") {
+      query = supabase
+        .from("participants")
+        .select(`*, profiles(full_name, email, phone), enrollments!inner(program_id)`, { count: 'exact' })
+        .eq('enrollments.program_id', programFilter);
+    }
+
+    if (debouncedSearchQuery) {
+      query = query.or(`display_name.ilike.%${debouncedSearchQuery}%,global_participant_number.ilike.%${debouncedSearchQuery}%`);
+    }
+    if (statusFilter !== "all") {
+      query = query.eq('status', statusFilter);
+    }
+
+    const from = (page - 1) * perPage;
+    const to = from + perPage - 1;
+    query = query.order("created_at", { ascending: false }).range(from, to);
+
+    const { data, error, count } = await query;
 
     if (error) {
       toast.error("Gagal memuat data peserta");
     } else {
-      setParticipants(partData as ParticipantRow[]);
+      setParticipants(data as ParticipantRow[]);
+      if (count !== null) setTotalCount(count);
     }
     setIsLoading(false);
   };
@@ -166,6 +340,7 @@ export function AdminParticipantListPage() {
         setCsvFile(null);
         setMassUploadProgress("");
         fetchInitialData();
+        fetchParticipants();
       },
       error: (err) => {
         toast.error("Gagal membaca file: " + err.message);
@@ -175,20 +350,7 @@ export function AdminParticipantListPage() {
     });
   };
 
-  const filteredParticipants = participants.filter(p => {
-    const matchesSearch = 
-      p.display_name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      p.global_participant_number.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === "all" || p.status === statusFilter;
-    const matchesProgram = programFilter === "all" || p.enrollments?.some(e => e.program_id === programFilter);
-    return matchesSearch && matchesStatus && matchesProgram;
-  });
-
-  // Analytics
-  const totalParticipants = participants.length;
-  const activeParticipants = participants.filter(p => p.status === 'active').length;
-  const maleCount = participants.filter(p => p.gender === 'Laki-laki').length;
-  const femaleCount = participants.filter(p => p.gender === 'Perempuan').length;
+  const totalPages = Math.ceil(totalCount / perPage);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 max-w-7xl mx-auto pb-10">
@@ -207,6 +369,12 @@ export function AdminParticipantListPage() {
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-3">
+            <Button 
+              onClick={() => setIsTranscriptConfigOpen(true)}
+              className="bg-white/20 text-white hover:bg-white/30 border border-white/20 shadow-sm rounded-full px-6"
+            >
+              <Settings className="w-4 h-4 mr-2" /> Konfigurasi Transkrip
+            </Button>
             <Button 
               onClick={() => setIsMassUploadOpen(true)}
               className="bg-white/20 text-white hover:bg-white/30 border border-white/20 shadow-sm rounded-full px-6"
@@ -232,7 +400,7 @@ export function AdminParticipantListPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-foreground">{totalParticipants}</p>
+            <p className="text-3xl font-bold text-foreground">{stats.total}</p>
           </CardContent>
         </Card>
         <Card className="shadow-sm relative overflow-hidden group">
@@ -242,7 +410,7 @@ export function AdminParticipantListPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-foreground">{activeParticipants}</p>
+            <p className="text-3xl font-bold text-foreground">{stats.active}</p>
           </CardContent>
         </Card>
         <Card className="shadow-sm relative overflow-hidden">
@@ -254,12 +422,12 @@ export function AdminParticipantListPage() {
           <CardContent>
             <div className="flex items-center gap-4">
               <div>
-                <p className="text-xl font-bold text-slate-700">{maleCount}</p>
+                <p className="text-xl font-bold text-slate-700">{stats.male}</p>
                 <p className="text-xs text-muted-foreground">Laki-laki</p>
               </div>
               <div className="w-px h-8 bg-border"></div>
               <div>
-                <p className="text-xl font-bold text-slate-700">{femaleCount}</p>
+                <p className="text-xl font-bold text-slate-700">{stats.female}</p>
                 <p className="text-xs text-muted-foreground">Perempuan</p>
               </div>
             </div>
@@ -271,7 +439,7 @@ export function AdminParticipantListPage() {
         <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4 bg-white">
           <div>
             <CardTitle>Daftar Profil Peserta</CardTitle>
-            <CardDescription>Menampilkan {filteredParticipants.length} data peserta terdaftar.</CardDescription>
+            <CardDescription>Menampilkan hasil pencarian ({totalCount} data).</CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative w-full sm:w-64">
@@ -331,7 +499,7 @@ export function AdminParticipantListPage() {
                       </div>
                     </td>
                   </tr>
-                ) : filteredParticipants.length === 0 ? (
+                ) : participants.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-6 py-20 text-center text-slate-500">
                       <User className="h-16 w-16 mx-auto mb-4 text-slate-200" />
@@ -340,7 +508,7 @@ export function AdminParticipantListPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredParticipants.map((p) => (
+                  participants.map((p) => (
                     <tr key={p.id} className="hover:bg-primary/5 transition-colors group border-b border-slate-100 last:border-0">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-4">
@@ -386,14 +554,30 @@ export function AdminParticipantListPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          className="hover:bg-primary/10 hover:text-primary"
-                          onClick={() => navigate(`/system/peserta/${p.id}`)}
-                        >
-                          Lihat Detail
-                        </Button>
+                        <div className="flex justify-end items-center gap-1.5">
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            className="h-8 w-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-full shadow-sm border border-transparent hover:border-amber-200"
+                            onClick={() => {
+                              setResetParticipant(p);
+                              setResetPassword("");
+                              setResetFeedback(null);
+                              setIsResetModalOpen(true);
+                            }}
+                            title="Ubah Sandi"
+                          >
+                            <Key className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            className="hover:bg-primary/10 hover:text-primary rounded-full shadow-sm"
+                            onClick={() => navigate(`/system/peserta/${p.id}`)}
+                          >
+                            Lihat Detail
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -401,6 +585,38 @@ export function AdminParticipantListPage() {
               </tbody>
             </table>
           </div>
+          
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4 border-t bg-slate-50/50">
+              <span className="text-sm text-slate-500">
+                Menampilkan <span className="font-medium text-slate-700">{(page - 1) * perPage + 1}</span> hingga <span className="font-medium text-slate-700">{Math.min(page * perPage, totalCount)}</span> dari <span className="font-medium text-slate-700">{totalCount}</span> peserta
+              </span>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="bg-white"
+                >
+                  Sebelumnya
+                </Button>
+                <div className="flex items-center justify-center px-4 text-sm font-medium border rounded-md bg-white text-slate-700 min-w-[3rem]">
+                  {page} / {totalPages}
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages || totalPages === 0}
+                  className="bg-white"
+                >
+                  Selanjutnya
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -555,6 +771,160 @@ export function AdminParticipantListPage() {
                   </Button>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Transcript Config */}
+      {isTranscriptConfigOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-2xl shadow-2xl overflow-hidden border-none animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto relative">
+            {isSuccessState ? (
+              <div className="flex flex-col items-center justify-center p-16 h-[400px] bg-white animate-in zoom-in-50 duration-300">
+                <div className="h-20 w-20 bg-emerald-100 rounded-full flex items-center justify-center mb-6 animate-bounce">
+                  <CheckCircle2 className="h-10 w-10 text-emerald-600" />
+                </div>
+                <h3 className="text-2xl font-bold text-slate-800">Berhasil!</h3>
+                <p className="text-slate-500 mt-2 text-center">Konfigurasi transkrip telah tersimpan dengan aman.</p>
+              </div>
+            ) : (
+              <>
+                <div className="bg-primary p-6 text-primary-foreground sticky top-0 z-10">
+                  <CardTitle className="text-2xl mb-1 text-white">Konfigurasi Transkrip</CardTitle>
+                  <CardDescription className="text-white/80">Atur header, pejabat penandatangan, dan tanda tangan untuk semua transkrip nilai.</CardDescription>
+                </div>
+                <CardContent className="p-6 bg-white">
+                  <form onSubmit={handleSaveTranscriptSettings} className="space-y-5">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-slate-700">Teks Header Kop Surat</label>
+                  <textarea 
+                    placeholder="Contoh: YAYASAN PENDIDIKAN IHSANUL ADAB (YPIA)" 
+                    className="w-full h-24 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={transcriptSettings.transcript_header_text || ""} 
+                    onChange={e => setTranscriptSettings({...transcriptSettings, transcript_header_text: e.target.value})} 
+                  />
+                  <p className="text-xs text-muted-foreground">Logo akan menggunakan logo sistem secara default.</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Awalan Tempat & Tanggal</label>
+                    <Input 
+                      placeholder="Contoh: Yogyakarta, " 
+                      className="h-10"
+                      value={transcriptSettings.transcript_place_date_text || ""} 
+                      onChange={e => setTranscriptSettings({...transcriptSettings, transcript_place_date_text: e.target.value})} 
+                    />
+                    <p className="text-xs text-muted-foreground">Tanggal cetak akan ditambahkan otomatis di belakangnya.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Tanda Tangan (Opsional)</label>
+                    <Input 
+                      type="file"
+                      accept="image/*"
+                      className="h-10 cursor-pointer"
+                      onChange={e => setSignatureFile(e.target.files?.[0] || null)} 
+                    />
+                    {transcriptSettings.transcript_signature_url && !signatureFile && (
+                      <p className="text-xs text-emerald-600 font-medium">✓ Tanda tangan sudah diunggah sebelumnya</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Nama Pejabat Penandatangan</label>
+                    <Input 
+                      placeholder="Contoh: Ustadz Fulan, Lc., M.A." 
+                      className="h-10"
+                      value={transcriptSettings.transcript_official_name || ""} 
+                      onChange={e => setTranscriptSettings({...transcriptSettings, transcript_official_name: e.target.value})} 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Jabatan Penandatangan</label>
+                    <Input 
+                      placeholder="Contoh: Direktur Pendidikan" 
+                      className="h-10"
+                      value={transcriptSettings.transcript_official_title || ""} 
+                      onChange={e => setTranscriptSettings({...transcriptSettings, transcript_official_title: e.target.value})} 
+                    />
+                  </div>
+                </div>
+
+                {transcriptErrorMsg && (
+                  <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm font-medium border border-red-200">
+                    {transcriptErrorMsg}
+                  </div>
+                )}
+
+                <div className="pt-4 flex justify-end gap-3 border-t border-border/50 mt-6">
+                  <Button type="button" variant="outline" className="px-6" onClick={() => setIsTranscriptConfigOpen(false)}>Batal</Button>
+                  <Button type="submit" disabled={isSavingTranscript} className="bg-primary hover:bg-primary/90 text-primary-foreground px-6">
+                    {isSavingTranscript ? "Menyimpan..." : "Simpan Konfigurasi"}
+                  </Button>
+                </div>
+                  </form>
+                </CardContent>
+              </>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Reset Password */}
+      {isResetModalOpen && resetParticipant && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-md shadow-2xl overflow-hidden border-none animate-in zoom-in-95 duration-200">
+            <div className="bg-amber-500 p-5 text-white flex justify-between items-start">
+              <div>
+                <CardTitle className="text-xl mb-1 text-white flex items-center gap-2">
+                  <Key className="h-5 w-5" /> Ganti Kata Sandi
+                </CardTitle>
+                <CardDescription className="text-white/90">Ubah sandi untuk {resetParticipant.display_name}</CardDescription>
+                {resetParticipant.profiles?.email && (
+                  <div className="mt-2 text-xs font-medium bg-black/20 py-1 px-2 rounded inline-block">
+                    📧 {resetParticipant.profiles.email}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => setIsResetModalOpen(false)} className="text-white/70 hover:text-white transition-colors">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <CardContent className="p-6 bg-white">
+              {resetFeedback && (
+                <div className={`mb-6 p-3 rounded-lg border text-sm flex items-start gap-2 animate-in fade-in slide-in-from-top-2 ${
+                  resetFeedback.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'
+                }`}>
+                  {resetFeedback.type === 'success' ? <CheckCircle2 className="h-4 w-4 mt-0.5 flex-shrink-0" /> : <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />}
+                  <p>{resetFeedback.message}</p>
+                </div>
+              )}
+              <form onSubmit={handleResetPassword} className="space-y-5">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-slate-700">Sandi Baru <span className="text-red-500">*</span></label>
+                  <Input 
+                    required 
+                    type="text"
+                    placeholder="Minimal 6 karakter" 
+                    className="h-10 text-lg tracking-wider font-mono"
+                    value={resetPassword} 
+                    onChange={e => setResetPassword(e.target.value)} 
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
+                    Sandi ini akan langsung menimpa sandi lama. Pastikan Anda menginformasikan kata sandi baru ini kepada peserta yang bersangkutan.
+                  </p>
+                </div>
+                
+                <div className="flex items-center gap-3 justify-end pt-4 border-t mt-6">
+                  <Button type="button" variant="ghost" onClick={() => setIsResetModalOpen(false)}>Batal</Button>
+                  <Button type="submit" disabled={isResetting || resetPassword.length < 6} className="bg-amber-500 hover:bg-amber-600 min-w-[120px]">
+                    {isResetting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Proses...</> : 'Simpan Sandi'}
+                  </Button>
+                </div>
+              </form>
             </CardContent>
           </Card>
         </div>

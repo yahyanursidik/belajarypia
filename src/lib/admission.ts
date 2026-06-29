@@ -10,12 +10,21 @@ export type ApplicantStatus =
 
 export type RegistrationFieldType = "text" | "textarea" | "email" | "phone" | "select";
 
+export type GroupSettings = {
+  platform: "whatsapp" | "telegram" | "none";
+  separated_gender: boolean;
+  ikhwan_groups: { name: string; link: string }[];
+  akhwat_groups: { name: string; link: string }[];
+  general_groups: { name: string; link: string }[];
+};
+
 export type RegistrationForm = {
   id: string;
   program_id: string | null;
   title: string;
   description: string | null;
   status: "draft" | "active" | "archived";
+  group_settings?: GroupSettings | null;
 };
 
 export type RegistrationFormField = {

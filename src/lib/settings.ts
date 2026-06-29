@@ -12,6 +12,11 @@ export type SystemSettings = {
   contact_phone: string | null;
   address: string | null;
   portal_themes?: PortalThemeConfig;
+  transcript_header_text?: string | null;
+  transcript_place_date_text?: string | null;
+  transcript_official_name?: string | null;
+  transcript_official_title?: string | null;
+  transcript_signature_url?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -27,6 +32,11 @@ export const emptySettings: SystemSettings = {
   contact_phone: null,
   address: null,
   portal_themes: { admin: "indigo", learner: "emerald", teacher: "rose", public: "amber" },
+  transcript_header_text: null,
+  transcript_place_date_text: "Jakarta, ",
+  transcript_official_name: null,
+  transcript_official_title: null,
+  transcript_signature_url: null,
   created_at: "",
   updated_at: "",
 };

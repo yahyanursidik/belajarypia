@@ -76,6 +76,31 @@ const AdminFinancePage = lazy(() =>
     default: module.AdminFinancePage,
   })),
 );
+const AdminProfilePage = lazy(() =>
+  import("./admin/AdminProfilePage").then((module) => ({
+    default: module.AdminProfilePage,
+  })),
+);
+const AdminAnnouncementsPage = lazy(() =>
+  import("./admin/AdminAnnouncementsPage").then((module) => ({
+    default: module.AdminAnnouncementsPage,
+  })),
+);
+const CertificateTemplatesPage = lazy(() =>
+  import("./admin/certificates/CertificateTemplatesPage").then((module) => ({
+    default: module.CertificateTemplatesPage,
+  })),
+);
+const CertificateEligibilityPage = lazy(() =>
+  import("./admin/certificates/CertificateEligibilityPage").then((module) => ({
+    default: module.CertificateEligibilityPage,
+  })),
+);
+const CertificateQueuePage = lazy(() =>
+  import("./admin/certificates/CertificateQueuePage").then((module) => ({
+    default: module.CertificateQueuePage,
+  })),
+);
 const LearnerDashboardPage = lazy(() =>
   import("./learner/LearnerDashboardPage").then((module) => ({
     default: module.LearnerDashboardPage,
@@ -86,14 +111,39 @@ const LearnerTranscriptPage = lazy(() =>
     default: module.LearnerTranscriptPage,
   })),
 );
+const LearnerProfilePage = lazy(() =>
+  import("./learner/LearnerProfilePage").then((module) => ({
+    default: module.LearnerProfilePage,
+  })),
+);
 const LearnerProgramLessonsPage = lazy(() =>
   import("./learner/LearnerProgramLessonsPage").then((module) => ({
     default: module.LearnerProgramLessonsPage,
   })),
 );
+const LearnerProgramDetailPage = lazy(() =>
+  import("./learner/LearnerProgramDetailPage").then((module) => ({
+    default: module.LearnerProgramDetailPage,
+  })),
+);
+const LearnerLessonPage = lazy(() =>
+  import("./learner/LearnerLessonPage").then((module) => ({
+    default: module.LearnerLessonPage,
+  })),
+);
+const LearnerQuizPage = lazy(() =>
+  import("./learner/LearnerQuizPage").then((module) => ({
+    default: module.LearnerQuizPage,
+  })),
+);
 const LearnerPlaceholderPage = lazy(() =>
   import("./learner/LearnerPlaceholderPage").then((module) => ({
     default: module.LearnerPlaceholderPage,
+  })),
+);
+const LearnerHelpPage = lazy(() =>
+  import("./learner/LearnerHelpPage").then((module) => ({
+    default: module.LearnerHelpPage,
   })),
 );
 const AdmissionPortalPage = lazy(() =>
@@ -129,6 +179,21 @@ const GlobalSettingsPage = lazy(() =>
 const SystemAuditPage = lazy(() =>
   import("./superadmin/SystemAuditPage").then((module) => ({
     default: module.SystemAuditPage,
+  })),
+);
+const SystemHelpdeskPage = lazy(() =>
+  import("./superadmin/SystemHelpdeskPage").then((module) => ({
+    default: module.SystemHelpdeskPage,
+  })),
+);
+const SystemContentReviewPage = lazy(() =>
+  import("./superadmin/SystemContentReviewPage").then((module) => ({
+    default: module.SystemContentReviewPage,
+  })),
+);
+const SystemUsersPage = lazy(() =>
+  import("./superadmin/SystemUsersPage").then((module) => ({
+    default: module.SystemUsersPage,
   })),
 );
 const TeacherDashboardPage = lazy(() =>
@@ -220,6 +285,8 @@ export function AppRoutes() {
               </ProtectedRoute>
             }
           />
+          <Route path="profil" element={<AdminProfilePage />} />
+          <Route path="pengumuman" element={<AdminAnnouncementsPage />} />
           <Route
             path="program/:programId"
             element={
@@ -233,6 +300,30 @@ export function AppRoutes() {
             element={
               <ProtectedRoute allowedRoles={["admin", "finance"]}>
                 <AdminFinancePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="sertifikat"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <CertificateTemplatesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="sertifikat/kelayakan"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <CertificateEligibilityPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="sertifikat/antrean"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <CertificateQueuePage />
               </ProtectedRoute>
             }
           />
@@ -259,7 +350,7 @@ export function AppRoutes() {
         <Route
           path="/learner"
           element={
-            <ProtectedRoute allowedRoles={["participant", "guardian"]}>
+            <ProtectedRoute allowedRoles={["participant", "guardian", "super_admin", "admin"]}>
               <LearnerLayout>
                 <Outlet />
               </LearnerLayout>
@@ -268,7 +359,14 @@ export function AppRoutes() {
         >
           <Route index element={<LearnerDashboardPage />} />
           <Route path="program-saya" element={<LearnerProgramLessonsPage />} />
+          <Route path="program/:programId" element={<LearnerProgramDetailPage />} />
+          <Route path="lesson/:lessonId" element={<LearnerLessonPage />} />
+          <Route path="lesson/:lessonId/quiz" element={<LearnerQuizPage />} />
           <Route path="transkrip/:enrollmentId" element={<LearnerTranscriptPage />} />
+          <Route path="profil" element={<LearnerProfilePage />} />
+          <Route path="pendaftaran/:programId" element={<AdmissionPortalPage />} />
+          <Route path="cek-status" element={<AdmissionStatusPage />} />
+          <Route path="bantuan" element={<LearnerHelpPage />} />
           <Route path="*" element={<LearnerPlaceholderPage />} />
         </Route>
 
@@ -295,8 +393,16 @@ export function AppRoutes() {
           <Route path="pendaftaran/:programId" element={<AdmissionPortalPage />} />
           <Route path="cek-status" element={<AdmissionStatusPage />} />
           <Route path="audit" element={<SystemAuditPage />} />
+          <Route path="helpdesk" element={<SystemHelpdeskPage />} />
+          <Route path="konten" element={<SystemContentReviewPage />} />
+          <Route path="pengguna" element={<SystemUsersPage />} />
           <Route path="keuangan" element={<AdminFinancePage />} />
+          <Route path="profil" element={<AdminProfilePage />} />
+          <Route path="pengumuman" element={<AdminAnnouncementsPage />} />
           <Route path="pengaturan" element={<GlobalSettingsPage />} />
+          <Route path="sertifikat" element={<CertificateTemplatesPage />} />
+          <Route path="sertifikat/kelayakan" element={<CertificateEligibilityPage />} />
+          <Route path="sertifikat/antrean" element={<CertificateQueuePage />} />
           <Route path="*" element={<SuperAdminPlaceholderPage />} />
         </Route>
 

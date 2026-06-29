@@ -3,6 +3,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Search, RefreshCw, UserCircle, CheckCircle2, XCircle, AlertCircle, Download, X } from "lucide-react";
 import {
   applicantStatusLabels,
   type Applicant,
@@ -59,11 +60,28 @@ export function AdminApplicantListPage() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchInput, setSearchInput] = useState<string>("");
+  const [adminNotes, setAdminNotes] = useState<string>("");
+
+  useEffect(() => {
+    if (message || errorMessage) {
+      const timer = setTimeout(() => {
+        setMessage(null);
+        setErrorMessage(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [message, errorMessage]);
 
   const selectedRow = useMemo(
     () => rows.find((row) => row.applicant_id === selectedApplicantId) ?? null,
     [rows, selectedApplicantId],
   );
+
+  useEffect(() => {
+    if (selectedRow) {
+      setAdminNotes(selectedRow.notes || "");
+    }
+  }, [selectedRow]);
 
   const loadApplicants = async () => {
     setIsLoading(true);
@@ -229,13 +247,18 @@ export function AdminApplicantListPage() {
     setErrorMessage(null);
     setMessage(null);
 
-    const { error } = await supabase
+    const { error: applicantError } = await supabase
       .from("applicants")
       .update({ status })
       .eq("id", selectedRow.applicant_id);
+      
+    const { error: notesError } = await supabase
+      .from("applicant_program_choices")
+      .update({ notes: adminNotes })
+      .eq("id", selectedRow.id);
 
-    if (error) {
-      setErrorMessage(error.message);
+    if (applicantError || notesError) {
+      setErrorMessage(applicantError?.message || notesError?.message || "Terjadi kesalahan.");
     } else {
       setMessage(`Status pendaftaran berubah menjadi ${applicantStatusLabels[status]}.`);
       await loadApplicants();
@@ -261,6 +284,10 @@ export function AdminApplicantListPage() {
       target_halaqah_id: assignment.halaqah_id || null,
     });
 
+    if (!error) {
+       await supabase.from("applicant_program_choices").update({ notes: adminNotes }).eq("id", selectedRow.id);
+    }
+
     if (error) {
       setErrorMessage(error.message);
     } else {
@@ -282,18 +309,30 @@ export function AdminApplicantListPage() {
         </p>
       </section>
 
-      {errorMessage ? (
-        <Alert>
-          <AlertTitle>Gagal</AlertTitle>
-          <AlertDescription>{errorMessage}</AlertDescription>
-        </Alert>
-      ) : null}
-      {message ? (
-        <Alert>
-          <AlertTitle>Berhasil</AlertTitle>
-          <AlertDescription>{message}</AlertDescription>
-        </Alert>
-      ) : null}
+      <div className="fixed top-24 right-8 z-50 flex flex-col gap-2 max-w-sm w-full">
+        {errorMessage && (
+          <div className="bg-red-50 text-red-900 border border-red-200 p-4 rounded-lg shadow-lg flex items-start justify-between animate-in slide-in-from-right-8 fade-in">
+            <div>
+              <h4 className="font-bold text-sm">Gagal</h4>
+              <p className="text-sm mt-1">{errorMessage}</p>
+            </div>
+            <button onClick={() => setErrorMessage(null)} className="text-red-500 hover:text-red-700">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+        {message && (
+          <div className="bg-emerald-50 text-emerald-900 border border-emerald-200 p-4 rounded-lg shadow-lg flex items-start justify-between animate-in slide-in-from-right-8 fade-in">
+            <div>
+              <h4 className="font-bold text-sm">Berhasil</h4>
+              <p className="text-sm mt-1">{message}</p>
+            </div>
+            <button onClick={() => setMessage(null)} className="text-emerald-500 hover:text-emerald-700">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="flex border-b mb-6 overflow-x-auto hide-scrollbar">
         <button className={`px-6 py-3 font-semibold text-sm whitespace-nowrap transition-colors ${activeTab === "review" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setActiveTab("review")}>
@@ -311,14 +350,17 @@ export function AdminApplicantListPage() {
               <div className="flex-1 min-w-[200px]">
                 <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Cari Pendaftar</label>
                 <div className="flex gap-2">
-                  <input 
-                    type="text"
-                    placeholder="Nama atau email..."
-                    value={searchInput}
-                    onChange={(e) => setSearchInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                    className="field-control flex-1 text-sm"
-                  />
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                    <input 
+                      type="text"
+                      placeholder="Nama atau email..."
+                      value={searchInput}
+                      onChange={(e) => setSearchInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                      className="field-control w-full pl-9 text-sm"
+                    />
+                  </div>
                   <Button size="sm" onClick={handleSearch}>Cari</Button>
                 </div>
               </div>
@@ -346,9 +388,14 @@ export function AdminApplicantListPage() {
                   ))}
                 </select>
               </div>
-              <Button size="sm" variant="outline" onClick={exportToCSV} className="text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 border-emerald-200">
-                Export CSV
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={loadApplicants} className="text-slate-600 border-slate-300" disabled={isLoading}>
+                  <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} /> Refresh
+                </Button>
+                <Button size="sm" variant="outline" onClick={exportToCSV} className="text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 border-emerald-200">
+                  <Download className="h-4 w-4 mr-2" /> Export CSV
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
@@ -377,7 +424,15 @@ export function AdminApplicantListPage() {
                   </thead>
                   <tbody>
                     {rows.map((row) => (
-                      <tr key={row.id}>
+                      <tr 
+                        key={row.id}
+                        className={`transition-colors cursor-pointer ${selectedApplicantId === row.applicant_id ? 'bg-primary/10 border-l-2 border-primary' : 'hover:bg-slate-50 border-l-2 border-transparent'}`}
+                        onClick={() => {
+                          setSelectedApplicantId(row.applicant_id);
+                          void loadAnswers(row.applicant_id);
+                          void loadPlacementOptions(row.program_id);
+                        }}
+                      >
                         <td>
                           <span className="font-medium">{row.applicants.full_name}</span>
                           <span className="block text-xs text-muted-foreground">
@@ -393,12 +448,8 @@ export function AdminApplicantListPage() {
                         <td>
                           <Button
                             size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setSelectedApplicantId(row.applicant_id);
-                              void loadAnswers(row.applicant_id);
-                              void loadPlacementOptions(row.program_id);
-                            }}
+                            variant={selectedApplicantId === row.applicant_id ? "default" : "outline"}
+                            className="pointer-events-none"
                           >
                             Detail
                           </Button>
@@ -429,9 +480,10 @@ export function AdminApplicantListPage() {
           </CardHeader>
           <CardContent>
             {!selectedRow ? (
-              <p className="text-sm text-muted-foreground">
-                Pilih pendaftar untuk melihat detail dan melakukan review.
-              </p>
+              <div className="flex flex-col items-center justify-center p-12 text-center text-slate-500">
+                <UserCircle className="h-16 w-16 text-slate-300 mb-4" />
+                <p className="text-sm">Pilih pendaftar dari tabel di sebelah kiri untuk melihat detail dan melakukan review.</p>
+              </div>
             ) : (
               <div className="space-y-5">
                 <dl className="detail-grid">
@@ -566,25 +618,54 @@ export function AdminApplicantListPage() {
                   </label>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="space-y-3 rounded-lg border p-3 mt-4">
+                  <h3 className="text-sm font-semibold">Catatan Admin</h3>
+                  <textarea
+                    className="w-full min-h-[80px] p-3 rounded-md border border-input focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+                    placeholder="Tuliskan catatan mengapa pendaftar ditolak atau perlu revisi..."
+                    value={adminNotes}
+                    onChange={(e) => setAdminNotes(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">Catatan akan disimpan saat Anda menekan salah satu tombol aksi di bawah.</p>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-4 border-t mt-4">
                   <Button
                     disabled={isUpdating || selectedRow.applicants.status === "accepted"}
                     onClick={() => void approveAndEnroll()}
                     size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
                   >
-                    Approve & Enrollment
+                    <CheckCircle2 className="h-4 w-4 mr-2" /> Approve & Enrollment
                   </Button>
-                  {reviewActions.map((action) => (
-                    <Button
-                      disabled={isUpdating}
-                      key={action.status}
-                      onClick={() => void updateStatus(action.status)}
-                      size="sm"
-                      variant={action.variant}
-                    >
-                      {action.label}
-                    </Button>
-                  ))}
+                  
+                  <Button
+                    disabled={isUpdating}
+                    onClick={() => void updateStatus("under_review")}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Mulai Review
+                  </Button>
+
+                  <Button
+                    disabled={isUpdating}
+                    onClick={() => void updateStatus("revision_requested")}
+                    size="sm"
+                    variant="secondary"
+                    className="bg-amber-100 text-amber-800 hover:bg-amber-200"
+                  >
+                    <AlertCircle className="h-4 w-4 mr-2" /> Minta Revisi
+                  </Button>
+
+                  <Button
+                    disabled={isUpdating}
+                    onClick={() => void updateStatus("rejected")}
+                    size="sm"
+                    variant="destructive"
+                  >
+                    <XCircle className="h-4 w-4 mr-2" /> Reject
+                  </Button>
                 </div>
               </div>
             )}

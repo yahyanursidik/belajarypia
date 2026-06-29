@@ -38,12 +38,15 @@ const emptyLesson = {
   lesson_type: "content",
   order_no: "",
   release_at: "",
-  visibility_status: "draft" as LessonVisibilityStatus,
+  visibility_status: "published" as LessonVisibilityStatus,
   content_body: "",
   external_url: "",
   passing_grade: "",
   duration_minutes: "",
-  max_attempts: ""
+  max_attempts: "",
+  is_strict_mode: false,
+  max_tab_switches: "3",
+  randomized_questions_count: ""
 };
 const emptyQuestion = { question_text: "", optA: "", optB: "", optC: "", optD: "", correct_option: "A", explanation: "", points: 10 };
 
@@ -98,6 +101,9 @@ export function ProgramBuilderPage() {
   const [questionForm, setQuestionForm] = useState(emptyQuestion);
   const [isBankSelectModalOpen, setIsBankSelectModalOpen] = useState(false);
   const [allBankItems, setAllBankItems] = useState<any[]>([]);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importPreview, setImportPreview] = useState<any[]>([]);
   const [selectedBankItems, setSelectedBankItems] = useState<Record<string, boolean>>({});
 
   const [syllabusForm, setSyllabusForm] = useState("");
@@ -139,6 +145,83 @@ export function ProgramBuilderPage() {
     }
     if (!existingUploadedDoc) setUploadPreviewUrl(null);
   }, [selectedUploadFile, existingUploadedDoc]);
+
+  /* ── Loader Functions ── */
+  const parseQuestionsText = (text: string) => {
+    const questions: any[] = [];
+    const matches = [...text.matchAll(/(?:^|\n)\s*(\d+)\.\s+([\s\S]*?)(?=(?:\n\s*\d+\.\s+)|$)/g)];
+    
+    for (const match of matches) {
+      const block = match[2].trim();
+      const lines = block.split('\n').map(l => l.trim()).filter(l => l);
+      if (lines.length === 0) continue;
+      
+      const qTextLine = lines[0];
+      const options: {label: string, text: string}[] = [];
+      let correctAnswer = "";
+      
+      for (const line of lines.slice(1)) {
+        const optMatch = line.match(/^([A-E])[.)]\s*(.*)/i);
+        if (optMatch) {
+          options.push({ label: optMatch[1].toUpperCase(), text: optMatch[2].trim() });
+        } else {
+          const keyMatch = line.match(/^kunci\s*:\s*([A-E])/i);
+          if (keyMatch) {
+            correctAnswer = keyMatch[1].toUpperCase();
+          }
+        }
+      }
+      
+      const isValid = options.length >= 2 && correctAnswer !== "";
+      
+      questions.push({
+        question_text: qTextLine,
+        options,
+        correct_answer: correctAnswer,
+        isValid
+      });
+    }
+    
+    setImportPreview(questions);
+  };
+
+  const handleBulkImport = async () => {
+    if (!managingBankId) return;
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    
+    const validQuestions = importPreview.filter(q => q.isValid);
+    if (validQuestions.length === 0) {
+      setIsSubmitting(false);
+      return;
+    }
+    
+    const insertData = validQuestions.map(q => {
+      const ops = q.options.map((opt: any) => opt.text);
+      const correctAnswerText = q.options.find((opt: any) => opt.label === q.correct_answer)?.text || "";
+
+      return {
+        question_bank_id: managingBankId,
+        question_type: "multiple_choice",
+        question_text: q.question_text,
+        options: ops,
+        correct_answer: correctAnswerText,
+        points: 10
+      };
+    });
+    
+    const { error } = await supabase.from("question_bank_items").insert(insertData);
+    if (error) {
+      setErrorMessage(error.message);
+    } else {
+      setMessage(`${validQuestions.length} soal berhasil diimpor.`);
+      setIsImportModalOpen(false);
+      setImportText("");
+      setImportPreview([]);
+      await loadBankItems(managingBankId);
+    }
+    setIsSubmitting(false);
+  };
 
   /* ── Data Loading ── */
   const loadData = async () => {
@@ -269,7 +352,9 @@ export function ProgramBuilderPage() {
       external_url: lesson.external_url || "",
       passing_grade: lesson.passing_grade?.toString() || "",
       duration_minutes: lesson.duration_minutes?.toString() || "",
-      max_attempts: lesson.max_attempts?.toString() || ""
+      max_attempts: lesson.max_attempts?.toString() || "",
+      is_strict_mode: lesson.is_strict_mode || false,
+      max_tab_switches: lesson.max_tab_switches?.toString() || "3"
     });
     setEditingLessonId(lesson.id);
     setIsLessonModalOpen(true);
@@ -304,7 +389,7 @@ export function ProgramBuilderPage() {
   };
 
   const openSelectFromBank = async () => {
-    const { data } = await supabase.from("question_bank_items").select("*, question_banks!inner(name, programs(title))");
+    const { data } = await supabase.from("question_bank_items").select("*, question_banks!inner(name, programs(name))");
     setAllBankItems(data || []);
     setSelectedBankItems({});
     setIsBankSelectModalOpen(true);
@@ -446,6 +531,9 @@ export function ProgramBuilderPage() {
       passing_grade: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? (lessonForm.passing_grade ? Number(lessonForm.passing_grade) : null) : null,
       duration_minutes: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? (lessonForm.duration_minutes ? Number(lessonForm.duration_minutes) : null) : null,
       max_attempts: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? (lessonForm.max_attempts ? Number(lessonForm.max_attempts) : null) : null,
+      is_strict_mode: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? lessonForm.is_strict_mode : false,
+      max_tab_switches: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? Number(lessonForm.max_tab_switches || 3) : 3,
+      randomized_questions_count: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? (lessonForm.randomized_questions_count ? Number(lessonForm.randomized_questions_count) : null) : null,
     };
 
     const request = editingLessonId
@@ -1323,45 +1411,107 @@ export function ProgramBuilderPage() {
                     )}
                   </div>
                 ) : lessonModalMode === "kuis" ? (
-                  <div className="space-y-4 p-5 bg-orange-50/50 dark:bg-orange-950/20 rounded-xl border border-orange-100 dark:border-orange-900/50">
-                    <label className="text-sm font-semibold flex items-center gap-2 text-orange-700 dark:text-orange-400">
-                      <BookOpen className="h-4 w-4" /> Pengaturan Nilai & Evaluasi
+                  <div className="space-y-5 p-5 bg-primary/5 rounded-xl border border-primary/20 shadow-sm">
+                    <label className="text-sm font-semibold flex items-center gap-2 text-primary">
+                      <BookOpen className="h-4 w-4" /> Pengaturan Ujian & Kelulusan
                     </label>
-                    <div className="grid gap-4 md:grid-cols-3">
+                    <div className="grid gap-5 md:grid-cols-3">
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-muted-foreground">Passing Grade (Nilai Kelulusan)</label>
-                        <Input
-                          type="number"
-                          placeholder="Misal: 70"
-                          value={lessonForm.passing_grade}
-                          onChange={e => setLessonForm(c => ({ ...c, passing_grade: e.target.value }))}
-                          className="h-11"
-                        />
+                        <label className="text-xs font-medium text-slate-700 dark:text-slate-300">Passing Grade (Nilai Kelulusan)</label>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            placeholder="Misal: 70"
+                            value={lessonForm.passing_grade}
+                            onChange={e => setLessonForm(c => ({ ...c, passing_grade: e.target.value }))}
+                            className="h-11 border-primary/30 focus:border-primary focus:ring-primary/20 transition-all pr-8 bg-background"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">%</span>
+                        </div>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-muted-foreground">Durasi (Menit)</label>
-                        <Input
-                          type="number"
-                          placeholder="Kosong = Tanpa Batas"
-                          value={lessonForm.duration_minutes}
-                          onChange={e => setLessonForm(c => ({ ...c, duration_minutes: e.target.value }))}
-                          className="h-11"
-                        />
+                        <label className="text-xs font-medium text-slate-700 dark:text-slate-300">Batas Waktu (Durasi)</label>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            placeholder="Bebas"
+                            value={lessonForm.duration_minutes}
+                            onChange={e => setLessonForm(c => ({ ...c, duration_minutes: e.target.value }))}
+                            className="h-11 border-primary/30 focus:border-primary focus:ring-primary/20 transition-all pr-12 bg-background"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">Menit</span>
+                        </div>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-muted-foreground">Batas Percobaan Ulang</label>
-                        <Input
-                          type="number"
-                          placeholder="Kosong = Tanpa Batas"
-                          value={lessonForm.max_attempts}
-                          onChange={e => setLessonForm(c => ({ ...c, max_attempts: e.target.value }))}
-                          className="h-11"
-                        />
+                        <label className="text-xs font-medium text-slate-700 dark:text-slate-300">Batas Percobaan Ulang</label>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            placeholder="Bebas"
+                            value={lessonForm.max_attempts}
+                            onChange={e => setLessonForm(c => ({ ...c, max_attempts: e.target.value }))}
+                            className="h-11 border-primary/30 focus:border-primary focus:ring-primary/20 transition-all pr-10 bg-background"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">Kali</span>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-slate-700 dark:text-slate-300">Batas Soal Ditampilkan (Acak)</label>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            placeholder="Semua"
+                            value={lessonForm.randomized_questions_count}
+                            onChange={e => setLessonForm(c => ({ ...c, randomized_questions_count: e.target.value }))}
+                            className="h-11 border-primary/30 focus:border-primary focus:ring-primary/20 transition-all pr-10 bg-background"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">Soal</span>
+                        </div>
                       </div>
                     </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed mt-2 bg-orange-100/50 p-2 rounded">
-                      💡 <strong>Kelola Soal:</strong> Setelah kuis ini disimpan, Anda dapat mengklik tombol <strong>Kelola Soal</strong> di daftar materi untuk membuat soal secara manual atau mengimpor dari Bank Soal.
-                    </p>
+                    
+                    <div className="mt-5 p-4 rounded-lg border border-primary/20 bg-background shadow-sm relative overflow-hidden">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-primary"></div>
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <div>
+                          <label className="text-sm font-semibold text-foreground">Mode Ujian Ketat (Anti-Cheat)</label>
+                          <p className="text-xs text-muted-foreground mt-0.5">Mencegah peserta pindah tab, copy-paste, dan membatasi aplikasi lain. Direkomendasikan untuk ujian kelulusan.</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                          <input 
+                            type="checkbox" 
+                            className="sr-only peer"
+                            checked={lessonForm.is_strict_mode}
+                            onChange={(e) => setLessonForm(c => ({ ...c, is_strict_mode: e.target.checked }))}
+                          />
+                          <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                        </label>
+                      </div>
+                      
+                      {lessonForm.is_strict_mode && (
+                        <div className="pt-3 border-t border-primary/10 flex flex-col gap-2">
+                          <label className="text-xs font-medium text-foreground">Toleransi Pindah Layar / Tab</label>
+                          <div className="flex items-center gap-3">
+                            <Input
+                              type="number"
+                              min="0"
+                              placeholder="3"
+                              value={lessonForm.max_tab_switches}
+                              onChange={e => setLessonForm(c => ({ ...c, max_tab_switches: e.target.value }))}
+                              className="h-9 w-24 border-primary/30 focus:border-primary focus:ring-primary/20 bg-background text-sm"
+                            />
+                            <span className="text-xs text-muted-foreground">Kali (Ujian otomatis batal jika melebihi)</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-start gap-3 mt-4 bg-primary/10 p-3 rounded-lg border border-primary/20">
+                      <div className="mt-0.5 text-primary">💡</div>
+                      <p className="text-sm text-foreground/80 leading-relaxed">
+                        <strong>Kelola Soal:</strong> Setelah ujian/kuis ini disimpan, Anda dapat menyusun butir soal melalui tombol <strong>"Kelola Soal"</strong> yang akan muncul pada daftar modul materi.
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-3 p-4 bg-muted/30 rounded-xl border">
@@ -1525,6 +1675,9 @@ export function ProgramBuilderPage() {
                 <Button className="shadow-sm" onClick={() => { setQuestionTarget("bank"); setQuestionForm(emptyQuestion); setIsCreateQuestionModalOpen(true); }}>
                   <Plus className="h-4 w-4 mr-2" /> Buat Soal Baru
                 </Button>
+                <Button variant="outline" className="shadow-sm" onClick={() => { setIsImportModalOpen(true); setImportText(""); setImportPreview([]); }}>
+                  <Upload className="h-4 w-4 mr-2" /> Impor Soal (Teks)
+                </Button>
               </div>
 
               {bankItems.length === 0 ? (
@@ -1583,6 +1736,25 @@ export function ProgramBuilderPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
+                  <div className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm border mb-2">
+                    <label className="flex items-center gap-3 cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        className="w-5 h-5 shrink-0 accent-primary" 
+                        checked={allBankItems.length > 0 && Object.values(selectedBankItems).filter(Boolean).length === allBankItems.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            const newSelected: Record<string, boolean> = {};
+                            allBankItems.forEach(q => newSelected[q.id] = true);
+                            setSelectedBankItems(newSelected);
+                          } else {
+                            setSelectedBankItems({});
+                          }
+                        }}
+                      />
+                      <span className="font-semibold text-sm">Pilih Semua Soal ({allBankItems.length})</span>
+                    </label>
+                  </div>
                   {allBankItems.map(q => (
                     <Card key={q.id} className={`cursor-pointer transition-colors ${selectedBankItems[q.id] ? "border-primary bg-primary/5" : ""}`} onClick={() => setSelectedBankItems(prev => ({ ...prev, [q.id]: !prev[q.id] }))}>
                       <div className="flex gap-4 p-4 items-center">
@@ -1592,7 +1764,7 @@ export function ProgramBuilderPage() {
                           <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                             <BookOpen className="h-3 w-3" /> {q.question_banks?.name} 
                             <span className="opacity-50">•</span> 
-                            <span className="truncate">{q.question_banks?.programs?.title || "Program"}</span>
+                            <span className="truncate">{q.question_banks?.programs?.name || "Program"}</span>
                           </p>
                         </div>
                       </div>
@@ -1733,6 +1905,85 @@ export function ProgramBuilderPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Modal Import Soal (Bulk Text) */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+            <CardHeader className="border-b flex flex-row items-center justify-between py-4 shrink-0 bg-slate-50">
+              <div>
+                <CardTitle className="text-xl">Impor Soal Massal (Dari Teks)</CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">Salin dan tempel daftar soal Anda ke kotak di bawah ini.</p>
+              </div>
+              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsImportModalOpen(false)}>
+                <X className="h-5 w-5" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0 flex-1 overflow-y-auto bg-muted/10 grid grid-cols-1 md:grid-cols-2">
+              <div className="p-4 border-r bg-white flex flex-col">
+                <label className="text-sm font-semibold mb-2 block">Teks Sumber Soal</label>
+                <textarea 
+                  className="w-full h-[400px] p-4 text-sm border rounded-xl focus:ring-primary focus:border-primary font-mono text-slate-700 bg-slate-50" 
+                  placeholder={"1. Apa tujuan manusia diciptakan?\nA. Mencari ilmu\nB. Beribadah\nKunci: B\n\n2. Makna tauhid adalah...\nA. Mengikhlaskan ibadah\nB. Membaca\nKunci: A"}
+                  value={importText}
+                  onChange={(e) => {
+                    setImportText(e.target.value);
+                    parseQuestionsText(e.target.value);
+                  }}
+                />
+                <div className="mt-4 p-3 bg-blue-50 text-blue-800 text-xs rounded-lg border border-blue-100">
+                  <strong>Format:</strong><br />
+                  - Awali soal dengan angka & titik (<code>1. </code>, <code>2. </code>)<br />
+                  - Awali opsi dengan huruf (<code>A. </code>, <code>B. </code>)<br />
+                  - Di bagian akhir, tambahkan baris <code>Kunci: [A/B/C/D]</code>
+                  
+                  <div className="mt-3 pt-3 border-t border-blue-200/50">
+                    <a href="/template-impor-soal.txt" download className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-blue-200 rounded text-blue-700 hover:bg-blue-50 transition-colors font-medium">
+                      <FileText className="w-3.5 h-3.5" />
+                      Unduh Contoh Format (.txt)
+                    </a>
+                  </div>
+                </div>
+              </div>
+              <div className="p-4 flex flex-col bg-slate-50 overflow-y-auto h-[500px]">
+                <label className="text-sm font-semibold mb-2 block">Pratinjau Hasil Impor ({importPreview.filter(q => q.isValid).length} Valid)</label>
+                {importPreview.length === 0 ? (
+                  <div className="text-center p-8 text-muted-foreground border border-dashed rounded-xl bg-white">
+                    Mulai mengetik/paste untuk melihat pratinjau.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {importPreview.map((q, idx) => (
+                      <Card key={idx} className={`p-4 border-l-4 ${q.isValid ? 'border-l-emerald-500 shadow-sm' : 'border-l-red-500 bg-red-50'}`}>
+                        <p className="font-semibold text-sm mb-2">{idx + 1}. {q.question_text}</p>
+                        <div className="space-y-1 mb-3">
+                          {q.options.map((opt: any, oidx: number) => (
+                            <div key={oidx} className="text-xs flex gap-2">
+                              <span className="font-bold text-slate-500">{opt.label}.</span> 
+                              <span className={opt.label === q.correct_answer ? "font-semibold text-emerald-700 bg-emerald-100 px-1 rounded" : "text-slate-600"}>
+                                {opt.text}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        {!q.isValid && (
+                          <p className="text-xs text-red-600 font-medium">⚠️ Format soal tidak lengkap atau Kunci salah.</p>
+                        )}
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+            <div className="p-4 border-t flex justify-end gap-3 bg-slate-50 shrink-0">
+              <Button type="button" variant="outline" onClick={() => setIsImportModalOpen(false)}>Batal</Button>
+              <Button disabled={isSubmitting || importPreview.filter(q => q.isValid).length === 0} onClick={handleBulkImport}>
+                {isSubmitting ? "Menyimpan..." : `Simpan ${importPreview.filter(q => q.isValid).length} Soal`}
+              </Button>
+            </div>
+          </Card>
+        </div>
       )}
 
     </div>

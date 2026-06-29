@@ -62,7 +62,7 @@ export function SuperAdminDashboardPage() {
           </div>
           <div>
             <p className="text-white/70 text-sm font-medium mb-1 tracking-wide uppercase">Assalamu'alaikum 👋</p>
-            <h2 className="text-white text-3xl font-bold tracking-tight">Pusat Kendali Sistem</h2>
+            <h2 className="text-white text-3xl font-bold tracking-tight">Pusat Kendali Sistem YPIA</h2>
             <p className="text-white/80 max-w-xl text-sm leading-relaxed mt-1">
               Pantau kesehatan server, kelola hak akses global, dan navigasikan seluruh modul operasional LMS dari satu tempat.
             </p>

@@ -9,6 +9,7 @@ import {
   User,
   Users,
   Wallet,
+  Award,
 } from "lucide-react";
 
 export const menuIcon = {
@@ -22,4 +23,5 @@ export const menuIcon = {
   helpdesk: MessageCircleQuestion,
   contentReview: FileCheck,
   audit: ShieldCheck,
+  certificate: Award,
 } as const;

@@ -8,8 +8,8 @@ export function SuperAdminLayout({ children }: PropsWithChildren) {
 
   return (
     <ShellLayout
-      title="Pusat Kendali Sistem"
-      subtitle="Superadmin Governance & Monitoring"
+      title="Pusat Kendali Sistem YPIA"
+      subtitle="Tata Kelola & Pemantauan LMS YPIA"
       variant="superadmin"
       menuItems={getNavigationForRole(primaryRole)}
     >

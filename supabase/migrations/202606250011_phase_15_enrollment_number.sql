@@ -243,7 +243,7 @@ as $$
 declare
   participant_record public.participants%rowtype;
   generated_enrollment_number text;
-  enrollment_id uuid;
+  v_enrollment_id uuid;
   template_id uuid;
   actor_id uuid := auth.uid();
   v_use_custom boolean;
@@ -299,7 +299,7 @@ begin
       halaqah_id = excluded.halaqah_id,
       enrollment_status = 'active',
       started_at = coalesce(public.enrollments.started_at, now())
-  returning id into enrollment_id;
+  returning id into v_enrollment_id;
 
   insert into public.enrollment_status_logs (
     enrollment_id,
@@ -308,7 +308,7 @@ begin
     reason,
     changed_by
   )
-  values (enrollment_id, null, 'active', 'Direct Enrollment via Dashboard', actor_id);
+  values (v_enrollment_id, null, 'active', 'Direct Enrollment via Dashboard', actor_id);
 
   select id into template_id
   from public.onboarding_templates
@@ -335,19 +335,19 @@ begin
     template_id,
     status
   )
-  values (target_participant_id, enrollment_id, template_id, 'not_started')
+  values (target_participant_id, v_enrollment_id, template_id, 'not_started')
   on conflict (enrollment_id) do nothing;
 
   insert into public.onboarding_step_progresses (onboarding_progress_id, step_key)
   select op.id, os.step_key
   from public.onboarding_progresses op
   join public.onboarding_steps os on os.template_id = op.template_id
-  where op.enrollment_id = enrollment_id
+  where op.enrollment_id = v_enrollment_id
   on conflict do nothing;
 
   return jsonb_build_object(
     'participant_id', target_participant_id,
-    'enrollment_id', enrollment_id
+    'enrollment_id', v_enrollment_id
   );
 end;
 $$;

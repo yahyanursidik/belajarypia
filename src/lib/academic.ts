@@ -47,6 +47,9 @@ export type Lesson = {
   passing_grade?: number | null;
   duration_minutes?: number | null;
   max_attempts?: number | null;
+  is_strict_mode?: boolean | null;
+  max_tab_switches?: number | null;
+  randomized_questions_count?: number | null;
   program_modules?: Pick<ProgramModule, "id" | "title" | "code" | "program_id"> & {
     programs?: Pick<Program, "name" | "code"> | null;
   };

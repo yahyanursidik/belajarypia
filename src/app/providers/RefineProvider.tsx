@@ -102,6 +102,18 @@ export function RefineAppProvider({ children }: PropsWithChildren) {
           list: "/admin/enrollment",
           meta: { label: "Enrollment" },
         },
+        {
+          name: "certificate_templates",
+          list: "/admin/sertifikat",
+          create: "/admin/sertifikat/create",
+          edit: "/admin/sertifikat/edit/:id",
+          meta: { label: "Template Syahadah" },
+        },
+        {
+          name: "certificate_issuance_batches",
+          list: "/admin/sertifikat/antrean",
+          meta: { label: "Antrean Syahadah" },
+        },
       ]}
     >
       {children}

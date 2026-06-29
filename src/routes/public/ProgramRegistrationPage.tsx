@@ -44,6 +44,7 @@ export function ProgramRegistrationPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [submittedGender, setSubmittedGender] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadForm() {
@@ -63,7 +64,7 @@ export function ProgramRegistrationPage() {
 
       const { data: formRows } = await supabase
         .from("registration_forms")
-        .select("id, program_id, title, description, status")
+        .select("id, program_id, title, description, status, group_settings")
         .eq("status", "active")
         .or(`program_id.eq.${programId},program_id.is.null`)
         .order("program_id", { ascending: false })
@@ -124,10 +125,55 @@ export function ProgramRegistrationPage() {
       </section>
 
       {successMessage ? (
-        <Alert>
-          <AlertTitle>Pendaftaran terkirim</AlertTitle>
-          <AlertDescription>{successMessage}</AlertDescription>
-        </Alert>
+        <div className="space-y-4">
+          <Alert className="bg-emerald-50 text-emerald-900 border-emerald-200">
+            <AlertTitle>Pendaftaran terkirim</AlertTitle>
+            <AlertDescription>{successMessage}</AlertDescription>
+          </Alert>
+
+          {registrationForm?.group_settings && registrationForm.group_settings.platform !== "none" && (
+            <Card className="border-primary/20 shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <CardHeader className="bg-primary/5 border-b pb-4">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <span>Bergabung dengan Grup {registrationForm.group_settings.platform === 'whatsapp' ? 'WhatsApp' : 'Telegram'}</span>
+                </CardTitle>
+                <CardDescription>
+                  Silakan bergabung ke grup komunitas untuk mendapatkan informasi selanjutnya.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-6">
+                <div className="flex flex-col gap-3">
+                  {(() => {
+                    const settings = registrationForm.group_settings!;
+                    let groups: { name: string; link: string }[] = [];
+                    
+                    if (settings.separated_gender) {
+                      if (submittedGender === "male") {
+                        groups = settings.ikhwan_groups || [];
+                      } else if (submittedGender === "female") {
+                        groups = settings.akhwat_groups || [];
+                      }
+                    } else {
+                      groups = settings.general_groups || [];
+                    }
+
+                    if (groups.length === 0) {
+                      return <p className="text-sm text-slate-500">Tautan grup belum tersedia.</p>;
+                    }
+
+                    return groups.map((g, idx) => (
+                      <Button key={idx} asChild variant="outline" className="w-full justify-start text-left h-auto py-3 border-primary/30 hover:border-primary hover:bg-primary/5">
+                        <a href={g.link} target="_blank" rel="noopener noreferrer">
+                          <span className="font-semibold text-primary">{g.name || `Grup ${idx + 1}`}</span>
+                        </a>
+                      </Button>
+                    ));
+                  })()}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       ) : null}
       {errorMessage ? (
         <Alert>
@@ -203,6 +249,7 @@ export function ProgramRegistrationPage() {
                 }
               }
 
+              setSubmittedGender(coreForm.gender);
               setCoreForm(initialCoreForm);
               setAnswers({});
               setSuccessMessage(

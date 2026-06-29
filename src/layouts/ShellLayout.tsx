@@ -72,7 +72,7 @@ export function ShellLayout({
 
   return (
     <div className={`app-shell app-shell-${variant}`}>
-      <aside className="app-shell__sider">
+      <aside className={cn("app-shell__sider print:hidden", variant === "learner" && "hidden md:flex")}>
         <Link to="/" className="app-shell__brand" aria-label={appName}>
           <span className="app-shell__brand-icon">
             <BrandIcon className="h-6 w-6 text-white" />
@@ -80,7 +80,7 @@ export function ShellLayout({
           <span className="min-w-0">
             <span className="app-shell__brand-title">{settings?.institution_name || appName}</span>
             <span className="app-shell__brand-subtitle">
-              {settings?.institution_profile || "Yayasan Pendidikan Islam Asy-Syukriyyah"}
+              {settings?.institution_profile || "Yayasan Pendidikan Ihsanul Adab (YPIA)"}
             </span>
           </span>
         </Link>
@@ -105,8 +105,8 @@ export function ShellLayout({
           })}
         </nav>
       </aside>
-      <div className="app-shell__main">
-        <header className="app-shell__header">
+      <div className="app-shell__main print:w-full print:m-0 print:p-0">
+        <header className={cn("app-shell__header print:hidden", variant === "learner" && "!hidden md:!flex")}>
           <div>
             <h1 className="app-shell__title">{title}</h1>
             <p className="app-shell__subtitle">{subtitle}</p>
@@ -117,15 +117,19 @@ export function ShellLayout({
                 <Bell className="h-5 w-5" />
               </Button>
               <div className="h-8 w-[1px] bg-border mx-2"></div>
-              <div className="flex items-center gap-3">
+              <Link 
+                to={variant === 'superadmin' ? '/system/profil' : variant === 'admin' ? '/admin/profil' : variant === 'teacher' ? '/teacher/konten' : '/learner'}
+                className="flex items-center gap-3 hover:bg-slate-100/80 p-1 pr-3 -ml-1 rounded-full transition-all cursor-pointer"
+                title="Pengaturan Profil Saya"
+              >
                 <div className="hidden md:block text-right">
                   <p className="text-sm font-semibold">{displayName}</p>
                   <p className="text-xs text-muted-foreground capitalize">{primaryRole.replace('_', ' ')}</p>
                 </div>
-                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold border border-primary/20">
+                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold border border-primary/20 shadow-sm">
                   {initials}
                 </div>
-              </div>
+              </Link>
               <Button
                 variant="outline"
                 size="sm"
@@ -144,12 +148,49 @@ export function ShellLayout({
             </div>
           ) : null}
         </header>
-        <main className="app-shell__content">
+        <main className="app-shell__content print:p-0 print:m-0 print:block">
           <Suspense fallback={<ContentFallback />}>
             {children}
           </Suspense>
         </main>
       </div>
+      
+      {/* Mobile Bottom Navigation (Learner Only) */}
+      {variant === 'learner' && (
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-50 flex items-center justify-around pb-safe h-16 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            const isActive =
+              item.href === "/"
+                ? location.pathname === item.href
+                : location.pathname.startsWith(item.href);
+
+            return (
+              <Link
+                key={item.href}
+                to={item.href}
+                className={cn(
+                  "flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors",
+                  isActive ? "text-primary" : "text-slate-400 hover:text-slate-800"
+                )}
+              >
+                <div className={cn(
+                  "p-1 rounded-full transition-all flex items-center justify-center", 
+                  isActive ? "bg-primary/10 text-primary" : "text-slate-400"
+                )}>
+                  <Icon className="h-5 w-5" />
+                </div>
+                <span className={cn(
+                  "text-[11px] leading-tight", 
+                  isActive ? "text-primary font-bold" : "text-slate-500 font-medium"
+                )}>
+                  {item.label.replace(' Saya', '')}
+                </span>
+              </Link>
+            );
+          })}
+        </nav>
+      )}
     </div>
   );
 }
