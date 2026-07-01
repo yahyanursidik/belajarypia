@@ -170,7 +170,7 @@ export function TeacherClassPage() {
             )}
             {classes.length > 0 && (
               <TabsTrigger value="kelas" className="rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm px-6">
-                <GraduationCap className="mr-2 h-4 w-4" /> Kelas ({filteredClasses.length})
+                <GraduationCap className="h-5 w-5 text-primary" /> Kelas ({filteredClasses.length})
               </TabsTrigger>
             )}
           </TabsList>
@@ -185,17 +185,17 @@ export function TeacherClassPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredPrograms.map((prog) => (
                     <Card key={prog.id} className="flex flex-col overflow-hidden border-border/50 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-300 group bg-white hover:-translate-y-1">
-                      <div className="h-1.5 bg-blue-500 w-full transition-all group-hover:bg-blue-600" />
+                      <div className="h-1.5 bg-primary/80 w-full transition-all group-hover:bg-primary" />
                       <CardHeader className="pb-3">
                         <div className="flex justify-between items-start mb-2">
-                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                          <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20">
                             {prog.code}
                           </Badge>
                           <Badge variant={prog.status === "active" ? "default" : "secondary"} className="capitalize text-[10px] h-5 shadow-sm">
                             {prog.status}
                           </Badge>
                         </div>
-                        <CardTitle className="text-xl leading-tight group-hover:text-blue-700 transition-colors">
+                        <CardTitle className="text-xl leading-tight group-hover:text-primary transition-colors">
                           {prog.name}
                         </CardTitle>
                         <p className="text-sm text-slate-500 line-clamp-2 mt-2 h-10">
@@ -221,7 +221,7 @@ export function TeacherClassPage() {
                         </div>
                       </CardContent>
                       <div className="pt-0 pb-4 px-4 mt-auto">
-                        <Button variant="default" asChild className="w-full rounded-xl shadow-sm bg-blue-600 hover:bg-blue-700 hover:shadow-md transition-all text-white">
+                        <Button variant="default" asChild className="w-full rounded-xl shadow-sm hover:shadow-md transition-all">
                           <Link to={`/teacher/kelas/program/${prog.id}`}>
                             Kelola Program <ArrowRight className="ml-2 h-4 w-4" />
                           </Link>
@@ -244,14 +244,14 @@ export function TeacherClassPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredClasses.map((cls) => (
                     <Card key={cls.id} className="flex flex-col overflow-hidden border-border/50 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-300 group bg-white hover:-translate-y-1">
-                      <div className="h-1.5 bg-emerald-500 w-full transition-all group-hover:bg-emerald-600" />
+                      <div className="h-1.5 bg-primary/80 w-full transition-all group-hover:bg-primary" />
                       <CardHeader className="pb-3">
                         <div className="flex justify-between items-start mb-2">
-                          <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+                          <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20">
                             {cls.code}
                           </Badge>
                         </div>
-                        <CardTitle className="text-xl leading-tight group-hover:text-emerald-700 transition-colors">
+                        <CardTitle className="text-xl leading-tight group-hover:text-primary transition-colors">
                           {cls.name}
                         </CardTitle>
                         <p className="text-sm text-slate-500 mt-2 font-medium">
@@ -270,7 +270,7 @@ export function TeacherClassPage() {
                         </div>
                       </CardContent>
                       <div className="pt-0 pb-4 px-4 mt-auto">
-                        <Button variant="default" asChild className="w-full rounded-xl shadow-sm bg-emerald-600 hover:bg-emerald-700 hover:shadow-md transition-all text-white">
+                        <Button variant="default" asChild className="w-full rounded-xl shadow-sm hover:shadow-md transition-all">
                           <Link to={`/teacher/kelas/${cls.id}`}>
                             Kelola Kelas <ArrowRight className="ml-2 h-4 w-4" />
                           </Link>
