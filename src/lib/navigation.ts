@@ -57,6 +57,7 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
         { href: "/teacher/kelas", label: "Kelas Saya", icon: menuIcon.book },
         { href: "/teacher/konten", label: "Konten Materi", icon: menuIcon.book },
         { href: "/teacher/review", label: "Tugas & Review", icon: menuIcon.user },
+        { href: "/teacher/profil", label: "Profil Saya", icon: menuIcon.user },
       ];
     case "mentor":
       return [
@@ -64,6 +65,7 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
         { href: "/teacher/halaqah", label: "Halaqah", icon: menuIcon.team },
         { href: "/teacher/konten", label: "Konten Materi", icon: menuIcon.book },
         { href: "/teacher/quran", label: "Setoran Qur'an", icon: menuIcon.book },
+        { href: "/teacher/profil", label: "Profil Saya", icon: menuIcon.user },
       ];
     case "guardian":
       return [

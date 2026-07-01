@@ -216,6 +216,11 @@ const TeacherClassDashboardPage = lazy(() =>
     default: module.TeacherClassDashboardPage,
   })),
 );
+const TeacherProfilePage = lazy(() =>
+  import("./teacher/TeacherProfilePage").then((module) => ({
+    default: module.TeacherProfilePage,
+  })),
+);
 
 function RouteFallback() {
   return <FullPageLoader message="Memuat halaman..." />;
@@ -356,6 +361,7 @@ export function AppRoutes() {
           <Route path="kelas/program/:programId" element={<ProgramBuilderPage />} />
           <Route path="kelas/:classId" element={<TeacherClassDashboardPage />} />
           <Route path="konten" element={<TeacherPlaceholderPage />} />
+          <Route path="profil" element={<TeacherProfilePage />} />
           <Route path="*" element={<TeacherPlaceholderPage />} />
         </Route>
 
