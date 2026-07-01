@@ -58,6 +58,7 @@ export type Program = {
   delivery_mode: string;
   status: ProgramStatus;
   feature_flags: MvpFeatureFlags;
+  teacher_user_id?: string | null;
   grading_rubric?: GradingRubricItem[] | null;
   units?: Pick<Unit, "name" | "code"> | null;
 };

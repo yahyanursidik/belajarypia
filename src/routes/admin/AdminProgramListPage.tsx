@@ -29,6 +29,7 @@ type ProgramFormState = {
   delivery_mode: string;
   status: ProgramStatus;
   feature_flags: MvpFeatureFlags;
+  teacher_user_id: string;
 };
 
 const initialProgramForm: ProgramFormState = {
@@ -41,6 +42,7 @@ const initialProgramForm: ProgramFormState = {
   delivery_mode: "online",
   status: "draft",
   feature_flags: defaultMvpFeatureFlags,
+  teacher_user_id: "",
 };
 
 type ProgramWithEnrollments = Program & {
@@ -50,6 +52,7 @@ type ProgramWithEnrollments = Program & {
 export function AdminProgramListPage() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [programs, setPrograms] = useState<ProgramWithEnrollments[]>([]);
+  const [staff, setStaff] = useState<Array<{id: string, full_name: string | null, email: string}>>([]);
   const [form, setForm] = useState<ProgramFormState>(initialProgramForm);
   
   // UI States
@@ -72,10 +75,11 @@ export function AdminProgramListPage() {
     setIsLoading(true);
     setErrorMessage(null);
 
-    const [{ data: unitRows, error: unitError }, { data: programRows, error: programError }] =
+    const [{ data: unitRows, error: unitError }, { data: programRows, error: programError }, { data: staffRows }] =
       await Promise.all([
         supabase.from("units").select("id, organization_id, code, name, description, status").order("name"),
-        supabase.from("programs").select("id, unit_id, code, name, description, program_type, curriculum_model, delivery_mode, status, feature_flags, created_at, units(code, name), enrollments(id)").order("name"),
+        supabase.from("programs").select("id, unit_id, code, name, description, program_type, curriculum_model, delivery_mode, status, feature_flags, teacher_user_id, created_at, units(code, name), enrollments(id)").order("name"),
+        supabase.from("profiles").select("id, full_name, email")
       ]);
 
     if (unitError || programError) {
@@ -83,6 +87,7 @@ export function AdminProgramListPage() {
     } else {
       setUnits((unitRows ?? []) as Unit[]);
       setPrograms((programRows ?? []) as unknown as ProgramWithEnrollments[]);
+      setStaff((staffRows ?? []) as Array<{id: string, full_name: string | null, email: string}>);
     }
 
     setIsLoading(false);
@@ -152,6 +157,7 @@ export function AdminProgramListPage() {
       delivery_mode: p.delivery_mode,
       status: p.status,
       feature_flags: p.feature_flags,
+      teacher_user_id: p.teacher_user_id || "",
     });
     setEditingProgramId(p.id);
     setIsModalOpen(true);
@@ -497,6 +503,7 @@ export function AdminProgramListPage() {
                     delivery_mode: form.delivery_mode.trim() || "online",
                     status: form.status,
                     feature_flags: mergeWithDefaultFeatureFlags(form.feature_flags),
+                    teacher_user_id: form.teacher_user_id || null,
                   };
 
                   const request = editingProgramId 
@@ -554,7 +561,7 @@ export function AdminProgramListPage() {
                   />
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2 p-4 bg-muted/40 rounded-xl border">
+                <div className="grid gap-4 md:grid-cols-3 p-4 bg-muted/40 rounded-xl border">
                   <div className="space-y-2">
                     <label className="text-sm font-semibold flex items-center gap-2">
                       <Settings className="h-4 w-4 text-primary" /> Sistem Pembelajaran
@@ -564,12 +571,20 @@ export function AdminProgramListPage() {
                       onChange={(event) => setForm((current) => ({ ...current, curriculum_model: event.target.value }))}
                       value={form.curriculum_model}
                     >
-                      <option value="mandiri">Mandiri (Evergreen / Self-Paced)</option>
-                      <option value="angkatan">Terjadwal (Sistem Angkatan / Cohort)</option>
+                      <option value="mandiri">Mandiri (Evergreen)</option>
+                      <option value="angkatan">Terjadwal (Angkatan)</option>
                     </select>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {form.curriculum_model === 'mandiri' ? 'Peserta mendaftar dan belajar kapan saja.' : 'Peserta belajar bersama-sama dalam satu gelombang waktu.'}
-                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold">Pengampu Program</label>
+                    <select
+                      className="field-control bg-white h-10"
+                      onChange={(event) => setForm((current) => ({ ...current, teacher_user_id: event.target.value }))}
+                      value={form.teacher_user_id}
+                    >
+                      <option value="">-- Tanpa Pengampu (Opsional) --</option>
+                      {staff.map(s => <option key={s.id} value={s.id}>{s.full_name ?? s.email}</option>)}
+                    </select>
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-semibold">Status Awal</label>
