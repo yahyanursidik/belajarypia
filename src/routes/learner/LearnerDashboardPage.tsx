@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuthSession } from "../../app/providers/authSessionContext";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BookOpen, Award, IdCard, GraduationCap, Wallet, Megaphone } from "lucide-react";
-import type { Enrollment, OnboardingProgress, Participant, WhatsappGroup } from "../../lib/enrollment";
-import { mergeWithDefaultFeatureFlags } from "../../lib/organization";
+import { BookOpen, Award, IdCard, GraduationCap, Megaphone } from "lucide-react";
+import type { Enrollment, OnboardingProgress, Participant } from "../../lib/enrollment";
 import { supabase } from "../../lib/supabase";
 
 export function LearnerDashboardPage() {
@@ -15,7 +14,6 @@ export function LearnerDashboardPage() {
   const [participant, setParticipant] = useState<Participant | null>(null);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [onboarding, setOnboarding] = useState<OnboardingProgress[]>([]);
-  const [whatsappGroups, setWhatsappGroups] = useState<WhatsappGroup[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [availablePrograms, setAvailablePrograms] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -110,32 +108,6 @@ export function LearnerDashboardPage() {
         setAnnouncements(filteredAnns);
       }
 
-      const eligibleScopes = nextEnrollments
-        .filter((enrollment) => {
-          const flags = mergeWithDefaultFeatureFlags(enrollment.programs?.feature_flags);
-          return enrollment.enrollment_status === "active" && flags.use_whatsapp_group;
-        })
-        .flatMap((enrollment) => [
-          { scope_type: "program", scope_id: enrollment.program_id },
-          { scope_type: "batch", scope_id: enrollment.batch_id },
-          { scope_type: "class", scope_id: enrollment.class_id },
-          { scope_type: "halaqah", scope_id: enrollment.halaqah_id },
-        ])
-        .filter((scope): scope is { scope_type: string; scope_id: string } => Boolean(scope.scope_id));
-
-      if (eligibleScopes.length > 0) {
-        const filters = eligibleScopes
-          .map((scope) => `and(scope_type.eq.${scope.scope_type},scope_id.eq.${scope.scope_id})`)
-          .join(",");
-
-        const { data: waRows } = await supabase
-          .from("whatsapp_groups")
-          .select("id, scope_type, scope_id, group_name, invite_link, is_active")
-          .eq("is_active", true)
-          .or(filters);
-
-        setWhatsappGroups((waRows ?? []) as WhatsappGroup[]);
-      }
 
       const { data: allProgramsData } = await supabase
         .from("programs")
@@ -208,10 +180,6 @@ export function LearnerDashboardPage() {
 
   const activeEnrollments = enrollments.filter(
     (enrollment) => enrollment.enrollment_status === "active",
-  );
-  const onboardingByEnrollment = useMemo(
-    () => new Map(onboarding.map((item) => [item.enrollment_id, item])),
-    [onboarding],
   );
 
   if (isLoading) {
@@ -319,111 +287,7 @@ export function LearnerDashboardPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Program Saya</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {enrollments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Belum ada enrollment aktif.</p>
-          ) : (
-            <div className="space-y-4">
-              {enrollments.map((enrollment) => {
-                const currentOnboarding = onboardingByEnrollment.get(enrollment.id);
-                const flags = mergeWithDefaultFeatureFlags(enrollment.programs?.feature_flags);
-                const isSpp = flags.payment_type === "spp";
-                
-                const relatedGroups = whatsappGroups.filter((group) =>
-                  [
-                    enrollment.program_id,
-                    enrollment.batch_id,
-                    enrollment.class_id,
-                    enrollment.halaqah_id,
-                  ].includes(group.scope_id),
-                );
-
-                return (
-                  <div className="rounded-lg border p-4" key={enrollment.id}>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <h3 className="font-semibold">{enrollment.programs?.name ?? "Program"}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          Enrollment {enrollment.enrollment_number}
-                        </p>
-                      </div>
-                      <Badge variant={enrollment.enrollment_status === "active" ? "default" : "secondary"}>
-                        {enrollment.enrollment_status}
-                      </Badge>
-                    </div>
-                    <dl className="detail-grid mt-4">
-                      <div>
-                        <dt>Batch</dt>
-                        <dd>{enrollment.batches?.name ?? "-"}</dd>
-                      </div>
-                      <div>
-                        <dt>Kelas</dt>
-                        <dd>{enrollment.classes?.name ?? "-"}</dd>
-                      </div>
-                      <div>
-                        <dt>Halaqah</dt>
-                        <dd>{enrollment.halaqahs?.name ?? "-"}</dd>
-                      </div>
-                      <div>
-                        <dt>Onboarding</dt>
-                        <dd>{currentOnboarding?.status ?? "not_started"}</dd>
-                      </div>
-                    </dl>
-
-                    {isSpp && (
-                      <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-900 flex items-start gap-3">
-                        <Wallet className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-                        <div className="w-full">
-                          <h4 className="font-semibold text-sm">Pengingat SPP Bulanan</h4>
-                          <p className="text-xs mt-1 text-amber-800 leading-relaxed">
-                            Program ini menggunakan sistem Sumbangan Pembinaan Pendidikan (SPP) bulanan 
-                            sebesar <strong>Rp {(flags.payment_amount || 0).toLocaleString("id-ID")}</strong>. 
-                            Mohon siapkan infak SPP Anda agar kegiatan belajar mengajar berjalan lancar.
-                          </p>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="mt-3 bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800 w-full sm:w-auto"
-                            onClick={() => window.open(`https://wa.me/6281234567890?text=Assalamu'alaikum, saya ${participant?.display_name || "Peserta"} (NIM: ${participant?.global_participant_number || "-"}) ingin mengkonfirmasi pembayaran SPP untuk program ${enrollment.programs?.name}.`, "_blank")}
-                          >
-                            Konfirmasi Pembayaran via WhatsApp
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-
-                    {relatedGroups.length > 0 ? (
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {relatedGroups.map((group) => (
-                          <Button asChild key={group.id} size="sm" variant="outline">
-                            <a href={group.invite_link} rel="noreferrer" target="_blank">
-                              Gabung {group.group_name}
-                            </a>
-                          </Button>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    <div className="mt-6">
-                      <Button asChild className="w-full" size="lg">
-                        <Link to={`/learner/program/${enrollment.program_id}`}>
-                          Mulai Belajar / Lihat Materi
-                        </Link>
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="mt-8">
+      <Card className="mt-6">
         <CardHeader>
           <CardTitle>Katalog Program</CardTitle>
           <p className="text-sm text-muted-foreground">Program yang tersedia untuk Anda ikuti.</p>
