@@ -8,7 +8,7 @@ import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 
 export function TeacherProfilePage() {
-  const { profile, primaryRole } = useAuthSession();
+  const { profile, primaryRole, refresh } = useAuthSession();
   
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -51,6 +51,7 @@ export function TeacherProfilePage() {
         
       if (error) throw error;
       
+      await refresh();
       setProfileSuccess(true);
       setTimeout(() => setProfileSuccess(false), 3000);
     } catch (error: any) {
