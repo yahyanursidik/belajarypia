@@ -173,37 +173,48 @@ export function LearnerProgramLessonsPage() {
         </div>
       ) : (
         <div className={viewMode === "grid" ? "grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" : "flex flex-col gap-4"}>
-          {filteredPrograms.map((program) => (
-            <Card key={program.id} className={`flex hover:shadow-md transition-shadow overflow-hidden border-slate-200 ${viewMode === "list" ? "flex-col sm:flex-row items-stretch" : "flex-col h-full"}`}>
-              <CardHeader className={`bg-slate-50 border-slate-100 ${viewMode === "list" ? "sm:w-1/3 sm:border-r sm:border-b-0 border-b" : "border-b pb-4"}`}>
-                <Badge variant="outline" className="w-fit mb-2 bg-white">{program.code}</Badge>
-                <CardTitle className="text-xl leading-tight">
-                  {program.name}
-                </CardTitle>
-                <p className="text-sm text-slate-500 mt-2 font-mono bg-slate-100 px-2 py-1 rounded w-fit">
-                  ID: {program.enrollment.enrollment_number}
-                </p>
-              </CardHeader>
-              <CardContent className={`flex-1 flex flex-col justify-center ${viewMode === "list" ? "p-6" : "p-6 pt-6"}`}>
-                {viewMode === "list" ? (
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 w-full">
-                    <div className="text-sm text-slate-600 max-w-lg">
-                      Program ini sedang aktif. Anda dapat mengakses silabus materi, daftar pertemuan, dan memantau perkembangan belajar Anda di dalam kelas ini.
-                    </div>
-                    <Button size="lg" className="w-full sm:w-auto shrink-0" onClick={() => navigate(`/learner/program/${program.id}`)}>
-                      <BookOpen className="h-5 w-5 mr-2" />
-                      Masuk Kelas
-                    </Button>
-                  </div>
-                ) : (
+          {filteredPrograms.map((program) => 
+            viewMode === "grid" ? (
+              <Card key={program.id} className="flex flex-col h-full hover:shadow-md transition-shadow overflow-hidden border-slate-200">
+                <CardHeader className="bg-slate-50 border-b border-slate-100 pb-4">
+                  <Badge variant="outline" className="w-fit mb-2 bg-white">{program.code}</Badge>
+                  <CardTitle className="text-xl leading-tight">
+                    {program.name}
+                  </CardTitle>
+                  <p className="text-sm text-slate-500 mt-2 font-mono bg-slate-100 px-2 py-1 rounded w-fit">
+                    ID: {program.enrollment.enrollment_number}
+                  </p>
+                </CardHeader>
+                <CardContent className="flex-1 flex flex-col justify-center p-6 pt-6">
                   <Button size="lg" className="w-full mt-auto" onClick={() => navigate(`/learner/program/${program.id}`)}>
                     <BookOpen className="h-5 w-5 mr-2" />
                     Masuk ke Kelas
                   </Button>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            ) : (
+              <Card key={program.id} className="flex flex-row items-center justify-between p-4 sm:p-5 hover:shadow-md transition-shadow border-slate-200 gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                    <Badge variant="outline" className="bg-slate-50">{program.code}</Badge>
+                    <span className="text-xs text-slate-500 font-mono bg-slate-100 px-1.5 py-0.5 rounded">
+                      ID: {program.enrollment.enrollment_number}
+                    </span>
+                  </div>
+                  <h3 className="font-semibold text-base sm:text-lg text-slate-900 leading-tight">
+                    {program.name}
+                  </h3>
+                </div>
+                <Button size="sm" className="shrink-0 hidden sm:flex" onClick={() => navigate(`/learner/program/${program.id}`)}>
+                  <BookOpen className="h-4 w-4 mr-2" />
+                  Masuk
+                </Button>
+                <Button size="icon" className="shrink-0 sm:hidden h-9 w-9" onClick={() => navigate(`/learner/program/${program.id}`)}>
+                  <BookOpen className="h-4 w-4" />
+                </Button>
+              </Card>
+            )
+          )}
         </div>
       )}
     </div>
