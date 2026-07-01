@@ -4,6 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { FullPageLoader } from "@/components/ui/full-page-loader";
 import { useAuthSession } from "../../app/providers/authSessionContext";
 import { supabase } from "../../lib/supabase";
 import { ArrowLeft, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Circle, FileText, PlayCircle } from "lucide-react";
@@ -121,7 +122,7 @@ export function LearnerProgramDetailPage() {
   };
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground p-8 text-center">Memuat silabus program...</p>;
+    return <FullPageLoader message="Memuat silabus program..." />;
   }
 
   if (errorMessage) {

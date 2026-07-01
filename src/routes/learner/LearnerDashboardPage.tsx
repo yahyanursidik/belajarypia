@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FullPageLoader } from "@/components/ui/full-page-loader";
 import { BookOpen, Award, IdCard, GraduationCap, Megaphone } from "lucide-react";
 import type { Enrollment, OnboardingProgress, Participant } from "../../lib/enrollment";
 import { supabase } from "../../lib/supabase";
@@ -183,7 +184,7 @@ export function LearnerDashboardPage() {
   );
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground">Memuat dashboard peserta...</p>;
+    return <FullPageLoader message="Memuat dashboard peserta..." />;
   }
 
   if (errorMessage) {

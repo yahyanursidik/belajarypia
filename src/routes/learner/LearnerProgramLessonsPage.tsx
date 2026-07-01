@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FullPageLoader } from "@/components/ui/full-page-loader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuthSession } from "../../app/providers/authSessionContext";
@@ -90,7 +91,7 @@ export function LearnerProgramLessonsPage() {
   }, [enrollments, searchQuery]);
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground p-8">Memuat program Anda...</p>;
+    return <FullPageLoader message="Memuat program Anda..." />;
   }
 
   if (errorMessage) {
