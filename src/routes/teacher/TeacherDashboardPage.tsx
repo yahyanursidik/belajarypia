@@ -46,12 +46,14 @@ export function TeacherDashboardPage() {
           .limit(3);
 
         // Fetch Recent Programs
-        const { data: recentProgramsData } = await supabase
+        const { data: recentProgramsData, error: progErr } = await supabase
           .from("programs")
-          .select("id, name, type, created_at")
+          .select("id, name, code, curriculum_model, created_at")
           .eq("teacher_user_id", user!.id)
           .order("created_at", { ascending: false })
           .limit(3);
+
+        if (progErr) console.error("Error fetching recent programs:", progErr);
 
         if (isMounted) {
           setMetrics({
@@ -178,7 +180,7 @@ export function TeacherDashboardPage() {
                           <p className="text-xs text-slate-500">
                             {item.itemType === 'class' 
                               ? `${item.code} • ${item.programs?.name || "Program Reguler"}`
-                              : `Program ${item.type === 'cohort' ? 'Angkatan (Cohort)' : 'Mandiri (Self-paced)'}`}
+                              : `${item.code || "Program"} • ${item.curriculum_model === 'cohort' ? 'Angkatan (Cohort)' : 'Mandiri (Self-paced)'}`}
                           </p>
                         </div>
                       </div>
