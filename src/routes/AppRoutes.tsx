@@ -206,6 +206,11 @@ const TeacherPlaceholderPage = lazy(() =>
     default: module.TeacherPlaceholderPage,
   })),
 );
+const TeacherClassPage = lazy(() =>
+  import("./teacher/TeacherClassPage").then((module) => ({
+    default: module.TeacherClassPage,
+  })),
+);
 
 function RouteFallback() {
   return <FullPageLoader message="Memuat halaman..." />;
@@ -342,6 +347,7 @@ export function AppRoutes() {
           }
         >
           <Route index element={<TeacherDashboardPage />} />
+          <Route path="kelas" element={<TeacherClassPage />} />
           <Route path="konten" element={<TeacherPlaceholderPage />} />
           <Route path="*" element={<TeacherPlaceholderPage />} />
         </Route>
