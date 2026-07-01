@@ -221,8 +221,8 @@ export function TeacherClassPage() {
                         </div>
                       </CardContent>
                       <div className="pt-0 pb-4 px-4 mt-auto">
-                        <Button variant="default" asChild className="w-full rounded-xl shadow-sm hover:shadow-md transition-all text-primary-foreground">
-                          <Link to={`/teacher/kelas/program/${prog.id}`}>
+                        <Button variant="default" className="w-full rounded-xl shadow-sm hover:shadow-md transition-all p-0">
+                          <Link to={`/teacher/kelas/program/${prog.id}`} className="flex items-center justify-center w-full h-full text-white hover:text-white">
                             Kelola Program <ArrowRight className="ml-2 h-4 w-4" />
                           </Link>
                         </Button>
@@ -270,8 +270,8 @@ export function TeacherClassPage() {
                         </div>
                       </CardContent>
                       <div className="pt-0 pb-4 px-4 mt-auto">
-                        <Button variant="default" asChild className="w-full rounded-xl shadow-sm hover:shadow-md transition-all text-primary-foreground">
-                          <Link to={`/teacher/kelas/${cls.id}`}>
+                        <Button variant="default" className="w-full rounded-xl shadow-sm hover:shadow-md transition-all p-0">
+                          <Link to={`/teacher/kelas/${cls.id}`} className="flex items-center justify-center w-full h-full text-white hover:text-white">
                             Kelola Kelas <ArrowRight className="ml-2 h-4 w-4" />
                           </Link>
                         </Button>
