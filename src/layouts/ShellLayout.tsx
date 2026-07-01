@@ -72,7 +72,7 @@ export function ShellLayout({
 
   return (
     <div className={`app-shell app-shell-${variant}`}>
-      <aside className={cn("app-shell__sider print:hidden", variant === "learner" && "!hidden md:!flex")}>
+      <aside className={cn("app-shell__sider print:hidden", (variant === "learner" || variant === "teacher") && "!hidden md:!flex")}>
         <Link to="/" className="app-shell__brand" aria-label={appName}>
           <span className="app-shell__brand-icon">
             <BrandIcon className="h-6 w-6 text-white" />
@@ -106,7 +106,7 @@ export function ShellLayout({
         </nav>
       </aside>
       <div className="app-shell__main print:w-full print:m-0 print:p-0">
-        <header className={cn("app-shell__header print:hidden", variant === "learner" && "!hidden md:!flex")}>
+        <header className={cn("app-shell__header print:hidden", (variant === "learner" || variant === "teacher") && "!hidden md:!flex")}>
           <div>
             <h1 className="app-shell__title">{title}</h1>
             <p className="app-shell__subtitle">{subtitle}</p>
@@ -164,8 +164,8 @@ export function ShellLayout({
         </footer>
       </div>
       
-      {/* Mobile Bottom Navigation (Learner Only) */}
-      {variant === 'learner' && (
+      {/* Mobile Bottom Navigation (Learner & Teacher) */}
+      {(variant === 'learner' || variant === 'teacher') && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-50 flex items-center justify-around pb-safe h-16 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
           {menuItems.map((item) => {
             const Icon = item.icon;

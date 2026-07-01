@@ -1,14 +1,16 @@
 import { useState, useEffect } from "react";
 import { useAuthSession } from "../../app/providers/authSessionContext";
 import { supabase } from "../../lib/supabase";
-import { User, Lock, Mail, Phone, ShieldCheck, CheckCircle2, Loader2, Save } from "lucide-react";
+import { User, Lock, Mail, Phone, ShieldCheck, CheckCircle2, Loader2, Save, LogOut } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 
 export function TeacherProfilePage() {
-  const { profile, primaryRole, refresh } = useAuthSession();
+  const { profile, primaryRole, refresh, signOut } = useAuthSession();
+  const navigate = useNavigate();
   
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -172,6 +174,20 @@ export function TeacherProfilePage() {
                 )}
               </Button>
             </form>
+
+            <div className="mt-8 pt-6 border-t border-slate-100 md:hidden">
+              <Button 
+                variant="destructive" 
+                className="w-full"
+                onClick={async () => {
+                  await signOut();
+                  navigate("/teacher/login", { replace: true });
+                }}
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Keluar dari Akun (Logout)
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
