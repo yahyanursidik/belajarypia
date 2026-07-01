@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, User, Filter, MapPin, GraduationCap, Phone, Upload, Download, Users, UserCheck, PieChart, BadgeCheck, Settings, Key, X, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, Search, User, Filter, MapPin, GraduationCap, Phone, Upload, Download, Users, UserCheck, PieChart, BadgeCheck, Settings, Key, X, Loader2, CheckCircle2, AlertCircle, FileText, AlertTriangle, Check, FileUp, ChevronRight } from "lucide-react";
 import Papa from "papaparse";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../components/ui/card";
@@ -44,9 +44,18 @@ export function AdminParticipantListPage() {
 
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  type PreviewRow = {
+    data: any;
+    isValid: boolean;
+    errorMsg: string;
+  };
+
   const [isMassUploadOpen, setIsMassUploadOpen] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [massUploadProgress, setMassUploadProgress] = useState("");
+  const [massUploadStep, setMassUploadStep] = useState<1 | 2 | 3 | 4>(1);
+  const [previewData, setPreviewData] = useState<PreviewRow[]>([]);
+  const [uploadStats, setUploadStats] = useState({ successNew: 0, successExisting: 0, fail: 0, total: 0, processed: 0 });
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Reset Password State
@@ -59,6 +68,9 @@ export function AdminParticipantListPage() {
   const [form, setForm] = useState({
     global_participant_number: "",
     display_name: "",
+    email: "",
+    password: "",
+    program_code: "",
     gender: "Laki-laki",
     participant_type: "adult",
     city: "",
@@ -251,38 +263,50 @@ export function AdminParticipantListPage() {
     
     const nis = form.global_participant_number.trim() || `NIS-${Date.now().toString().slice(-6)}`;
 
-    const payload: any = {
-      global_participant_number: nis,
-      display_name: form.display_name,
-      gender: form.gender,
-      participant_type: form.participant_type,
-      city: form.city,
-      education_level: form.education_level,
-      status: "active"
-    };
-
-    if (form.phone) payload.phone = form.phone;
-    if (form.birth_date) payload.birth_date = form.birth_date;
-
-    const { error } = await supabase.from("participants").insert([payload]).select().single();
+    const { data, error } = await supabase.rpc("admin_create_participant_with_user", {
+      p_email: form.email.trim(),
+      p_password: form.password,
+      p_display_name: form.display_name.trim(),
+      p_phone: form.phone.trim(),
+      p_nis: nis,
+      p_gender: form.gender,
+      p_participant_type: form.participant_type,
+      p_city: form.city.trim(),
+      p_education: form.education_level,
+      p_program_code: form.program_code.trim()
+    });
 
     if (error) {
-      if (error.code === '23505') {
-        toast.error("Nomor Induk sudah terdaftar.");
-      } else {
-        toast.error("Gagal menambahkan peserta: " + error.message);
-      }
+      toast.error("Gagal menambahkan peserta: " + error.message);
     } else {
-      toast.success("Peserta berhasil ditambahkan");
+      const result = data as any;
+      if (result?.status === 'enrolled_existing') {
+        toast.success("Email sudah terdaftar. Peserta ditautkan" + (form.program_code ? " dan dimasukkan ke program." : "."));
+      } else {
+        toast.success("Peserta baru berhasil ditambahkan!");
+      }
       setIsModalOpen(false);
-      setForm({ global_participant_number: "", display_name: "", gender: "Laki-laki", participant_type: "adult", city: "", education_level: "", phone: "", birth_date: "" });
-      fetchInitialData();
+      setForm({
+        global_participant_number: "",
+        display_name: "",
+        email: "",
+        password: "",
+        program_code: "",
+        gender: "Laki-laki",
+        participant_type: "adult",
+        city: "",
+        education_level: "",
+        phone: "",
+        birth_date: ""
+      });
+      fetchParticipants();
     }
+    
     setIsSubmitting(false);
   };
 
   const handleDownloadTemplate = () => {
-    const csvContent = "Nama Lengkap,Nomor Induk,Jenis Kelamin,Tipe Peserta,Kota,Pendidikan,No WhatsApp\nJohn Doe,,Laki-laki,adult,Jakarta,S1,081234567890";
+    const csvContent = "Nama Lengkap,Nomor Induk,Jenis Kelamin,Tipe Peserta,Kota,Pendidikan,No WhatsApp,Email,Password,Kode Program\nJohn Doe,,Laki-laki,adult,Jakarta,S1,081234567890,johndoe@example.com,password123,PRG-01";
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -293,61 +317,101 @@ export function AdminParticipantListPage() {
     document.body.removeChild(link);
   };
 
-  const handleMassUpload = async () => {
+  const resetMassUpload = () => {
+    setIsMassUploadOpen(false);
+    setCsvFile(null);
+    setMassUploadStep(1);
+    setPreviewData([]);
+    setUploadStats({ success: 0, fail: 0, total: 0, processed: 0 });
+    fetchInitialData();
+    fetchParticipants();
+  };
+
+  const analyzeCsv = () => {
     if (!csvFile) return toast.error("Pilih file CSV terlebih dahulu");
     setIsSubmitting(true);
-    setMassUploadProgress("Membaca file...");
 
     Papa.parse(csvFile, {
       header: true,
       skipEmptyLines: true,
-      complete: async (results) => {
+      complete: (results) => {
         const rows = results.data as any[];
-        let successCount = 0;
-        let failCount = 0;
+        const preview: PreviewRow[] = rows.map((row) => {
+          let isValid = true;
+          const errors = [];
+          if (!row["Nama Lengkap"]) errors.push("Nama kosong");
+          if (!row["No WhatsApp"]) errors.push("No WA kosong");
+          if (!row["Email"]) errors.push("Email kosong");
+          if (!row["Password"] || row["Password"].length < 6) errors.push("Password tidak valid (min. 6 karakter)");
+          if (!row["Kode Program"]) errors.push("Kode Program kosong");
+          
+          if (errors.length > 0) isValid = false;
+
+          return {
+            data: row,
+            isValid,
+            errorMsg: errors.join(", ")
+          };
+        });
         
-        for (let i = 0; i < rows.length; i++) {
-          const row = rows[i];
-          setMassUploadProgress(`Memproses data ${i + 1} dari ${rows.length}...`);
-          
-          if (!row["Nama Lengkap"]) {
-            failCount++;
-            continue;
-          }
-          
-          const nis = (row["Nomor Induk"]?.trim()) || `NIS-${Date.now().toString().slice(-4)}${i}`;
-          
-          const { error } = await supabase.from("participants").insert({
-            global_participant_number: nis,
-            display_name: row["Nama Lengkap"],
-            gender: row["Jenis Kelamin"] || "Laki-laki",
-            participant_type: row["Tipe Peserta"] || "adult",
-            city: row["Kota"] || "",
-            education_level: row["Pendidikan"] || "",
-            status: "active"
-          });
-          
-          if (error) {
-            failCount++;
-          } else {
-            successCount++;
-          }
-        }
-        
+        setPreviewData(preview);
+        setUploadStats({ success: 0, fail: 0, total: preview.length, processed: 0 });
+        setMassUploadStep(2);
         setIsSubmitting(false);
-        toast.success(`Selesai! Berhasil: ${successCount}, Gagal: ${failCount}`);
-        setIsMassUploadOpen(false);
-        setCsvFile(null);
-        setMassUploadProgress("");
-        fetchInitialData();
-        fetchParticipants();
       },
       error: (err) => {
         toast.error("Gagal membaca file: " + err.message);
         setIsSubmitting(false);
-        setMassUploadProgress("");
       }
     });
+  };
+
+  const executeUpload = async () => {
+    setIsSubmitting(true);
+    setMassUploadStep(3);
+    
+    let successNewCount = 0;
+    let successExistingCount = 0;
+    let failCount = 0;
+    let processed = 0;
+
+    const validRows = previewData.filter(r => r.isValid);
+
+    for (let i = 0; i < validRows.length; i++) {
+      const row = validRows[i].data;
+      processed++;
+      setUploadStats(prev => ({ ...prev, processed }));
+      
+      const nis = (row["Nomor Induk"]?.trim()) || `NIS-${Date.now().toString().slice(-4)}${i}`;
+      
+      const { data, error } = await supabase.rpc("admin_create_participant_with_user", {
+        p_email: row["Email"].trim(),
+        p_password: row["Password"].trim(),
+        p_display_name: row["Nama Lengkap"].trim(),
+        p_phone: row["No WhatsApp"].trim(),
+        p_nis: nis,
+        p_gender: row["Jenis Kelamin"] || "Laki-laki",
+        p_participant_type: row["Tipe Peserta"] || "adult",
+        p_city: row["Kota"] || "",
+        p_education: row["Pendidikan"] || "",
+        p_program_code: row["Kode Program"].trim()
+      });
+      
+      if (error) {
+        failCount++;
+      } else {
+        const result = data as any;
+        if (result?.status === 'enrolled_existing') {
+          successExistingCount++;
+        } else {
+          successNewCount++;
+        }
+      }
+    }
+    
+    setUploadStats(prev => ({ ...prev, successNew: successNewCount, successExisting: successExistingCount, fail: failCount }));
+    setMassUploadStep(4);
+    setIsSubmitting(false);
   };
 
   const totalPages = Math.ceil(totalCount / perPage);
@@ -651,6 +715,37 @@ export function AdminParticipantListPage() {
                     />
                   </div>
                   <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Email <span className="text-red-500">*</span></label>
+                    <Input 
+                      required 
+                      type="email"
+                      placeholder="contoh@email.com" 
+                      className="h-10"
+                      value={form.email} 
+                      onChange={e => setForm({...form, email: e.target.value})} 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Password <span className="text-red-500">*</span></label>
+                    <Input 
+                      required 
+                      type="password"
+                      placeholder="Minimal 6 karakter" 
+                      className="h-10"
+                      value={form.password} 
+                      onChange={e => setForm({...form, password: e.target.value})} 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Kode Program <span className="text-muted-foreground font-normal text-xs ml-1">(Opsional)</span></label>
+                    <Input 
+                      placeholder="Contoh: PRG-2026" 
+                      className="h-10"
+                      value={form.program_code} 
+                      onChange={e => setForm({...form, program_code: e.target.value})} 
+                    />
+                  </div>
+                  <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Jenis Kelamin</label>
                     <select 
                       className="w-full h-10 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" 
@@ -727,50 +822,166 @@ export function AdminParticipantListPage() {
       {/* Modal Mass Upload */}
       {isMassUploadOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="w-full max-w-lg shadow-2xl border-none overflow-hidden animate-in zoom-in-95 duration-200">
+          <Card className={`w-full ${massUploadStep === 2 ? 'max-w-4xl' : 'max-w-lg'} shadow-2xl border-none overflow-hidden animate-in zoom-in-95 duration-200`}>
             <div className="bg-primary p-6 text-primary-foreground">
               <CardTitle className="text-2xl mb-1 text-white">Upload Massal Peserta</CardTitle>
               <CardDescription className="text-white/80">Impor banyak data peserta sekaligus menggunakan file CSV.</CardDescription>
             </div>
-            <CardContent className="p-6 bg-white">
-              <div className="space-y-5">
-                <div className="bg-primary/5 text-primary p-4 rounded-lg text-sm border border-primary/20 shadow-sm">
-                  <p className="font-semibold mb-2 flex items-center gap-2"><BadgeCheck className="w-4 h-4" /> Panduan Import:</p>
-                  <ul className="list-disc list-inside space-y-1 text-slate-700 ml-1">
-                    <li>Gunakan format CSV yang dipisahkan dengan koma (,).</li>
-                    <li>Baris pertama harus berisi judul kolom (Header).</li>
-                    <li>Kolom <strong>Nama Lengkap</strong> wajib diisi.</li>
-                  </ul>
-                  <Button 
-                    variant="ghost" 
-                    className="p-0 h-auto text-primary font-bold mt-3 hover:text-primary/80"
-                    onClick={handleDownloadTemplate}
-                  >
-                    <Download className="w-4 h-4 mr-1 inline" /> Unduh Template CSV
-                  </Button>
-                </div>
+            <CardContent className="p-6 bg-white max-h-[85vh] overflow-y-auto">
+              
+              {massUploadStep === 1 && (
+                <div className="space-y-5 animate-in slide-in-from-right-4 duration-300">
+                  <div className="bg-primary/5 text-primary p-4 rounded-lg text-sm border border-primary/20 shadow-sm">
+                    <p className="font-semibold mb-2 flex items-center gap-2"><BadgeCheck className="w-4 h-4" /> Panduan Import:</p>
+                    <ul className="list-disc list-inside space-y-1 text-slate-700 ml-1">
+                      <li>Gunakan format CSV yang dipisahkan dengan koma (,).</li>
+                      <li>Baris pertama harus berisi judul kolom (Header).</li>
+                      <li>Kolom <strong>Nama Lengkap, No WhatsApp, Email, Password, dan Kode Program</strong> wajib diisi.</li>
+                    </ul>
+                    <Button 
+                      variant="ghost" 
+                      className="p-0 h-auto text-primary font-bold mt-3 hover:text-primary/80"
+                      onClick={handleDownloadTemplate}
+                    >
+                      <Download className="w-4 h-4 mr-1 inline" /> Unduh Template CSV
+                    </Button>
+                  </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold block text-slate-700">Pilih File CSV</label>
-                  <Input 
-                    type="file" 
-                    accept=".csv" 
-                    className="h-10 cursor-pointer"
-                    onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
-                    disabled={isSubmitting}
-                  />
-                  {massUploadProgress && (
-                    <p className="text-xs text-primary mt-2 font-medium animate-pulse">{massUploadProgress}</p>
-                  )}
-                </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold block text-slate-700">Pilih File CSV</label>
+                    <Input 
+                      type="file" 
+                      accept=".csv" 
+                      className="h-10 cursor-pointer"
+                      onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+                      disabled={isSubmitting}
+                    />
+                  </div>
 
-                <div className="pt-4 flex justify-end gap-3 border-t border-border/50 mt-6">
-                  <Button type="button" variant="outline" className="px-6" onClick={() => setIsMassUploadOpen(false)} disabled={isSubmitting}>Batal</Button>
-                  <Button onClick={handleMassUpload} disabled={isSubmitting || !csvFile} className="bg-primary hover:bg-primary/90 text-primary-foreground px-6">
-                    {isSubmitting ? "Memproses..." : "Mulai Upload"}
-                  </Button>
+                  <div className="pt-4 flex justify-end gap-3 border-t border-border/50 mt-6">
+                    <Button type="button" variant="outline" className="px-6" onClick={resetMassUpload} disabled={isSubmitting}>Batal</Button>
+                    <Button onClick={analyzeCsv} disabled={isSubmitting || !csvFile} className="bg-primary hover:bg-primary/90 text-primary-foreground px-6">
+                      {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
+                      {isSubmitting ? "Memproses..." : "Analisis File"}
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {massUploadStep === 2 && (
+                <div className="space-y-5 animate-in slide-in-from-right-4 duration-300">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold text-lg text-slate-800">Pratinjau Data ({previewData.length} baris)</h3>
+                    <div className="flex gap-3 text-sm font-medium">
+                      <span className="text-emerald-700 bg-emerald-100 border border-emerald-200 px-3 py-1 rounded-full shadow-sm">
+                        {previewData.filter(r => r.isValid).length} Valid
+                      </span>
+                      <span className="text-red-700 bg-red-100 border border-red-200 px-3 py-1 rounded-full shadow-sm">
+                        {previewData.filter(r => !r.isValid).length} Tidak Valid
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="border border-slate-200 rounded-xl overflow-hidden h-[400px] overflow-y-auto bg-slate-50 shadow-inner">
+                    <table className="w-full text-sm text-left">
+                      <thead className="bg-slate-100 sticky top-0 border-b border-slate-200 z-10">
+                        <tr>
+                          <th className="px-4 py-3 font-semibold text-slate-600">Status</th>
+                          <th className="px-4 py-3 font-semibold text-slate-600">Nama Lengkap</th>
+                          <th className="px-4 py-3 font-semibold text-slate-600">Email</th>
+                          <th className="px-4 py-3 font-semibold text-slate-600">No WA</th>
+                          <th className="px-4 py-3 font-semibold text-slate-600">Kode Program</th>
+                          <th className="px-4 py-3 font-semibold text-slate-600">Keterangan Error</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white">
+                        {previewData.map((row, idx) => (
+                          <tr key={idx} className={row.isValid ? "hover:bg-emerald-50/30 transition-colors" : "bg-red-50/50 hover:bg-red-50 transition-colors"}>
+                            <td className="px-4 py-3">
+                              {row.isValid ? 
+                                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200"><CheckCircle2 className="w-3 h-3 mr-1" /> Valid</Badge> : 
+                                <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200"><AlertTriangle className="w-3 h-3 mr-1" /> Error</Badge>
+                              }
+                            </td>
+                            <td className="px-4 py-3 font-medium text-slate-900">{row.data["Nama Lengkap"] || "-"}</td>
+                            <td className="px-4 py-3 text-slate-600">{row.data["Email"] || "-"}</td>
+                            <td className="px-4 py-3 text-slate-600">{row.data["No WhatsApp"] || "-"}</td>
+                            <td className="px-4 py-3 text-slate-600 font-medium">{row.data["Kode Program"] || "-"}</td>
+                            <td className="px-4 py-3 text-red-600 text-xs font-medium">{row.errorMsg || "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="pt-4 flex justify-between items-center border-t border-border/50 mt-6">
+                    <Button type="button" variant="outline" className="px-6" onClick={() => setMassUploadStep(1)}>Kembali</Button>
+                    <Button 
+                      onClick={executeUpload} 
+                      disabled={previewData.filter(r => r.isValid).length === 0} 
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 shadow-md"
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      Mulai Import {previewData.filter(r => r.isValid).length} Data Valid
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {massUploadStep === 3 && (
+                <div className="flex flex-col items-center justify-center p-10 space-y-6 animate-in fade-in duration-300">
+                  <div className="relative">
+                    <div className="w-24 h-24 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+                    <FileUp className="w-8 h-8 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-xl font-bold text-slate-800">Mengimpor Data...</h3>
+                    <p className="text-slate-500 mt-2">Sedang memproses {uploadStats.processed} dari {previewData.filter(r => r.isValid).length} data valid.</p>
+                  </div>
+                  <div className="w-full max-w-md bg-slate-100 h-3 rounded-full overflow-hidden mt-4 shadow-inner">
+                    <div 
+                      className="bg-primary h-full transition-all duration-300 ease-out relative" 
+                      style={{ width: `${(uploadStats.processed / Math.max(1, previewData.filter(r => r.isValid).length)) * 100}%` }}
+                    >
+                      <div className="absolute inset-0 bg-white/20 w-full h-full animate-[shimmer_1s_infinite]"></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {massUploadStep === 4 && (
+                <div className="flex flex-col items-center justify-center p-8 space-y-6 animate-in zoom-in-95 duration-300">
+                  <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mb-2 shadow-inner">
+                    <CheckCircle2 className="w-12 h-12 text-emerald-600" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-2xl font-bold text-slate-800">Import Selesai!</h3>
+                    <p className="text-slate-500 mt-2">Proses unggah massal telah selesai dijalankan.</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-xl mt-6">
+                    <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center shadow-sm flex flex-col justify-center">
+                      <p className="text-4xl font-bold text-emerald-600">{uploadStats.successNew}</p>
+                      <p className="text-xs font-semibold text-emerald-800 mt-2 uppercase tracking-wider">Akun Baru Didaftarkan</p>
+                    </div>
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-center shadow-sm flex flex-col justify-center">
+                      <p className="text-4xl font-bold text-blue-600">{uploadStats.successExisting}</p>
+                      <p className="text-xs font-semibold text-blue-800 mt-2 uppercase tracking-wider">Akun Lama Didaftarkan</p>
+                    </div>
+                    <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-center shadow-sm flex flex-col justify-center">
+                      <p className="text-4xl font-bold text-red-600">{uploadStats.fail}</p>
+                      <p className="text-xs font-semibold text-red-800 mt-2 uppercase tracking-wider">Gagal Proses</p>
+                    </div>
+                  </div>
+
+                  <div className="pt-8 w-full max-w-xl">
+                    <Button onClick={resetMassUpload} className="w-full bg-slate-900 hover:bg-slate-800 text-white h-12 text-lg shadow-lg">
+                      Tutup & Muat Ulang Direktori
+                    </Button>
+                  </div>
+                </div>
+              )}
+
             </CardContent>
           </Card>
         </div>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Plus, BookOpen, Clock, Settings, X, ArrowRight, Filter, GraduationCap, Edit2, Archive, LayoutGrid, List } from "lucide-react";
+import { Search, Plus, BookOpen, Clock, Settings, X, ArrowRight, Filter, GraduationCap, Edit2, Archive, LayoutGrid, List, Users } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,9 +43,13 @@ const initialProgramForm: ProgramFormState = {
   feature_flags: defaultMvpFeatureFlags,
 };
 
+type ProgramWithEnrollments = Program & {
+  enrollments?: Array<{ id: string }>;
+};
+
 export function AdminProgramListPage() {
   const [units, setUnits] = useState<Unit[]>([]);
-  const [programs, setPrograms] = useState<Program[]>([]);
+  const [programs, setPrograms] = useState<ProgramWithEnrollments[]>([]);
   const [form, setForm] = useState<ProgramFormState>(initialProgramForm);
   
   // UI States
@@ -71,14 +75,14 @@ export function AdminProgramListPage() {
     const [{ data: unitRows, error: unitError }, { data: programRows, error: programError }] =
       await Promise.all([
         supabase.from("units").select("id, organization_id, code, name, description, status").order("name"),
-        supabase.from("programs").select("id, unit_id, code, name, description, program_type, curriculum_model, delivery_mode, status, feature_flags, created_at, units(code, name)").order("name"),
+        supabase.from("programs").select("id, unit_id, code, name, description, program_type, curriculum_model, delivery_mode, status, feature_flags, created_at, units(code, name), enrollments(id)").order("name"),
       ]);
 
     if (unitError || programError) {
       setErrorMessage(unitError?.message ?? programError?.message ?? "Gagal memuat data.");
     } else {
       setUnits((unitRows ?? []) as Unit[]);
-      setPrograms((programRows ?? []) as unknown as Program[]);
+      setPrograms((programRows ?? []) as unknown as ProgramWithEnrollments[]);
     }
 
     setIsLoading(false);
@@ -310,17 +314,29 @@ export function AdminProgramListPage() {
                     </p>
                   </CardHeader>
                   <CardContent className="pb-4 flex-1">
-                    <div className="flex items-center justify-between text-sm text-muted-foreground mb-1 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
-                      <div className="flex items-center gap-2">
-                        {program.curriculum_model === "mandiri" ? (
-                          <><Clock className="h-4 w-4 text-blue-500" /> <span className="font-medium text-slate-700">Mandiri</span></>
-                        ) : (
-                          <><GraduationCap className="h-4 w-4 text-primary" /> <span className="font-medium text-slate-700">Angkatan</span></>
-                        )}
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between text-sm text-muted-foreground bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
+                        <div className="flex items-center gap-2">
+                          {program.curriculum_model === "mandiri" ? (
+                            <><Clock className="h-4 w-4 text-blue-500" /> <span className="font-medium text-slate-700">Mandiri</span></>
+                          ) : (
+                            <><GraduationCap className="h-4 w-4 text-primary" /> <span className="font-medium text-slate-700">Angkatan</span></>
+                          )}
+                        </div>
+                        <Badge variant={program.status === "active" ? "default" : "secondary"} className="capitalize text-[10px] h-5 shadow-sm">
+                          {program.status}
+                        </Badge>
                       </div>
-                      <Badge variant={program.status === "active" ? "default" : "secondary"} className="capitalize text-[10px] h-5 shadow-sm">
-                        {program.status}
-                      </Badge>
+
+                      <div className="flex items-center justify-between text-sm text-muted-foreground bg-emerald-50/40 p-2.5 rounded-lg border border-emerald-100/50">
+                        <div className="flex items-center gap-2">
+                          <Users className="h-4 w-4 text-emerald-600" />
+                          <span className="font-semibold text-slate-700">Total Peserta</span>
+                        </div>
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 font-bold text-xs h-5 px-2">
+                          {program.enrollments?.length || 0}
+                        </Badge>
+                      </div>
                     </div>
                   </CardContent>
                   <div className="p-4 pt-0 mt-auto">
@@ -341,6 +357,7 @@ export function AdminProgramListPage() {
                     <tr>
                       <th className="px-6 py-4 font-semibold">Program</th>
                       <th className="px-6 py-4 font-semibold">Tipe</th>
+                      <th className="px-6 py-4 font-semibold">Peserta</th>
                       <th className="px-6 py-4 font-semibold">Status</th>
                       <th className="px-6 py-4 font-semibold text-right">Aksi</th>
                     </tr>
@@ -361,6 +378,12 @@ export function AdminProgramListPage() {
                             ) : (
                               <><GraduationCap className="h-3.5 w-3.5 text-primary" /> <span className="text-xs font-medium">Angkatan</span></>
                             )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-1.5 font-semibold text-slate-700 bg-emerald-50/50 px-2.5 py-1 rounded-full border border-emerald-100/80 w-fit text-xs">
+                            <Users className="h-3.5 w-3.5 text-emerald-600" />
+                            <span>{program.enrollments?.length || 0}</span>
                           </div>
                         </td>
                         <td className="px-6 py-4">
