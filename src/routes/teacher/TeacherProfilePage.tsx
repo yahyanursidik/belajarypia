@@ -177,8 +177,8 @@ export function TeacherProfilePage() {
 
             <div className="mt-8 pt-6 border-t border-slate-100 md:hidden">
               <Button 
-                variant="destructive" 
-                className="w-full"
+                variant="outline" 
+                className="w-full text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300 transition-colors"
                 onClick={async () => {
                   await signOut();
                   navigate("/teacher/login", { replace: true });
