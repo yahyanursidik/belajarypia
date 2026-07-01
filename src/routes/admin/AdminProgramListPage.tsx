@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Plus, BookOpen, Clock, Settings, X, ArrowRight, Filter, GraduationCap, Edit2, Archive, LayoutGrid, List, Users } from "lucide-react";
+import { Search, Plus, BookOpen, Clock, Settings, X, ArrowRight, Filter, GraduationCap, Edit2, Archive, LayoutGrid, List, Users, UserCheck } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -561,13 +561,13 @@ export function AdminProgramListPage() {
                   />
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-3 p-4 bg-muted/40 rounded-xl border">
+                <div className="grid gap-4 md:grid-cols-2 p-4 bg-slate-50 rounded-xl border border-slate-100">
                   <div className="space-y-2">
                     <label className="text-sm font-semibold flex items-center gap-2">
-                      <Settings className="h-4 w-4 text-primary" /> Sistem Pembelajaran
+                      <Settings className="h-4 w-4 text-slate-500" /> Sistem Pembelajaran
                     </label>
                     <select
-                      className="field-control bg-white h-10"
+                      className="field-control bg-white h-10 shadow-sm"
                       onChange={(event) => setForm((current) => ({ ...current, curriculum_model: event.target.value }))}
                       value={form.curriculum_model}
                     >
@@ -576,25 +576,33 @@ export function AdminProgramListPage() {
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold">Pengampu Program</label>
-                    <select
-                      className="field-control bg-white h-10"
-                      onChange={(event) => setForm((current) => ({ ...current, teacher_user_id: event.target.value }))}
-                      value={form.teacher_user_id}
-                    >
-                      <option value="">-- Tanpa Pengampu (Opsional) --</option>
-                      {staff.map(s => <option key={s.id} value={s.id}>{s.full_name ?? s.email}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
                     <label className="text-sm font-semibold">Status Awal</label>
                     <select
-                      className="field-control bg-white h-10"
+                      className="field-control bg-white h-10 shadow-sm"
                       onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as ProgramStatus }))}
                       value={form.status}
                     >
                       <option value="draft">Draft (Disembunyikan)</option>
                       <option value="active">Active (Terlihat)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="p-5 bg-blue-50/50 rounded-xl border border-blue-100 mt-4">
+                  <div className="space-y-3">
+                    <label className="text-sm font-semibold text-blue-900 flex items-center gap-2">
+                      <UserCheck className="h-5 w-5 text-blue-600" /> Pengampu Program
+                    </label>
+                    <p className="text-xs text-blue-700/80 leading-relaxed max-w-full">
+                      Pilih staf pengajar yang bertanggung jawab secara penuh pada program ini. Anda bisa mengosongkannya jika pengajar ditugaskan secara terpisah di setiap Kelas.
+                    </p>
+                    <select
+                      className="field-control bg-white h-11 border-blue-200 focus:border-blue-400 focus:ring-blue-400/20 text-slate-700 font-medium w-full shadow-sm"
+                      onChange={(event) => setForm((current) => ({ ...current, teacher_user_id: event.target.value }))}
+                      value={form.teacher_user_id}
+                    >
+                      <option value="">-- Tanpa Pengampu Utama (Opsional) --</option>
+                      {staff.map(s => <option key={s.id} value={s.id}>{s.full_name ?? s.email}</option>)}
                     </select>
                   </div>
                 </div>
