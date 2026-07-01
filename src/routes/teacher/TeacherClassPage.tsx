@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { BookOpen, Users, ArrowRight, GraduationCap, Clock, CalendarDays, BookMarked } from "lucide-react";
 import { useAuthSession } from "../../app/providers/authSessionContext";
 import { supabase } from "../../lib/supabase";
@@ -156,8 +157,10 @@ export function TeacherClassPage() {
                       </div>
                     </CardContent>
                     <div className="pt-0 pb-4 px-4 mt-auto">
-                      <Button variant="default" className="w-full rounded-xl shadow-sm bg-blue-600 hover:bg-blue-700 text-white" disabled>
-                        Kelola Program <ArrowRight className="ml-2 h-4 w-4" />
+                      <Button variant="default" asChild className="w-full rounded-xl shadow-sm bg-blue-600 hover:bg-blue-700 text-white">
+                        <Link to={`/teacher/kelas/program/${prog.id}`}>
+                          Kelola Program <ArrowRight className="ml-2 h-4 w-4" />
+                        </Link>
                       </Button>
                     </div>
                   </Card>
@@ -202,8 +205,10 @@ export function TeacherClassPage() {
                       </div>
                     </CardContent>
                     <div className="pt-0 pb-4 px-4 mt-auto">
-                      <Button variant="default" className="w-full rounded-xl shadow-sm bg-emerald-600 hover:bg-emerald-700 text-white" disabled>
-                        Kelola Kelas <ArrowRight className="ml-2 h-4 w-4" />
+                      <Button variant="default" asChild className="w-full rounded-xl shadow-sm bg-emerald-600 hover:bg-emerald-700 text-white">
+                        <Link to={`/teacher/kelas/${cls.id}`}>
+                          Kelola Kelas <ArrowRight className="ml-2 h-4 w-4" />
+                        </Link>
                       </Button>
                     </div>
                   </Card>
