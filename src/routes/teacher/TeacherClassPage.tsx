@@ -221,7 +221,7 @@ export function TeacherClassPage() {
                         </div>
                       </CardContent>
                       <div className="pt-0 pb-4 px-4 mt-auto">
-                        <Button variant="default" asChild className="w-full rounded-xl shadow-sm hover:shadow-md transition-all">
+                        <Button variant="default" asChild className="w-full rounded-xl shadow-sm hover:shadow-md transition-all text-primary-foreground">
                           <Link to={`/teacher/kelas/program/${prog.id}`}>
                             Kelola Program <ArrowRight className="ml-2 h-4 w-4" />
                           </Link>
@@ -270,7 +270,7 @@ export function TeacherClassPage() {
                         </div>
                       </CardContent>
                       <div className="pt-0 pb-4 px-4 mt-auto">
-                        <Button variant="default" asChild className="w-full rounded-xl shadow-sm hover:shadow-md transition-all">
+                        <Button variant="default" asChild className="w-full rounded-xl shadow-sm hover:shadow-md transition-all text-primary-foreground">
                           <Link to={`/teacher/kelas/${cls.id}`}>
                             Kelola Kelas <ArrowRight className="ml-2 h-4 w-4" />
                           </Link>
