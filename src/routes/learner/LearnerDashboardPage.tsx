@@ -118,7 +118,15 @@ export function LearnerDashboardPage() {
 
       if (allProgramsData) {
         const enrolledProgramIds = nextEnrollments.map((e) => e.program_id);
-        const available = allProgramsData.filter((p) => !enrolledProgramIds.includes(p.id));
+        const available = allProgramsData
+          .filter((p) => !enrolledProgramIds.includes(p.id))
+          .sort((a, b) => {
+            const aActive = a.feature_flags?.use_direct_enrollment === true;
+            const bActive = b.feature_flags?.use_direct_enrollment === true;
+            if (aActive && !bActive) return -1;
+            if (!aActive && bActive) return 1;
+            return 0;
+          });
         setAvailablePrograms(available);
       }
 
