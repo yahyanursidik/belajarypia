@@ -1,6 +1,4 @@
 import type { PropsWithChildren } from "react";
-import { ShellLayout } from "./ShellLayout";
-import { getNavigationForRole } from "../lib/navigation";
 
 export function PublicLayout({ children }: PropsWithChildren) {
   return (

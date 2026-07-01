@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, User, Filter, MapPin, GraduationCap, Phone, Upload, Download, Users, UserCheck, PieChart, BadgeCheck, Settings, Key, X, Loader2, CheckCircle2, AlertCircle, FileText, AlertTriangle, Check, FileUp, ChevronRight } from "lucide-react";
+import { Plus, Search, User, Filter, MapPin, GraduationCap, Phone, Upload, Download, Users, UserCheck, PieChart, BadgeCheck, Settings, Key, X, Loader2, CheckCircle2, AlertCircle, FileText, AlertTriangle, FileUp } from "lucide-react";
 import Papa from "papaparse";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../components/ui/card";
@@ -322,7 +322,7 @@ export function AdminParticipantListPage() {
     setCsvFile(null);
     setMassUploadStep(1);
     setPreviewData([]);
-    setUploadStats({ success: 0, fail: 0, total: 0, processed: 0 });
+    setUploadStats({ successNew: 0, successExisting: 0, fail: 0, total: 0, processed: 0 });
     fetchInitialData();
     fetchParticipants();
   };
@@ -355,7 +355,7 @@ export function AdminParticipantListPage() {
         });
         
         setPreviewData(preview);
-        setUploadStats({ success: 0, fail: 0, total: preview.length, processed: 0 });
+        setUploadStats({ successNew: 0, successExisting: 0, fail: 0, total: preview.length, processed: 0 });
         setMassUploadStep(2);
         setIsSubmitting(false);
       },
