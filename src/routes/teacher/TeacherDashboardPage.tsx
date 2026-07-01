@@ -15,7 +15,7 @@ interface DashboardMetrics {
 export function TeacherDashboardPage() {
   const { user, profile } = useAuthSession();
   const [metrics, setMetrics] = useState<DashboardMetrics>({ totalPrograms: 0, totalClasses: 0 });
-  const [recentClasses, setRecentClasses] = useState<any[]>([]);
+  const [recentItems, setRecentItems] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -45,12 +45,28 @@ export function TeacherDashboardPage() {
           .order("created_at", { ascending: false })
           .limit(3);
 
+        // Fetch Recent Programs
+        const { data: recentProgramsData } = await supabase
+          .from("programs")
+          .select("id, name, type, created_at")
+          .eq("teacher_user_id", user!.id)
+          .order("created_at", { ascending: false })
+          .limit(3);
+
         if (isMounted) {
           setMetrics({
             totalPrograms: programsCount || 0,
             totalClasses: classesCount || 0
           });
-          setRecentClasses(recentClassesData || []);
+          
+          // Combine and sort
+          const combined = [
+            ...(recentClassesData || []).map(c => ({ ...c, itemType: 'class' })),
+            ...(recentProgramsData || []).map(p => ({ ...p, itemType: 'program' }))
+          ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+          .slice(0, 3);
+          
+          setRecentItems(combined);
         }
       } catch (error) {
         console.error("Error fetching teacher dashboard data:", error);
@@ -131,12 +147,12 @@ export function TeacherDashboardPage() {
             </Card>
           </div>
 
-          {/* Recent Classes Table */}
+          {/* Recent Items Table */}
           <Card className="bg-white border-slate-200 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <div>
-                <CardTitle>Kelas Terbaru</CardTitle>
-                <CardDescription>Akses cepat ke ruang kelas yang Anda kelola.</CardDescription>
+                <CardTitle>Program & Kelas Terbaru</CardTitle>
+                <CardDescription>Akses cepat ke amanah yang Anda kelola.</CardDescription>
               </div>
               <Button variant="ghost" size="sm" asChild className="hidden sm:flex text-primary">
                 <Link to="/teacher/kelas">Lihat Semua</Link>
@@ -149,24 +165,26 @@ export function TeacherDashboardPage() {
                   <Skeleton className="h-16 w-full rounded-lg" />
                   <Skeleton className="h-16 w-full rounded-lg" />
                 </div>
-              ) : recentClasses.length > 0 ? (
+              ) : recentItems.length > 0 ? (
                 <div className="space-y-3 mt-4">
-                  {recentClasses.map((cls) => (
-                    <div key={cls.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-lg border border-slate-100 bg-slate-50 hover:bg-slate-100 transition-colors gap-3">
+                  {recentItems.map((item) => (
+                    <div key={item.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-lg border border-slate-100 bg-slate-50 hover:bg-slate-100 transition-colors gap-3">
                       <div className="flex items-center gap-3">
                         <div className="p-2 bg-white rounded-md border border-slate-200 text-slate-500 hidden sm:block">
-                          <Users className="w-5 h-5" />
+                          {item.itemType === 'class' ? <Users className="w-5 h-5" /> : <BookMarked className="w-5 h-5" />}
                         </div>
                         <div>
-                          <p className="font-semibold text-slate-900 leading-none mb-1.5">{cls.name}</p>
+                          <p className="font-semibold text-slate-900 leading-none mb-1.5">{item.name}</p>
                           <p className="text-xs text-slate-500">
-                            {cls.code} • {cls.programs?.name || "Program Reguler"}
+                            {item.itemType === 'class' 
+                              ? `${item.code} • ${item.programs?.name || "Program Reguler"}`
+                              : `Program ${item.type === 'cohort' ? 'Angkatan (Cohort)' : 'Mandiri (Self-paced)'}`}
                           </p>
                         </div>
                       </div>
                       <Button variant="outline" size="sm" asChild className="shrink-0 bg-white hover:bg-primary hover:text-white">
-                        <Link to={`/teacher/kelas/${cls.id}`}>
-                          Buka Kelas
+                        <Link to={item.itemType === 'class' ? `/teacher/kelas/${item.id}` : `/teacher/kelas/program/${item.id}`}>
+                          {item.itemType === 'class' ? 'Buka Kelas' : 'Kelola Program'}
                         </Link>
                       </Button>
                     </div>
@@ -177,9 +195,9 @@ export function TeacherDashboardPage() {
                   <div className="mx-auto w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-3">
                     <BookOpen className="w-6 h-6" />
                   </div>
-                  <h3 className="font-medium text-slate-900">Belum Ada Kelas</h3>
+                  <h3 className="font-medium text-slate-900">Belum Ada Amanah</h3>
                   <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">
-                    Anda belum ditugaskan untuk mengampu kelas apapun saat ini. Hubungi admin jika ini merupakan sebuah kesalahan.
+                    Anda belum ditugaskan untuk mengampu program atau kelas apapun saat ini. Hubungi admin jika ini merupakan sebuah kesalahan.
                   </p>
                 </div>
               )}
