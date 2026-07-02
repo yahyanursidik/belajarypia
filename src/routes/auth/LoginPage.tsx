@@ -191,11 +191,13 @@ export function LoginPage({ portal }: LoginPageProps) {
                 navigate(from?.from ?? getDashboardPathForRole(nextState.primaryRole), {
                   replace: true,
                 });
-              } catch (error) {
+              } catch (error: any) {
+                console.error("Login error object:", error);
+                const errorStr = error instanceof Error 
+                  ? `${error.name}: ${error.message} \n ${JSON.stringify(error)}`
+                  : JSON.stringify(error);
                 setErrorMessage(
-                  error instanceof Error
-                    ? error.message
-                    : "Login gagal. Periksa email dan kata sandi.",
+                  errorStr || "Login gagal. Periksa email dan kata sandi."
                 );
               } finally {
                 setIsSubmitting(false);

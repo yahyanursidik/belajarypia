@@ -8,6 +8,7 @@ import { useAuthSession } from "../../app/providers/authSessionContext";
 import { supabase } from "../../lib/supabase";
 import { ArrowLeft, BookOpen, Download, ExternalLink, FileText, CheckCircle2, PlayCircle, Clock, AlertTriangle, ListChecks, Trophy } from "lucide-react";
 import type { DocumentFile } from "../../lib/academic";
+import { requestSignedDownloadUrl } from "../../lib/documents";
 
 export function LearnerLessonPage() {
   const { lessonId } = useParams();
@@ -16,6 +17,7 @@ export function LearnerLessonPage() {
   
   const [lesson, setLesson] = useState<any>(null);
   const [documents, setDocuments] = useState<DocumentFile[]>([]);
+  const [documentUrls, setDocumentUrls] = useState<Record<string, string>>({});
   const [prerequisites, setPrerequisites] = useState<any[]>([]);
   const [quizAttempts, setQuizAttempts] = useState<any[]>([]);
   const [questionCount, setQuestionCount] = useState(0);
@@ -56,7 +58,26 @@ export function LearnerLessonPage() {
           .eq("status", "active")
           .order("created_at", { ascending: false });
 
-        setDocuments((docRows ?? []) as DocumentFile[]);
+        const docs = (docRows ?? []) as DocumentFile[];
+        setDocuments(docs);
+
+        // Fetch signed URLs for documents to preview them inline
+        const urls: Record<string, string> = {};
+        for (const doc of docs) {
+          if (doc.source_type === "external_link" && doc.external_url) {
+            urls[doc.id] = doc.external_url;
+          } else if (doc.bucket_name && doc.object_key) {
+            try {
+              const { signedUrl } = await requestSignedDownloadUrl(doc.id);
+              if (signedUrl) {
+                urls[doc.id] = signedUrl;
+              }
+            } catch (err) {
+              console.error("Failed to get signed url for doc", doc.id, err);
+            }
+          }
+        }
+        setDocumentUrls(urls);
 
         // Load Prerequisites
         const { data: prereqRows } = await supabase
@@ -156,16 +177,12 @@ export function LearnerLessonPage() {
     
     if (doc.bucket_name && doc.object_key) {
       try {
-        const { data, error } = await supabase.storage
-          .from(doc.bucket_name)
-          .createSignedUrl(doc.object_key, 60 * 60); // 1 hour expiry
-          
-        if (error) throw error;
-        if (data?.signedUrl) {
-          window.open(data.signedUrl, "_blank");
+        const { signedUrl } = await requestSignedDownloadUrl(doc.id);
+        if (signedUrl) {
+          window.open(signedUrl, "_blank");
         }
       } catch (err: any) {
-        alert("Gagal mengunduh dokumen: " + err.message);
+        alert("Gagal mengunduh dokumen: " + (err.message || "Terjadi kesalahan"));
       }
     }
   };
@@ -452,6 +469,61 @@ export function LearnerLessonPage() {
           )}
         </div>
       )}
+
+      {/* Inline Document Viewers */}
+      {documents.map((doc) => {
+        const url = documentUrls[doc.id];
+        if (!url) return null;
+
+        const mime = (doc.mime_type || "").toLowerCase();
+        const objKey = (doc.object_key || "").toLowerCase();
+        
+        if (mime.startsWith('video/') || objKey.endsWith('.mp4') || objKey.endsWith('.webm') || objKey.endsWith('.ogg')) {
+          return (
+            <div key={doc.id} className="bg-black rounded-xl overflow-hidden shadow-sm mb-8 flex flex-col">
+              <div className="p-3 bg-slate-900 text-slate-300 text-sm font-medium border-b border-slate-800 flex items-center">
+                <PlayCircle className="w-4 h-4 mr-2 text-primary" /> {doc.display_name}
+              </div>
+              <video src={url} controls className="w-full max-h-[70vh]" />
+            </div>
+          );
+        }
+        
+        if (mime.startsWith('audio/') || objKey.endsWith('.mp3') || objKey.endsWith('.wav') || objKey.endsWith('.m4a')) {
+          return (
+            <Card key={doc.id} className="mb-8 border-slate-200 shadow-sm overflow-hidden bg-slate-50">
+              <CardContent className="p-6 flex flex-col items-center justify-center">
+                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4 text-primary">
+                  <PlayCircle className="w-8 h-8" />
+                </div>
+                <h3 className="font-semibold text-lg text-slate-800 mb-6">{doc.display_name}</h3>
+                <audio src={url} controls className="w-full max-w-md" />
+              </CardContent>
+            </Card>
+          );
+        }
+        
+        if (mime === 'application/pdf' || objKey.endsWith('.pdf') || url.toLowerCase().includes('.pdf')) {
+          return (
+            <div key={doc.id} className="bg-white rounded-xl overflow-hidden shadow-sm border border-slate-200 mb-8 flex flex-col">
+              <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                <div className="flex items-center text-sm font-medium text-slate-700">
+                  <FileText className="w-4 h-4 mr-2 text-primary" /> {doc.display_name}
+                </div>
+                <Button size="sm" variant="outline" onClick={() => window.open(url, "_blank")}>
+                  Buka Penuh <ExternalLink className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+              <div className="w-full h-[60vh] sm:h-[80vh] bg-slate-100">
+                <iframe src={url} className="w-full h-full border-none" title={doc.display_name} />
+              </div>
+            </div>
+          );
+        }
+
+        return null;
+      })}
+
 
       {/* Document Attachments */}
       {documents.length > 0 && (

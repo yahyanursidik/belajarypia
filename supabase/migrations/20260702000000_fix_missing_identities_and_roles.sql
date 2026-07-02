@@ -1,11 +1,49 @@
--- Migration: Admin Create Participant With User
--- Allows admins to create a participant and an auth user via Mass Upload
--- Handles skipping creation if user already exists (by email)
+-- Fix missing identities and roles for mass-uploaded participants
 
-create extension if not exists pgcrypto with schema extensions;
+-- 1. Create missing auth.identities
+do $$
+declare
+  r record;
+begin
+  for r in 
+    select u.id, u.email 
+    from auth.users u
+    join public.participants p on p.user_id = u.id
+    left join auth.identities i on i.user_id = u.id
+    where i.id is null
+  loop
+    insert into auth.identities (
+      id, user_id, identity_data, provider, provider_id, last_sign_in_at, created_at, updated_at
+    ) values (
+      gen_random_uuid(), r.id, jsonb_build_object('sub', r.id::text, 'email', r.email, 'email_verified', true), 'email', r.id::text, now(), now(), now()
+    );
 
-drop function if exists public.admin_create_participant_with_user(text, text, text, text, text, text, text, text, text, text);
+    update auth.users
+    set email_confirmed_at = coalesce(email_confirmed_at, now())
+    where id = r.id;
+  end loop;
+end;
+$$;
 
+-- 2. Create missing roles (participant)
+do $$
+declare
+  r record;
+begin
+  for r in 
+    select p.user_id
+    from public.participants p
+    left join public.user_roles ur on ur.user_id = p.user_id
+    where ur.id is null
+  loop
+    insert into public.user_roles (user_id, role_id)
+    select r.user_id, id from public.roles where code = 'participant'
+    on conflict do nothing;
+  end loop;
+end;
+$$;
+
+-- 3. Replace the function to include these fixes for future mass uploads
 create or replace function public.admin_create_participant_with_user(
   p_email text,
   p_password text,
@@ -98,11 +136,10 @@ begin
       now(), now()
     );
 
-    -- Insert into auth.identities so they can login via email provider
     insert into auth.identities (
       id, user_id, identity_data, provider, provider_id, last_sign_in_at, created_at, updated_at
     ) values (
-      gen_random_uuid(), new_user_id, format('{"sub":"%s","email":"%s"}', new_user_id::text, p_email)::jsonb, 'email', new_user_id::text, now(), now(), now()
+      gen_random_uuid(), new_user_id, jsonb_build_object('sub', new_user_id::text, 'email', p_email, 'email_verified', true), 'email', new_user_id::text, now(), now(), now()
     );
 
     -- Insert into public.participants
@@ -145,3 +182,11 @@ begin
   );
 end;
 $$;
+
+-- 4. Reset password untuk SEMUA peserta menjadi 'ahlan1447H'
+update auth.users
+set 
+  encrypted_password = extensions.crypt('ahlan1447H', extensions.gen_salt('bf', 10)),
+  updated_at = now()
+from public.participants p
+where p.user_id = auth.users.id;
