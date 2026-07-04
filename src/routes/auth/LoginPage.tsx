@@ -8,7 +8,7 @@ import { getDashboardPathForRole, type RoleCode } from "../../lib/auth";
 import { appName } from "../../lib/constants";
 import { useSystemSettings } from "../../lib/useSystemSettings";
 import { getThemeStyles } from "../../lib/theme";
-import { GraduationCap, Loader2, Users, BookOpen } from "lucide-react";
+import { GraduationCap, Loader2, Users, BookOpen, Eye, EyeOff } from "lucide-react";
 
 export type PortalType = "admin" | "teacher" | "learner";
 
@@ -52,6 +52,7 @@ export function LoginPage({ portal }: LoginPageProps) {
   const { isLoading, session, primaryRole, signIn, signOut } = useAuthSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { settings } = useSystemSettings();
@@ -227,17 +228,31 @@ export function LoginPage({ portal }: LoginPageProps) {
                     Kata Sandi
                   </label>
                 </div>
-                <Input
-                  id="password"
-                  autoComplete="current-password"
-                  disabled={isSubmitting}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="••••••••"
-                  required
-                  type="password"
-                  value={password}
-                  className="h-12 bg-muted/50 border-muted-foreground/20 focus:bg-background transition-colors"
-                />
+                <div className="relative">
+                  <Input
+                    id="password"
+                    autoComplete="current-password"
+                    disabled={isSubmitting}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="••••••••"
+                    required
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    className="h-12 bg-muted/50 border-muted-foreground/20 focus:bg-background transition-colors pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                    aria-label={showPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
 
