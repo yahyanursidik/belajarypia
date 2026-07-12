@@ -35,8 +35,18 @@ type Lesson = {
   };
 };
 
+type DocumentFile = {
+  id: string;
+  lesson_id: string;
+  source_type: "object_storage" | "external_link";
+  external_url: string | null;
+  display_name: string;
+  file_category: string;
+};
+
 export function SystemContentReviewPage() {
     const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [documentFiles, setDocumentFiles] = useState<DocumentFile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
@@ -78,6 +88,26 @@ export function SystemContentReviewPage() {
     
     const { data, count, error } = await query;
     if (data && !error) {
+      const lessonIds = data.map((lesson) => lesson.id);
+      if (lessonIds.length > 0) {
+        const { data: docs } = await supabase
+          .from("document_files")
+          .select("id, lesson_id, source_type, external_url, display_name, file_category")
+          .in("lesson_id", lessonIds)
+          .eq("status", "active");
+        if (isLoadMore) {
+          setDocumentFiles(prev => {
+            const newDocs = (docs ?? []) as DocumentFile[];
+            const newIds = new Set(newDocs.map(doc => doc.id));
+            return [...prev.filter(doc => !newIds.has(doc.id)), ...newDocs];
+          });
+        } else {
+          setDocumentFiles((docs ?? []) as DocumentFile[]);
+        }
+      } else if (!isLoadMore) {
+        setDocumentFiles([]);
+      }
+
       if (isLoadMore) {
         setLessons(prev => {
           const newIds = data.map(d => d.id);
@@ -131,6 +161,37 @@ export function SystemContentReviewPage() {
       case "locked": return <Badge className="bg-slate-100 text-slate-700 border-slate-200">Terkunci</Badge>;
       default: return <Badge variant="outline">{status}</Badge>;
     }
+  };
+
+  const renderDocumentSources = (lessonId: string) => {
+    const docs = documentFiles.filter(doc => doc.lesson_id === lessonId);
+    if (docs.length === 0) return null;
+
+    return (
+      <div className="mb-4 rounded-lg border bg-background p-4">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h3 className="text-sm font-bold text-foreground">Sumber Materi Utama</h3>
+          <Badge variant="outline">{docs.length} sumber</Badge>
+        </div>
+        <div className="grid gap-2">
+          {docs.map(doc => (
+            <div key={doc.id} className="flex items-center justify-between gap-3 rounded-md bg-muted/40 p-3 text-sm">
+              <div className="min-w-0">
+                <p className="truncate font-medium text-foreground">{doc.display_name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {doc.file_category} • {doc.source_type === "external_link" ? "Link eksternal" : "File private"}
+                </p>
+              </div>
+              {doc.external_url && (
+                <a href={doc.external_url} target="_blank" rel="noreferrer" className="shrink-0 text-xs font-semibold text-primary hover:underline">
+                  Buka
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
   
   const renderPreview = (lesson: Lesson) => {
@@ -337,6 +398,7 @@ export function SystemContentReviewPage() {
 
             {/* Content Preview */}
             <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/50 dark:bg-slate-900/50">
+               {renderDocumentSources(selectedLesson.id)}
                {renderPreview(selectedLesson)}
             </div>
 

@@ -106,7 +106,7 @@ export function SystemHelpdeskPage() {
     
     if (dateFilter !== "all") {
       const now = new Date();
-      let fromDate = new Date();
+      const fromDate = new Date();
       if (dateFilter === "today") {
         fromDate.setHours(0, 0, 0, 0);
       } else if (dateFilter === "week") {

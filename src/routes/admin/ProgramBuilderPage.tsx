@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, BookOpen, Presentation, FileText, Video, PlayCircle, ChevronDown, ChevronRight, Edit2, Trash2, X, Plus, Upload, Link2, ExternalLink } from "lucide-react";
+import { ArrowLeft, BookOpen, Presentation, FileText, Video, PlayCircle, ChevronDown, ChevronRight, Edit2, Trash2, X, Plus, Upload, ExternalLink } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ import type {
   StaffProfile,
   QuestionBank,
 } from "../../lib/academic";
-import { inferFileCategory, requestSignedUploadUrl, requestSignedDownloadUrl } from "../../lib/documents";
+import { inferFileCategory, requestSignedUploadUrl } from "../../lib/documents";
 import type { Program } from "../../lib/organization";
 import { supabase } from "../../lib/supabase";
 import { ProgramParticipants } from "./ProgramParticipants";
@@ -49,6 +49,36 @@ const emptyLesson = {
   randomized_questions_count: ""
 };
 const emptyQuestion = { question_text: "", optA: "", optB: "", optC: "", optD: "", correct_option: "A", explanation: "", points: 10 };
+
+type MaterialLinkDraft = {
+  id: string;
+  label: string;
+  url: string;
+  category: DocumentFile["file_category"];
+};
+
+type UploadPreview = {
+  name: string;
+  url: string;
+};
+
+const createMaterialLinkDraft = (): MaterialLinkDraft => ({
+  id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  label: "",
+  url: "",
+  category: "link",
+});
+
+const getMaterialCategoryLabel = (category: DocumentFile["file_category"]) => {
+  switch (category) {
+    case "video": return "Video";
+    case "audio": return "Audio";
+    case "pdf": return "PDF";
+    case "document": return "Dokumen";
+    case "link": return "Link";
+    default: return "Lainnya";
+  }
+};
 
 /* ───────────────── Component ───────────────── */
 
@@ -113,10 +143,9 @@ export function ProgramBuilderPage() {
   const [gradingRubricForm, setGradingRubricForm] = useState<any[]>([]);
   const [isSavingRubric, setIsSavingRubric] = useState(false);
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
-  const [uploadSource, setUploadSource] = useState<"url" | "upload">("url");
-  const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
-  const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string | null>(null);
-  const [existingUploadedDoc, setExistingUploadedDoc] = useState<DocumentFile | null>(null);
+  const [materialLinks, setMaterialLinks] = useState<MaterialLinkDraft[]>([createMaterialLinkDraft()]);
+  const [selectedUploadFiles, setSelectedUploadFiles] = useState<File[]>([]);
+  const [uploadPreviewUrls, setUploadPreviewUrls] = useState<UploadPreview[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -138,13 +167,14 @@ export function ProgramBuilderPage() {
 
   /* ── File preview effect ── */
   useEffect(() => {
-    if (selectedUploadFile) {
-      const url = URL.createObjectURL(selectedUploadFile);
-      setUploadPreviewUrl(url);
-      return () => URL.revokeObjectURL(url);
-    }
-    if (!existingUploadedDoc) setUploadPreviewUrl(null);
-  }, [selectedUploadFile, existingUploadedDoc]);
+    const previews = selectedUploadFiles.map((file) => ({
+      name: file.name,
+      url: URL.createObjectURL(file),
+    }));
+    setUploadPreviewUrls(previews);
+
+    return () => previews.forEach((preview) => URL.revokeObjectURL(preview.url));
+  }, [selectedUploadFiles]);
 
   /* ── Loader Functions ── */
   const parseQuestionsText = (text: string) => {
@@ -320,26 +350,30 @@ export function ProgramBuilderPage() {
       lesson_type: mode === "kuis" ? "quiz" : "content" 
     });
     setEditingLessonId(null);
-    setUploadSource("url");
-    setSelectedUploadFile(null);
-    setUploadPreviewUrl(null);
-    setExistingUploadedDoc(null);
+    setMaterialLinks([createMaterialLinkDraft()]);
+    setSelectedUploadFiles([]);
     setIsLessonModalOpen(true);
   };
 
   const editLesson = (lesson: Lesson) => {
     setLessonModalMode(lesson.lesson_type === "quiz" || lesson.lesson_type === "exam" ? "kuis" : "materi");
-    const doc = documentFiles.find(d => d.lesson_id === lesson.id && d.source_type === "object_storage");
-    if (doc) {
-      setUploadSource("upload");
-      setExistingUploadedDoc(doc);
-      requestSignedDownloadUrl(doc.id).then(({ signedUrl }) => setUploadPreviewUrl(signedUrl)).catch(() => {});
-    } else {
-      setUploadSource(lesson.external_url ? "url" : "url");
-      setExistingUploadedDoc(null);
-      setUploadPreviewUrl(null);
+    const externalDocs = documentFiles.filter(d => d.lesson_id === lesson.id && d.source_type === "external_link");
+    const drafts = externalDocs.map((doc) => ({
+      id: doc.id,
+      label: doc.display_name,
+      url: doc.external_url || "",
+      category: doc.file_category,
+    }));
+    if (lesson.external_url && !drafts.some((draft) => draft.url === lesson.external_url)) {
+      drafts.unshift({
+        id: `legacy-${lesson.id}`,
+        label: "Link utama",
+        url: lesson.external_url,
+        category: inferFileCategory(undefined, lesson.external_url) as DocumentFile["file_category"],
+      });
     }
-    setSelectedUploadFile(null);
+    setMaterialLinks(drafts.length > 0 ? drafts : [createMaterialLinkDraft()]);
+    setSelectedUploadFiles([]);
     setLessonForm({
       module_id: lesson.module_id,
       code: lesson.code,
@@ -474,6 +508,43 @@ export function ProgramBuilderPage() {
   };
 
   /* ── URL Preview Helper ── */
+  const getLessonSources = (lessonId: string) =>
+    documentFiles
+      .filter((doc) => doc.lesson_id === lessonId)
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+  const addMaterialLink = () => {
+    setMaterialLinks((current) => [...current, createMaterialLinkDraft()]);
+  };
+
+  const updateMaterialLink = (id: string, patch: Partial<MaterialLinkDraft>) => {
+    setMaterialLinks((current) => current.map((link) => (link.id === id ? { ...link, ...patch } : link)));
+  };
+
+  const removeMaterialLink = (id: string) => {
+    setMaterialLinks((current) => {
+      const next = current.filter((link) => link.id !== id);
+      return next.length > 0 ? next : [createMaterialLinkDraft()];
+    });
+  };
+
+  const removeSelectedUploadFile = (fileName: string) => {
+    setSelectedUploadFiles((current) => current.filter((file) => file.name !== fileName));
+  };
+
+  const deleteMaterialSource = async (doc: DocumentFile) => {
+    if (!window.confirm(`Hapus sumber materi "${doc.display_name}"?`)) return;
+
+    const { error } = await supabase.from("document_files").delete().eq("id", doc.id);
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    setDocumentFiles((current) => current.filter((item) => item.id !== doc.id));
+    setMessage("Sumber materi berhasil dihapus.");
+  };
+
   const renderUrlPreview = (url: string) => {
     const lower = url.toLowerCase();
     if (lower.includes("youtube.com") || lower.includes("youtu.be")) {
@@ -496,9 +567,7 @@ export function ProgramBuilderPage() {
   };
 
   /* ── File preview helper ── */
-  const renderFilePreview = () => {
-    const url = uploadPreviewUrl || "";
-    const filename = selectedUploadFile?.name || existingUploadedDoc?.display_name || "";
+  const renderFilePreview = (filename: string, url = "") => {
     const lowerName = filename.toLowerCase();
     if (!url && !filename) return null;
     if (lowerName.endsWith(".mp4") || lowerName.endsWith(".webm")) return <video className="w-full aspect-video rounded-lg bg-black" controls src={url} />;
@@ -519,6 +588,16 @@ export function ProgramBuilderPage() {
     setMessage(null);
 
     const autoCode = `MTR-${Date.now().toString(36).toUpperCase()}`;
+    const cleanedMaterialLinks = materialLinks
+      .map((link) => ({
+        ...link,
+        label: link.label.trim(),
+        url: link.url.trim(),
+      }))
+      .filter((link) => link.url.length > 0);
+    const primaryExternalUrl = lessonForm.lesson_type === "live_session"
+      ? lessonForm.external_url.trim() || null
+      : cleanedMaterialLinks[0]?.url ?? null;
     const payload = {
       module_id: lessonForm.module_id,
       code: editingLessonId ? lessonForm.code : autoCode,
@@ -528,7 +607,7 @@ export function ProgramBuilderPage() {
       release_at: lessonForm.release_at ? new Date(lessonForm.release_at).toISOString() : null,
       visibility_status: lessonForm.visibility_status,
       content_body: lessonForm.content_body.trim() || null,
-      external_url: uploadSource === "url" ? (lessonForm.external_url.trim() || null) : null,
+      external_url: primaryExternalUrl,
       passing_grade: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? (lessonForm.passing_grade ? Number(lessonForm.passing_grade) : null) : null,
       duration_minutes: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? (lessonForm.duration_minutes ? Number(lessonForm.duration_minutes) : null) : null,
       max_attempts: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? (lessonForm.max_attempts ? Number(lessonForm.max_attempts) : null) : null,
@@ -550,30 +629,67 @@ export function ProgramBuilderPage() {
 
     const lessonIdToUse = editingLessonId || data.id;
 
-    // Handle file upload to S3
-    if (uploadSource === "upload" && selectedUploadFile) {
+    if (lessonForm.lesson_type !== "live_session" && lessonModalMode !== "kuis") {
+      const { error: deleteLinkError } = await supabase
+        .from("document_files")
+        .delete()
+        .eq("lesson_id", lessonIdToUse)
+        .eq("source_type", "external_link");
+
+      if (deleteLinkError) {
+        setErrorMessage(deleteLinkError.message);
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (cleanedMaterialLinks.length > 0) {
+        const { error: linkError } = await supabase.from("document_files").insert(
+          cleanedMaterialLinks.map((link) => ({
+            lesson_id: lessonIdToUse,
+            source_type: "external_link",
+            storage_provider: "external",
+            external_url: link.url,
+            display_name: link.label || link.url,
+            file_category: link.category,
+            access_level: "enrolled",
+            status: "active",
+            uploaded_by: user?.id || null,
+          })),
+        );
+
+        if (linkError) {
+          setErrorMessage(linkError.message);
+          setIsSubmitting(false);
+          return;
+        }
+      }
+    }
+
+    // Handle file uploads to S3. Each new file is appended as an additional source.
+    if (selectedUploadFiles.length > 0) {
       try {
-        const { signedUrl, bucket, objectKey } = await requestSignedUploadUrl({ lessonId: lessonIdToUse, file: selectedUploadFile });
-        const uploadRes = await fetch(signedUrl, { method: "PUT", body: selectedUploadFile, headers: { "Content-Type": selectedUploadFile.type || "application/octet-stream" } });
-        if (!uploadRes.ok) throw new Error("Gagal mengunggah file ke S3 Contabo");
+        for (const file of selectedUploadFiles) {
+          const { signedUrl, bucket, objectKey } = await requestSignedUploadUrl({ lessonId: lessonIdToUse, file });
+          const uploadRes = await fetch(signedUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } });
+          if (!uploadRes.ok) throw new Error("Gagal mengunggah file ke S3 Contabo");
 
-        // Remove old doc if editing
-        if (existingUploadedDoc) await supabase.from("document_files").delete().eq("id", existingUploadedDoc.id);
+          const { error: fileError } = await supabase.from("document_files").insert({
+            lesson_id: lessonIdToUse,
+            source_type: "object_storage",
+            storage_provider: "contabo_s3",
+            bucket_name: bucket,
+            object_key: objectKey,
+            display_name: file.name,
+            mime_type: file.type || null,
+            file_size_bytes: file.size,
+            file_category: inferFileCategory(file.type, file.name),
+            access_level: "enrolled",
+            status: "active",
+            uploaded_by: user?.id || null,
+          });
 
-        await supabase.from("document_files").insert({
-          lesson_id: lessonIdToUse,
-          source_type: "object_storage",
-          storage_provider: "contabo_s3",
-          bucket_name: bucket,
-          object_key: objectKey,
-          display_name: selectedUploadFile.name,
-          mime_type: selectedUploadFile.type || null,
-          file_size_bytes: selectedUploadFile.size,
-          file_category: inferFileCategory(selectedUploadFile.type, selectedUploadFile.name),
-          access_level: "enrolled",
-          status: "active",
-          uploaded_by: user?.id || null,
-        });
+          if (fileError) throw fileError;
+        }
       } catch (err: any) {
         setErrorMessage(err.message ?? "Gagal mengunggah file.");
         setIsSubmitting(false);
@@ -585,7 +701,8 @@ export function ProgramBuilderPage() {
     setIsLessonModalOpen(false);
     setEditingLessonId(null);
     setLessonForm(emptyLesson);
-    setSelectedUploadFile(null);
+    setMaterialLinks([createMaterialLinkDraft()]);
+    setSelectedUploadFiles([]);
     await loadData();
     setIsSubmitting(false);
   };
@@ -1515,43 +1632,127 @@ export function ProgramBuilderPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-3 p-4 bg-muted/30 rounded-xl border">
-                    <label className="text-sm font-semibold flex items-center gap-2">
-                      <ExternalLink className="h-4 w-4 text-primary" /> Sumber Materi Utama
-                    </label>
-                    <div className="flex bg-background p-1 rounded-lg w-fit border">
-                      <button type="button" onClick={() => setUploadSource("url")} className={`px-4 py-2 text-sm rounded-md transition-all flex items-center gap-2 ${uploadSource === "url" ? "bg-primary text-primary-foreground shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}>
-                        <Link2 className="h-4 w-4" /> URL Tautan
-                      </button>
-                      <button type="button" onClick={() => setUploadSource("upload")} className={`px-4 py-2 text-sm rounded-md transition-all flex items-center gap-2 ${uploadSource === "upload" ? "bg-primary text-primary-foreground shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}>
-                        <Upload className="h-4 w-4" /> Unggah File (S3)
-                      </button>
+                  <div className="space-y-5 p-4 bg-muted/30 rounded-xl border">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <label className="text-sm font-semibold flex items-center gap-2">
+                        <ExternalLink className="h-4 w-4 text-primary" /> Sumber Materi Utama
+                      </label>
+                      <Badge variant="outline" className="w-fit bg-background">
+                        Bisa video/audio + PDF/dokumen sekaligus
+                      </Badge>
                     </div>
 
-                    {uploadSource === "url" ? (
-                      <div className="space-y-3">
-                        <Input placeholder="Paste link YouTube, Google Drive, MP4, atau MP3..." value={lessonForm.external_url} onChange={e => setLessonForm(c => ({ ...c, external_url: e.target.value }))} />
-                        {lessonForm.external_url && (
-                          <div className="mt-2 p-2 border rounded-lg bg-background">{renderUrlPreview(lessonForm.external_url)}</div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <div
-                          className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
-                          onClick={() => fileInputRef.current?.click()}
-                        >
-                          <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                          <p className="text-sm font-medium">{selectedUploadFile ? selectedUploadFile.name : "Klik untuk memilih file"}</p>
-                          <p className="text-xs text-muted-foreground mt-1">Video, Audio, atau Dokumen (Max 500MB)</p>
-                          {selectedUploadFile && <p className="text-xs text-primary mt-1">{(selectedUploadFile.size / 1024 / 1024).toFixed(2)} MB</p>}
+                    {editingLessonId && getLessonSources(editingLessonId).length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sumber tersimpan</p>
+                        <div className="grid gap-2">
+                          {getLessonSources(editingLessonId).map((doc) => (
+                            <div key={doc.id} className="flex items-center justify-between gap-3 rounded-lg border bg-background p-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium">{doc.display_name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {getMaterialCategoryLabel(doc.file_category)} · {doc.source_type === "external_link" ? "Link eksternal" : "File private"}
+                                </p>
+                              </div>
+                              <Button type="button" variant="ghost" className="h-8 w-8 shrink-0 p-0 text-red-500 hover:bg-red-50" onClick={() => void deleteMaterialSource(doc)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ))}
                         </div>
-                        <input ref={fileInputRef} type="file" className="hidden" accept="video/*,audio/*,.pdf,.doc,.docx,.ppt,.pptx" onChange={e => setSelectedUploadFile(e.target.files?.[0] || null)} />
-                        {(uploadPreviewUrl || existingUploadedDoc) && (
-                          <div className="p-2 border rounded-lg bg-background">{renderFilePreview()}</div>
-                        )}
                       </div>
                     )}
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Link sumber</p>
+                        <Button type="button" variant="outline" size="sm" className="h-8" onClick={addMaterialLink}>
+                          <Plus className="mr-2 h-3.5 w-3.5" /> Tambah Link
+                        </Button>
+                      </div>
+                      <div className="space-y-3">
+                        {materialLinks.map((link, index) => (
+                          <div key={link.id} className="rounded-lg border bg-background p-3 space-y-3">
+                            <div className="grid gap-3 md:grid-cols-[1fr_150px_40px]">
+                              <Input
+                                placeholder={`Judul link ${index + 1}, misal: Video pembuka`}
+                                value={link.label}
+                                onChange={e => updateMaterialLink(link.id, { label: e.target.value })}
+                              />
+                              <select
+                                className="field-control h-10"
+                                value={link.category}
+                                onChange={e => updateMaterialLink(link.id, { category: e.target.value as DocumentFile["file_category"] })}
+                              >
+                                <option value="video">Video</option>
+                                <option value="audio">Audio</option>
+                                <option value="pdf">PDF</option>
+                                <option value="document">Dokumen</option>
+                                <option value="link">Link</option>
+                                <option value="other">Lainnya</option>
+                              </select>
+                              <Button type="button" variant="ghost" className="h-10 w-10 p-0 text-red-500 hover:bg-red-50" onClick={() => removeMaterialLink(link.id)}>
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <Input
+                              placeholder="Paste link YouTube, Google Drive, PDF, MP4, MP3, atau hyperlink lainnya..."
+                              value={link.url}
+                              onChange={e => updateMaterialLink(link.id, { url: e.target.value })}
+                            />
+                            {link.url && (
+                              <div className="mt-2 p-2 border rounded-lg bg-muted/20">{renderUrlPreview(link.url)}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Upload file private</p>
+                        <span className="text-xs text-muted-foreground">Video, audio, PDF, dokumen</span>
+                      </div>
+                      <div
+                        className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                        <p className="text-sm font-medium">Klik untuk memilih satu atau banyak file</p>
+                        <p className="text-xs text-muted-foreground mt-1">File baru akan ditambahkan sebagai sumber tambahan.</p>
+                      </div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        className="hidden"
+                        accept="video/*,audio/*,.pdf,.doc,.docx,.ppt,.pptx"
+                        onChange={e => setSelectedUploadFiles(Array.from(e.target.files ?? []))}
+                      />
+                      {selectedUploadFiles.length > 0 && (
+                        <div className="grid gap-2">
+                          {selectedUploadFiles.map((file) => {
+                            const preview = uploadPreviewUrls.find((item) => item.name === file.name);
+                            return (
+                              <div key={file.name} className="rounded-lg border bg-background p-3">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium">{file.name}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {getMaterialCategoryLabel(inferFileCategory(file.type, file.name) as DocumentFile["file_category"])} · {(file.size / 1024 / 1024).toFixed(2)} MB
+                                    </p>
+                                  </div>
+                                  <Button type="button" variant="ghost" className="h-8 w-8 shrink-0 p-0 text-red-500 hover:bg-red-50" onClick={() => removeSelectedUploadFile(file.name)}>
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                                {preview && <div className="mt-2 p-2 border rounded-lg bg-muted/20">{renderFilePreview(file.name, preview.url)}</div>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 

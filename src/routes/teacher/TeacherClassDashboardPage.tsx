@@ -30,7 +30,7 @@ export function TeacherClassDashboardPage() {
 
         if (error) throw error;
         if (isMounted) setClassData(data);
-      } catch (err: any) {
+      } catch (_err: any) {
         if (isMounted) setErrorMessage("Kelas tidak ditemukan atau Anda tidak memiliki akses ke kelas ini.");
       } finally {
         if (isMounted) setIsLoading(false);

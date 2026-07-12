@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="YPIA LMS">
+  <rect width="64" height="64" rx="16" fill="#0f766e"/>
+  <path d="M18 18h28a4 4 0 0 1 4 4v24a2 2 0 0 1-2.8 1.8L36 43.2l-11.2 4.6A2 2 0 0 1 22 46V22a4 4 0 0 0-4-4Z" fill="#ccfbf1"/>
+  <path d="M18 18a4 4 0 0 0-4 4v24a2 2 0 0 0 2.8 1.8L28 43.2V22a4 4 0 0 0-4-4h-6Z" fill="#ecfeff"/>
+  <path d="M24 28h16M24 34h16M24 40h10" stroke="#0f766e" stroke-width="3" stroke-linecap="round"/>
+</svg>

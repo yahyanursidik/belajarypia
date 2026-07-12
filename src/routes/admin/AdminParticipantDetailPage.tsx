@@ -58,7 +58,7 @@ export function AdminParticipantDetailPage() {
         .order("created_at", { ascending: false });
       
       if (eData) setEnrollments(eData as any[]);
-    } catch (err) {
+    } catch (_err) {
       toast.error("Gagal memuat detail peserta");
     } finally {
       setIsLoading(false);
@@ -78,7 +78,7 @@ export function AdminParticipantDetailPage() {
     setIsSubmitting(true);
     
     // Check if user is already a guardian
-    let { data: existingGuardian } = await supabase.from("guardians").select("id").eq("user_id", selectedProfileId).single();
+    const { data: existingGuardian } = await supabase.from("guardians").select("id").eq("user_id", selectedProfileId).single();
     let guardianId = existingGuardian?.id;
 
     if (!guardianId) {

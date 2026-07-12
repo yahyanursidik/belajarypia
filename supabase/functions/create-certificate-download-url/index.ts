@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
-import { createS3SignedUrl, requiredEnv } from "../_shared/s3.ts";
+import { createS3SignedUrl } from "../_shared/s3.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

@@ -4,6 +4,12 @@ import { BookOpen, Upload, Send, CheckCircle2, AlertCircle, ChevronLeft, Trash2,
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardDescription } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
+import {
+  formatRegistrationDateTime,
+  getRegistrationWindowState,
+  isRegistrationOpen,
+  normalizeGroupSettings,
+} from "../../lib/admission";
 import { supabase } from "../../lib/supabase";
 import { useAuthSession } from "../../app/providers/authSessionContext";
 
@@ -48,6 +54,9 @@ export function AdmissionPortalPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [submittedApplicantId, setSubmittedApplicantId] = useState<string | null>(null);
+  const [isOpeningGroup, setIsOpeningGroup] = useState(false);
+  const [groupLinkError, setGroupLinkError] = useState<string | null>(null);
 
   // Verification states
   const [alreadyEnrolled, setAlreadyEnrolled] = useState(false);
@@ -235,6 +244,11 @@ export function AdmissionPortalPage() {
     e.preventDefault();
     if (isSubmitting) return;
 
+    if (!isRegistrationOpen(formConfig)) {
+      setErrorMsg("Pendaftaran belum dibuka atau sudah ditutup.");
+      return;
+    }
+
     // Final file checks
     if (Object.keys(fileErrors).length > 0) {
       setErrorMsg("Harap perbaiki kesalahan file sebelum mengirimkan formulir.");
@@ -280,6 +294,7 @@ export function AdmissionPortalPage() {
       }]).select().single();
 
       if (appError) throw appError;
+      setSubmittedApplicantId(applicant.id);
 
       // 3. Create Program Choice
       const { error: choiceError } = await supabase.from("applicant_program_choices").insert([{
@@ -314,6 +329,36 @@ export function AdmissionPortalPage() {
     }
   };
 
+  const openAssignedGroupLink = async () => {
+    if (!formConfig || !submittedApplicantId || isOpeningGroup) {
+      return;
+    }
+
+    setIsOpeningGroup(true);
+    setGroupLinkError(null);
+    const popup = window.open("", "_blank", "noopener,noreferrer");
+
+    const { data, error } = await supabase.rpc("claim_registration_group_link", {
+      p_form_id: formConfig.id,
+      p_applicant_id: submittedApplicantId,
+      p_gender: standardData.gender || null,
+    });
+
+    const claim = Array.isArray(data) ? data[0] : data;
+    const inviteLink = claim?.group_link as string | undefined;
+
+    if (error || !inviteLink) {
+      popup?.close();
+      setGroupLinkError(error?.message || "Tautan grup belum tersedia atau semua tautan sudah penuh.");
+    } else if (popup) {
+      popup.location.href = inviteLink;
+    } else {
+      window.location.href = inviteLink;
+    }
+
+    setIsOpeningGroup(false);
+  };
+
   const isLearnerPortal = window.location.pathname.startsWith('/learner');
 
   if (isLoading) return <FormSkeleton />;
@@ -331,6 +376,31 @@ export function AdmissionPortalPage() {
     </div>
   );
 
+  const registrationState = getRegistrationWindowState(formConfig);
+
+  if (registrationState !== "open") {
+    const isUpcoming = registrationState === "upcoming";
+
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+        <Card className="max-w-lg text-center shadow-xl border-0">
+          <CardContent className="pt-10 pb-10">
+            <AlertCircle className={`h-16 w-16 mx-auto mb-4 ${isUpcoming ? "text-sky-400" : "text-slate-300"}`} />
+            <h2 className="text-xl font-bold text-slate-800 mb-2">
+              {isUpcoming ? "Pendaftaran Belum Dibuka" : "Pendaftaran Ditutup"}
+            </h2>
+            <p className="text-slate-500 mb-6">
+              {isUpcoming
+                ? `Pendaftaran program ini akan dibuka pada ${formatRegistrationDateTime(formConfig.registration_open_at)}.`
+                : `Periode pendaftaran program ini berakhir pada ${formatRegistrationDateTime(formConfig.registration_close_at)}.`}
+            </p>
+            <Button onClick={() => navigate(isLearnerPortal ? "/learner" : "/")} variant="outline">Kembali ke Beranda</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (isSuccess) return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 to-white p-4">
       <Card className="max-w-lg text-center shadow-2xl border-0">
@@ -343,44 +413,30 @@ export function AdmissionPortalPage() {
           </p>
 
           {/* Group Invitation Link Section */}
-          {formConfig?.group_settings && formConfig.group_settings.platform !== "none" && (
+          {normalizeGroupSettings(formConfig?.group_settings).platform !== "none" && (
             <div className="mb-8 border border-primary/10 rounded-2xl bg-primary/5 overflow-hidden text-left animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="bg-primary/10 px-6 py-4 border-b border-primary/10">
                 <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                  <span>Bergabung dengan Grup {formConfig.group_settings.platform === 'whatsapp' ? 'WhatsApp' : 'Telegram'}</span>
+                  <span>Bergabung dengan Grup {normalizeGroupSettings(formConfig.group_settings).platform === 'whatsapp' ? 'WhatsApp' : 'Telegram'}</span>
                 </h4>
                 <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                  Klik / akses tautan di bawah ini untuk bergabung dengan grup {formConfig.group_settings.platform === 'whatsapp' ? 'WhatsApp' : 'Telegram'}. Silakan bergabung ke grup komunitas untuk mendapatkan informasi selanjutnya.
+                  Sistem akan memberikan tautan grup yang masih memiliki kuota.
                 </p>
               </div>
               <div className="p-6 flex flex-col gap-3">
-                {(() => {
-                  const settings = formConfig.group_settings!;
-                  let groups: { name: string; link: string }[] = [];
-                  
-                  if (settings.separated_gender) {
-                    const lowerGender = (standardData.gender || "").toLowerCase();
-                    if (lowerGender === "laki-laki" || lowerGender === "male") {
-                      groups = settings.ikhwan_groups || [];
-                    } else if (lowerGender === "perempuan" || lowerGender === "female") {
-                      groups = settings.akhwat_groups || [];
-                    }
-                  } else {
-                    groups = settings.general_groups || [];
-                  }
-
-                  if (groups.length === 0) {
-                    return <p className="text-sm text-slate-500">Tautan grup belum tersedia.</p>;
-                  }
-
-                  return groups.map((g, idx) => (
-                    <Button key={idx} asChild variant="outline" className="w-full justify-start text-left h-auto py-3.5 border-primary/20 hover:border-primary hover:bg-primary/5 bg-white">
-                      <a href={g.link} target="_blank" rel="noopener noreferrer">
-                        <span className="font-semibold text-primary">{g.name || `Grup ${idx + 1}`}</span>
-                      </a>
-                    </Button>
-                  ));
-                })()}
+                {groupLinkError && (
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    {groupLinkError}
+                  </div>
+                )}
+                <Button
+                  type="button"
+                  onClick={() => void openAssignedGroupLink()}
+                  disabled={isOpeningGroup || !submittedApplicantId}
+                  className="w-full justify-center bg-primary hover:bg-primary/90 text-white"
+                >
+                  {isOpeningGroup ? "Menyiapkan tautan..." : "Buka Tautan Grup"}
+                </Button>
               </div>
             </div>
           )}

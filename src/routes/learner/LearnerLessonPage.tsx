@@ -199,6 +199,132 @@ export function LearnerLessonPage() {
   const isQuiz = lesson?.lesson_type === 'quiz' || lesson?.lesson_type === 'exam';
   const submittedAttempts = quizAttempts.filter(a => a.status === 'submitted');
   const maxAttemptsReached = lesson?.max_attempts && submittedAttempts.length >= lesson.max_attempts;
+  const hasExternalUrlDocument = Boolean(
+    lesson?.external_url && documents.some((doc) => doc.external_url === lesson.external_url),
+  );
+  const shouldRenderLegacyExternal = Boolean(lesson?.external_url && !hasExternalUrlDocument);
+
+  const getYouTubeId = (url: string) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.hostname.includes("youtu.be")) return parsed.pathname.replace("/", "");
+      if (parsed.hostname.includes("youtube.com")) return parsed.searchParams.get("v") || "";
+    } catch {
+      return "";
+    }
+    return "";
+  };
+
+  const getDrivePreviewUrl = (url: string) => {
+    if (!url.includes("drive.google.com")) return url;
+    const previewUrl = url.replace(/\/view.*$/, "/preview");
+    return previewUrl.includes("/preview") ? previewUrl : `${previewUrl}/preview`;
+  };
+
+  const renderSourceViewer = (doc: DocumentFile, url: string) => {
+    const mime = (doc.mime_type || "").toLowerCase();
+    const objKey = (doc.object_key || "").toLowerCase();
+    const lowerUrl = url.toLowerCase();
+    const youtubeId = getYouTubeId(url);
+    const isVideo =
+      doc.file_category === "video" ||
+      mime.startsWith("video/") ||
+      objKey.endsWith(".mp4") ||
+      objKey.endsWith(".webm") ||
+      lowerUrl.includes(".mp4") ||
+      lowerUrl.includes(".webm");
+    const isAudio =
+      doc.file_category === "audio" ||
+      mime.startsWith("audio/") ||
+      objKey.endsWith(".mp3") ||
+      objKey.endsWith(".wav") ||
+      objKey.endsWith(".m4a") ||
+      lowerUrl.includes(".mp3") ||
+      lowerUrl.includes(".wav") ||
+      lowerUrl.includes(".m4a");
+    const isPdf =
+      doc.file_category === "pdf" ||
+      mime === "application/pdf" ||
+      objKey.endsWith(".pdf") ||
+      lowerUrl.includes(".pdf");
+    const isDrive = lowerUrl.includes("drive.google.com");
+
+    if (youtubeId) {
+      return (
+        <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-slate-200 mb-8">
+          <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center text-sm font-medium text-slate-700">
+            <PlayCircle className="w-4 h-4 mr-2 text-primary" /> {doc.display_name}
+          </div>
+          <div className="aspect-video w-full bg-black">
+            <iframe
+              src={`https://www.youtube.com/embed/${youtubeId}`}
+              className="h-full w-full"
+              allowFullScreen
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              title={doc.display_name}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    if (isVideo) {
+      return (
+        <div className="bg-black rounded-xl overflow-hidden shadow-sm mb-8 flex flex-col">
+          <div className="p-3 bg-slate-900 text-slate-300 text-sm font-medium border-b border-slate-800 flex items-center">
+            <PlayCircle className="w-4 h-4 mr-2 text-primary" /> {doc.display_name}
+          </div>
+          <video src={url} controls className="w-full max-h-[70vh]" />
+        </div>
+      );
+    }
+
+    if (isAudio) {
+      return (
+        <Card className="mb-8 border-slate-200 shadow-sm overflow-hidden bg-slate-50">
+          <CardContent className="p-6 flex flex-col items-center justify-center">
+            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4 text-primary">
+              <PlayCircle className="w-8 h-8" />
+            </div>
+            <h3 className="font-semibold text-lg text-slate-800 mb-6">{doc.display_name}</h3>
+            <audio src={url} controls className="w-full max-w-md" />
+          </CardContent>
+        </Card>
+      );
+    }
+
+    if (isPdf || isDrive) {
+      const embedUrl = isDrive ? getDrivePreviewUrl(url) : url;
+      return (
+        <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-slate-200 mb-8 flex flex-col">
+          <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+            <div className="flex items-center text-sm font-medium text-slate-700">
+              <FileText className="w-4 h-4 mr-2 text-primary" /> {doc.display_name}
+            </div>
+            <Button size="sm" variant="outline" onClick={() => window.open(url, "_blank")}>
+              Buka Penuh <ExternalLink className="w-4 h-4 ml-2" />
+            </Button>
+          </div>
+          <div className="w-full h-[60vh] sm:h-[80vh] bg-slate-100">
+            <iframe src={embedUrl} className="w-full h-full border-none" title={doc.display_name} />
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <Card className="mb-8 border-slate-200 shadow-sm">
+        <CardContent className="p-6 flex flex-col items-center justify-center text-center">
+          <ExternalLink className="w-10 h-10 text-primary mb-3" />
+          <h3 className="font-semibold text-lg text-slate-800 mb-2">{doc.display_name}</h3>
+          <p className="text-sm text-slate-500 mb-4">Sumber materi tersedia sebagai tautan eksternal.</p>
+          <Button onClick={() => window.open(url, "_blank")}>
+            Buka Sumber <ExternalLink className="w-4 h-4 ml-2" />
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  };
 
   return (
     <div className="page-stack w-full pb-20">
@@ -355,7 +481,7 @@ export function LearnerLessonPage() {
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-8">
           {/* External Content Embed / Link */}
-          {lesson?.external_url && (
+          {shouldRenderLegacyExternal && (
             <div className="border-b border-slate-200">
               {(() => {
                 const url = lesson.external_url;
@@ -368,7 +494,7 @@ export function LearnerLessonPage() {
                   try {
                     if (lower.includes('youtu.be/')) ytId = url.split('youtu.be/')[1]?.split('?')[0] || '';
                     else ytId = new URLSearchParams(new URL(url).search).get('v') || '';
-                  } catch (e) { /* ignore */ }
+                  } catch { /* ignore */ }
                 } else if (lower.endsWith('.mp4') || lower.endsWith('.webm') || lower.endsWith('.ogg') || lower.includes('.mp4?')) {
                   embedType = 'video';
                 } else if (lower.endsWith('.mp3') || lower.endsWith('.wav') || lower.endsWith('.m4a') || lower.includes('.mp3?')) {
@@ -471,58 +597,19 @@ export function LearnerLessonPage() {
       )}
 
       {/* Inline Document Viewers */}
-      {documents.map((doc) => {
-        const url = documentUrls[doc.id];
-        if (!url) return null;
-
-        const mime = (doc.mime_type || "").toLowerCase();
-        const objKey = (doc.object_key || "").toLowerCase();
-        
-        if (mime.startsWith('video/') || objKey.endsWith('.mp4') || objKey.endsWith('.webm') || objKey.endsWith('.ogg')) {
-          return (
-            <div key={doc.id} className="bg-black rounded-xl overflow-hidden shadow-sm mb-8 flex flex-col">
-              <div className="p-3 bg-slate-900 text-slate-300 text-sm font-medium border-b border-slate-800 flex items-center">
-                <PlayCircle className="w-4 h-4 mr-2 text-primary" /> {doc.display_name}
-              </div>
-              <video src={url} controls className="w-full max-h-[70vh]" />
-            </div>
-          );
-        }
-        
-        if (mime.startsWith('audio/') || objKey.endsWith('.mp3') || objKey.endsWith('.wav') || objKey.endsWith('.m4a')) {
-          return (
-            <Card key={doc.id} className="mb-8 border-slate-200 shadow-sm overflow-hidden bg-slate-50">
-              <CardContent className="p-6 flex flex-col items-center justify-center">
-                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4 text-primary">
-                  <PlayCircle className="w-8 h-8" />
-                </div>
-                <h3 className="font-semibold text-lg text-slate-800 mb-6">{doc.display_name}</h3>
-                <audio src={url} controls className="w-full max-w-md" />
-              </CardContent>
-            </Card>
-          );
-        }
-        
-        if (mime === 'application/pdf' || objKey.endsWith('.pdf') || url.toLowerCase().includes('.pdf')) {
-          return (
-            <div key={doc.id} className="bg-white rounded-xl overflow-hidden shadow-sm border border-slate-200 mb-8 flex flex-col">
-              <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                <div className="flex items-center text-sm font-medium text-slate-700">
-                  <FileText className="w-4 h-4 mr-2 text-primary" /> {doc.display_name}
-                </div>
-                <Button size="sm" variant="outline" onClick={() => window.open(url, "_blank")}>
-                  Buka Penuh <ExternalLink className="w-4 h-4 ml-2" />
-                </Button>
-              </div>
-              <div className="w-full h-[60vh] sm:h-[80vh] bg-slate-100">
-                <iframe src={url} className="w-full h-full border-none" title={doc.display_name} />
-              </div>
-            </div>
-          );
-        }
-
-        return null;
-      })}
+      {documents.length > 0 && (
+        <section className="mb-8">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-slate-900">Sumber Materi Utama</h2>
+            <Badge variant="outline">{documents.length} sumber</Badge>
+          </div>
+          {documents.map((doc) => {
+            const url = documentUrls[doc.id];
+            if (!url) return null;
+            return <div key={doc.id}>{renderSourceViewer(doc, url)}</div>;
+          })}
+        </section>
+      )}
 
 
       {/* Document Attachments */}
@@ -554,7 +641,15 @@ export function LearnerLessonPage() {
                     onClick={() => handleDownload(doc)}
                     className="shrink-0"
                   >
-                    <Download className="w-4 h-4 mr-2" /> Unduh
+                    {doc.source_type === "external_link" ? (
+                      <>
+                        <ExternalLink className="w-4 h-4 mr-2" /> Buka
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4 mr-2" /> Unduh
+                      </>
+                    )}
                   </Button>
                 </li>
               ))}

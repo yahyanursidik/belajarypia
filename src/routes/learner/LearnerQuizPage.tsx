@@ -229,14 +229,12 @@ export function LearnerQuizPage() {
 
     try {
       // Calculate Score
-      let correctCount = 0;
       let totalPoints = 0;
       let earnedPoints = 0;
 
       const answersToInsert = questions.map(q => {
         const isCorrect = answers[q.id] === q.correct_answer;
         if (isCorrect) {
-          correctCount++;
           earnedPoints += (q.points || 10);
         }
         totalPoints += (q.points || 10);

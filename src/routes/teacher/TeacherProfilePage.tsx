@@ -28,7 +28,7 @@ export function TeacherProfilePage() {
   useEffect(() => {
     if (profile) {
       setFullName(profile.full_name || "");
-      // @ts-ignore - Assuming phone exists on profile in DB
+      // @ts-expect-error - phone exists on profile in DB
       setPhone(profile.phone || "");
     }
   }, [profile]);
@@ -45,7 +45,6 @@ export function TeacherProfilePage() {
         .from('profiles')
         .update({
           full_name: fullName,
-          // @ts-ignore
           phone: phone,
           updated_at: new Date().toISOString()
         })

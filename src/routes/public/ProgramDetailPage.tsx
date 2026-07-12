@@ -53,7 +53,7 @@ export function ProgramDetailPage() {
         <h2>{program.name}</h2>
         <p>{program.description ?? "Detail program akan dilengkapi oleh admin."}</p>
         <Button asChild>
-          <Link to={`/program/${program.id}/daftar`}>Daftar Program</Link>
+          <Link to={`/pendaftaran/${program.id}`}>Daftar Program</Link>
         </Button>
       </section>
 

@@ -1,8 +1,16 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, GripVertical, Settings, X, Loader2, Type, AlignLeft, List, FileUp, ExternalLink, Copy } from "lucide-react";
+import { Plus, Trash2, GripVertical, Settings, X, Loader2, Type, AlignLeft, List, FileUp, ExternalLink, Copy, CalendarClock, UsersRound } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
+import {
+  formatRegistrationDateTime,
+  fromDateTimeLocalValue,
+  getRegistrationWindowState,
+  normalizeGroupSettings,
+  toDateTimeLocalValue,
+  type GroupSettings,
+} from "../../lib/admission";
 import { supabase } from "../../lib/supabase";
 
 export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
@@ -14,6 +22,7 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
   const [isSavingAll, setIsSavingAll] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [groupClaimCounts, setGroupClaimCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (message || errorMessage) {
@@ -63,9 +72,7 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
     }
 
     if (formData) {
-      if (!formData.group_settings) {
-        formData.group_settings = { platform: "none", separated_gender: false, ikhwan_groups: [], akhwat_groups: [], general_groups: [] };
-      }
+      formData.group_settings = normalizeGroupSettings(formData.group_settings as Partial<GroupSettings> | null);
       setForm(formData);
       // Fetch fields
       const { data: fieldsData } = await supabase
@@ -75,8 +82,26 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
         .order("order_no", { ascending: true });
       
       if (fieldsData) setFields(fieldsData);
+      await loadGroupClaimCounts(formData.id);
     }
     setIsLoading(false);
+  };
+
+  const loadGroupClaimCounts = async (formId: string) => {
+    const { data } = await supabase
+      .from("registration_group_link_claims")
+      .select("group_bucket, group_index")
+      .eq("form_id", formId);
+
+    const counts: Record<string, number> = {};
+    for (const claim of data ?? []) {
+      const groupBucket = (claim as { group_bucket: string; group_index: number }).group_bucket;
+      const groupIndex = (claim as { group_bucket: string; group_index: number }).group_index;
+      const key = `${groupBucket}:${groupIndex}`;
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+
+    setGroupClaimCounts(counts);
   };
 
   const saveFormStatus = async (status: string) => {
@@ -134,31 +159,33 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
   };
 
   const updateGroupSettings = (key: string, value: any) => {
-    const newSettings = { ...(form.group_settings || { platform: "none", separated_gender: false, ikhwan_groups: [], akhwat_groups: [], general_groups: [] }), [key]: value };
+    const newSettings = { ...normalizeGroupSettings(form.group_settings), [key]: value };
     setForm({ ...form, group_settings: newSettings });
   };
 
   const addGroupLink = (type: "ikhwan_groups" | "akhwat_groups" | "general_groups") => {
-    const newSettings = { ...(form.group_settings || { platform: "none", separated_gender: false, ikhwan_groups: [], akhwat_groups: [], general_groups: [] }) };
-    if (!newSettings[type]) newSettings[type] = [];
-    newSettings[type] = [...newSettings[type], { name: "", link: "" }];
+    const newSettings = normalizeGroupSettings(form.group_settings);
+    newSettings[type] = [...newSettings[type], { name: "", link: "", click_limit: 500 }];
     setForm({ ...form, group_settings: newSettings });
   };
 
-  const updateGroupLink = (type: "ikhwan_groups" | "akhwat_groups" | "general_groups", index: number, field: "name" | "link", value: string) => {
-    const newSettings = { ...(form.group_settings || {}) };
-    if (newSettings[type] && newSettings[type][index]) {
-      newSettings[type][index][field] = value;
-      setForm({ ...form, group_settings: newSettings });
-    }
+  const updateGroupLink = (
+    type: "ikhwan_groups" | "akhwat_groups" | "general_groups",
+    index: number,
+    field: "name" | "link" | "click_limit",
+    value: string | number | null,
+  ) => {
+    const newSettings = normalizeGroupSettings(form.group_settings);
+    newSettings[type] = newSettings[type].map((group, groupIndex) =>
+      groupIndex === index ? { ...group, [field]: value } : group,
+    );
+    setForm({ ...form, group_settings: newSettings });
   };
 
   const removeGroupLink = (type: "ikhwan_groups" | "akhwat_groups" | "general_groups", index: number) => {
-    const newSettings = { ...(form.group_settings || {}) };
-    if (newSettings[type]) {
-      newSettings[type] = newSettings[type].filter((_: any, i: number) => i !== index);
-      setForm({ ...form, group_settings: newSettings });
-    }
+    const newSettings = normalizeGroupSettings(form.group_settings);
+    newSettings[type] = newSettings[type].filter((_, groupIndex) => groupIndex !== index);
+    setForm({ ...form, group_settings: newSettings });
   };
 
   const saveAllChanges = async () => {
@@ -172,6 +199,8 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
       .update({
         title: form.title,
         description: form.description,
+        registration_open_at: form.registration_open_at || null,
+        registration_close_at: form.registration_close_at || null,
         group_settings: form.group_settings,
       })
       .eq("id", form.id);
@@ -205,6 +234,49 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
   if (isLoading) return <div className="p-8 text-center text-slate-500">Memuat Form Builder...</div>;
 
   const isDirectEnrollment = program?.feature_flags?.use_direct_enrollment === true;
+  const windowState = getRegistrationWindowState(form);
+  const windowLabelMap = {
+    draft: "Draft",
+    upcoming: "Terjadwal",
+    open: "Sedang Dibuka",
+    closed: "Sudah Ditutup",
+    archived: "Diarsipkan",
+  };
+  const renderGroupEditor = (type: "ikhwan_groups" | "akhwat_groups" | "general_groups") => {
+    const groups = normalizeGroupSettings(form?.group_settings)[type];
+
+    return groups.map((grp, idx) => (
+      <div key={idx} className="rounded-lg border border-slate-200 bg-white p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="text-xs font-bold uppercase text-slate-400">Link {idx + 1}</span>
+          <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+            {groupClaimCounts[`${type}:${idx}`] ?? 0} / {grp.click_limit && grp.click_limit > 0 ? grp.click_limit : "tanpa batas"} klik
+          </span>
+        </div>
+        <div className="flex items-start gap-2">
+          <div className="flex-1 space-y-2">
+            <Input placeholder="Nama Grup" value={grp.name} onChange={(e) => updateGroupLink(type, idx, "name", e.target.value)} />
+            <Input placeholder="Tautan undangan" value={grp.link} onChange={(e) => updateGroupLink(type, idx, "link", e.target.value)} />
+            <label className="grid gap-1 text-xs font-semibold text-slate-500">
+              Batas klik sebelum pindah link
+              <Input
+                min={0}
+                type="number"
+                value={grp.click_limit ?? 500}
+                onChange={(e) => updateGroupLink(type, idx, "click_limit", Number(e.target.value))}
+              />
+            </label>
+            <p className="text-[11px] leading-relaxed text-slate-400">
+              Isi 500 untuk estimasi kapasitas grup WhatsApp umum. Isi 0 jika link ini boleh dipakai tanpa batas.
+            </p>
+          </div>
+          <Button type="button" variant="ghost" size="icon" className="text-rose-500" onClick={() => removeGroupLink(type, idx)}>
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    ));
+  };
 
   return (
     <div className="space-y-6 relative">
@@ -277,7 +349,7 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
         </CardContent>
       </Card>
 
-      <div className={`transition-opacity ${isDirectEnrollment ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div className={`transition-opacity ${isDirectEnrollment ? 'opacity-50 pointer-events-none' : ''}`}>
         <Card className="border-primary/20 shadow-sm">
         <CardHeader className="bg-primary/5 border-b">
           <div className="flex items-center justify-between">
@@ -330,6 +402,52 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
             </div>
           </div>
 
+          <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex gap-3">
+                <div className="grid h-10 w-10 place-items-center rounded-lg bg-white text-primary shadow-sm">
+                  <CalendarClock className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-800">Jadwal Buka Tutup Pendaftaran</h4>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Form hanya bisa dikirim saat status aktif dan waktu saat ini berada di dalam rentang ini.
+                  </p>
+                </div>
+              </div>
+              <span className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase ${
+                windowState === "open"
+                  ? "bg-emerald-100 text-emerald-700"
+                  : windowState === "upcoming"
+                    ? "bg-sky-100 text-sky-700"
+                    : "bg-slate-200 text-slate-700"
+              }`}>
+                {windowLabelMap[windowState]}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                Dibuka pada
+                <Input
+                  type="datetime-local"
+                  value={toDateTimeLocalValue(form?.registration_open_at)}
+                  onChange={(e) => setForm({ ...form, registration_open_at: fromDateTimeLocalValue(e.target.value) })}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                Ditutup pada
+                <Input
+                  type="datetime-local"
+                  value={toDateTimeLocalValue(form?.registration_close_at)}
+                  onChange={(e) => setForm({ ...form, registration_close_at: fromDateTimeLocalValue(e.target.value) })}
+                />
+              </label>
+            </div>
+            <p className="mt-3 text-xs text-slate-500">
+              Rentang saat ini: {formatRegistrationDateTime(form?.registration_open_at)} sampai {formatRegistrationDateTime(form?.registration_close_at)}.
+            </p>
+          </div>
+
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1.5">Judul Formulir</label>
@@ -353,8 +471,11 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
 
       <Card className="border-primary/20 shadow-sm mt-6 mb-6">
         <CardHeader className="bg-primary/5 border-b">
-          <CardTitle className="text-lg">Pengaturan Grup Komunitas</CardTitle>
-          <CardDescription>Atur grup WhatsApp/Telegram yang akan ditampilkan setelah pendaftar berhasil mendaftar.</CardDescription>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <UsersRound className="h-5 w-5 text-primary" />
+            Pengaturan Grup Komunitas
+          </CardTitle>
+          <CardDescription>Atur tautan grup dan batas klik. Saat satu link penuh, pendaftar berikutnya otomatis mendapat link berikutnya.</CardDescription>
         </CardHeader>
         <CardContent className="p-6">
           <div className="space-y-6">
@@ -399,15 +520,7 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
                           <Plus className="h-4 w-4 mr-1" /> Tambah
                         </Button>
                       </div>
-                      {(form?.group_settings?.ikhwan_groups || []).map((grp: any, idx: number) => (
-                        <div key={idx} className="flex items-start gap-2">
-                          <div className="flex-1 space-y-2">
-                            <Input placeholder="Nama Grup" value={grp.name} onChange={(e) => updateGroupLink("ikhwan_groups", idx, "name", e.target.value)} />
-                            <Input placeholder="Tautan" value={grp.link} onChange={(e) => updateGroupLink("ikhwan_groups", idx, "link", e.target.value)} />
-                          </div>
-                          <Button type="button" variant="ghost" size="icon" className="text-rose-500" onClick={() => removeGroupLink("ikhwan_groups", idx)}><Trash2 className="h-4 w-4" /></Button>
-                        </div>
-                      ))}
+                      {renderGroupEditor("ikhwan_groups")}
                       {!(form?.group_settings?.ikhwan_groups?.length) && <p className="text-sm text-slate-400">Belum ada grup ikhwan.</p>}
                     </div>
 
@@ -419,15 +532,7 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
                           <Plus className="h-4 w-4 mr-1" /> Tambah
                         </Button>
                       </div>
-                      {(form?.group_settings?.akhwat_groups || []).map((grp: any, idx: number) => (
-                        <div key={idx} className="flex items-start gap-2">
-                          <div className="flex-1 space-y-2">
-                            <Input placeholder="Nama Grup" value={grp.name} onChange={(e) => updateGroupLink("akhwat_groups", idx, "name", e.target.value)} />
-                            <Input placeholder="Tautan" value={grp.link} onChange={(e) => updateGroupLink("akhwat_groups", idx, "link", e.target.value)} />
-                          </div>
-                          <Button type="button" variant="ghost" size="icon" className="text-rose-500" onClick={() => removeGroupLink("akhwat_groups", idx)}><Trash2 className="h-4 w-4" /></Button>
-                        </div>
-                      ))}
+                      {renderGroupEditor("akhwat_groups")}
                       {!(form?.group_settings?.akhwat_groups?.length) && <p className="text-sm text-slate-400">Belum ada grup akhwat.</p>}
                     </div>
                   </div>
@@ -439,15 +544,7 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
                         <Plus className="h-4 w-4 mr-1" /> Tambah Tautan
                       </Button>
                     </div>
-                    {(form?.group_settings?.general_groups || []).map((grp: any, idx: number) => (
-                      <div key={idx} className="flex items-start gap-2 max-w-md">
-                        <div className="flex-1 space-y-2">
-                          <Input placeholder="Nama Grup" value={grp.name} onChange={(e) => updateGroupLink("general_groups", idx, "name", e.target.value)} />
-                          <Input placeholder="Tautan" value={grp.link} onChange={(e) => updateGroupLink("general_groups", idx, "link", e.target.value)} />
-                        </div>
-                        <Button type="button" variant="ghost" size="icon" className="text-rose-500" onClick={() => removeGroupLink("general_groups", idx)}><Trash2 className="h-4 w-4" /></Button>
-                      </div>
-                    ))}
+                    {renderGroupEditor("general_groups")}
                     {!(form?.group_settings?.general_groups?.length) && <p className="text-sm text-slate-400">Belum ada tautan grup.</p>}
                   </div>
                 )}

@@ -85,7 +85,7 @@ export function ProgramCatalogPage() {
                     <Link to={`/program/${program.id}`}>Detail</Link>
                   </Button>
                   <Button asChild size="sm" variant="outline">
-                    <Link to={`/program/${program.id}/daftar`}>Daftar</Link>
+                    <Link to={`/pendaftaran/${program.id}`}>Daftar</Link>
                   </Button>
                 </div>
               </CardContent>

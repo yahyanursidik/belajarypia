@@ -90,6 +90,9 @@
 - title text
 - description text nullable
 - status text default 'draft'
+- registration_open_at timestamptz nullable
+- registration_close_at timestamptz nullable
+- group_settings jsonb nullable, supports platform, gender-separated links, and per-link click_limit
 - created_at timestamptz
 - updated_at timestamptz
 
@@ -134,6 +137,17 @@
 - value_text text nullable
 - value_json jsonb nullable
 - created_at timestamptz
+
+### registration_group_link_claims
+- id uuid PK
+- form_id uuid references registration_forms(id)
+- applicant_id uuid references applicants(id)
+- group_bucket text
+- group_index int
+- group_name text
+- group_link text
+- claimed_at timestamptz
+- unique(form_id, applicant_id)
 
 ### placement_results
 - id uuid PK

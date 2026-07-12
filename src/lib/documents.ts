@@ -7,11 +7,30 @@ export function inferFileCategory(mimeType: string | undefined, fileName = "") {
     return "pdf";
   }
 
-  if (mimeType?.startsWith("audio/")) {
+  if (
+    mimeType?.startsWith("audio/") ||
+    lowerName.endsWith(".mp3") ||
+    lowerName.endsWith(".wav") ||
+    lowerName.endsWith(".m4a") ||
+    lowerName.endsWith(".ogg")
+  ) {
     return "audio";
   }
 
-  if (mimeType?.startsWith("video/")) {
+  if (
+    mimeType?.startsWith("video/") ||
+    lowerName.endsWith(".mp4") ||
+    lowerName.endsWith(".webm") ||
+    lowerName.endsWith(".mov")
+  ) {
+    return "video";
+  }
+
+  if (
+    lowerName.includes("youtube.com") ||
+    lowerName.includes("youtu.be") ||
+    lowerName.includes("vimeo.com")
+  ) {
     return "video";
   }
 
