@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { BookOpen, Users, ArrowRight, GraduationCap, Clock, CalendarDays, Search } from "lucide-react";
+import { BookOpen, Users, ArrowRight, GraduationCap, Clock, CalendarDays, CalendarClock, Search } from "lucide-react";
 import { useAuthSession } from "../../app/providers/authSessionContext";
 import { supabase } from "../../lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  formatRegistrationDateTime,
+  getRegistrationWindowState,
+  type RegistrationForm,
+} from "../../lib/admission";
 
 type AssignedProgram = {
   id: string;
@@ -20,6 +25,7 @@ type AssignedProgram = {
   curriculum_model: string;
   status: string;
   enrollments?: Array<{ id: string }>;
+  registration_forms?: RegistrationForm[];
 };
 
 type AssignedClass = {
@@ -50,7 +56,7 @@ export function TeacherClassPage() {
       const [progRes, classRes] = await Promise.all([
         supabase
           .from("programs")
-          .select("id, name, code, description, curriculum_model, status, enrollments(id)")
+          .select("id, name, code, description, curriculum_model, status, enrollments(id), registration_forms(id, program_id, title, description, status, registration_open_at, registration_close_at, group_settings)")
           .eq("teacher_user_id", user!.id),
         supabase
           .from("classes")
@@ -184,50 +190,76 @@ export function TeacherClassPage() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredPrograms.map((prog) => (
-                    <Card key={prog.id} className="flex flex-col overflow-hidden border-border/50 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-300 group bg-white hover:-translate-y-1">
-                      <div className="h-1.5 bg-primary/80 w-full transition-all group-hover:bg-primary" />
-                      <CardHeader className="pb-3">
-                        <div className="flex justify-between items-start mb-2">
-                          <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20">
-                            {prog.code}
-                          </Badge>
-                          <Badge variant={prog.status === "active" ? "default" : "secondary"} className="capitalize text-[10px] h-5 shadow-sm">
-                            {prog.status}
-                          </Badge>
-                        </div>
-                        <CardTitle className="text-xl leading-tight group-hover:text-primary transition-colors">
-                          {prog.name}
-                        </CardTitle>
-                        <p className="text-sm text-slate-500 line-clamp-2 mt-2 h-10">
-                          {prog.description || "Tidak ada deskripsi."}
-                        </p>
-                      </CardHeader>
-                      <CardContent className="pb-4 flex-1">
-                        <div className="space-y-2 mt-2">
-                          <div className="flex items-center justify-between text-sm text-slate-600 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
-                            <div className="flex items-center gap-2">
-                              {prog.curriculum_model === "mandiri" ? <Clock className="h-4 w-4 text-slate-400" /> : <CalendarDays className="h-4 w-4 text-slate-400" />}
-                              <span>Sistem Belajar</span>
+                    (() => {
+                      const activeForm = (prog.registration_forms ?? []).find((form) => form.status === "active");
+                      const registrationState = getRegistrationWindowState(activeForm);
+                      const registrationBadgeClass = registrationState === "open"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : registrationState === "upcoming"
+                          ? "bg-sky-50 text-sky-700 border-sky-200"
+                          : "bg-slate-50 text-slate-600 border-slate-200";
+
+                      return (
+                        <Card key={prog.id} className="flex flex-col overflow-hidden border-border/50 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-300 group bg-white hover:-translate-y-1">
+                          <div className="h-1.5 bg-primary/80 w-full transition-all group-hover:bg-primary" />
+                          <CardHeader className="pb-3">
+                            <div className="flex justify-between items-start mb-2">
+                              <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20">
+                                {prog.code}
+                              </Badge>
+                              <Badge variant={prog.status === "active" ? "default" : "secondary"} className="capitalize text-[10px] h-5 shadow-sm">
+                                {prog.status}
+                              </Badge>
                             </div>
-                            <span className="font-medium capitalize">{prog.curriculum_model}</span>
-                          </div>
-                          <div className="flex items-center justify-between text-sm text-slate-600 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
-                            <div className="flex items-center gap-2">
-                              <Users className="h-4 w-4 text-slate-400" />
-                              <span>Total Peserta</span>
+                            <CardTitle className="text-xl leading-tight group-hover:text-primary transition-colors">
+                              {prog.name}
+                            </CardTitle>
+                            <p className="text-sm text-slate-500 line-clamp-2 mt-2 h-10">
+                              {prog.description || "Tidak ada deskripsi."}
+                            </p>
+                          </CardHeader>
+                          <CardContent className="pb-4 flex-1">
+                            <div className="space-y-2 mt-2">
+                              <div className="flex items-center justify-between text-sm text-slate-600 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
+                                <div className="flex items-center gap-2">
+                                  {prog.curriculum_model === "mandiri" ? <Clock className="h-4 w-4 text-slate-400" /> : <CalendarDays className="h-4 w-4 text-slate-400" />}
+                                  <span>Sistem Belajar</span>
+                                </div>
+                                <span className="font-medium capitalize">{prog.curriculum_model}</span>
+                              </div>
+                              <div className="flex items-center justify-between text-sm text-slate-600 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
+                                <div className="flex items-center gap-2">
+                                  <Users className="h-4 w-4 text-slate-400" />
+                                  <span>Total Peserta</span>
+                                </div>
+                                <span className="font-medium">{prog.enrollments?.length || 0}</span>
+                              </div>
+                              <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-2.5 text-sm text-slate-600">
+                                <div className="mb-1 flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <CalendarClock className="h-4 w-4 text-slate-400" />
+                                    <span>Pendaftaran</span>
+                                  </div>
+                                  <Badge variant="outline" className={registrationBadgeClass}>
+                                    {registrationState === "open" ? "Dibuka" : registrationState === "upcoming" ? "Terjadwal" : "Tidak Dibuka"}
+                                  </Badge>
+                                </div>
+                                <p className="text-xs text-slate-500">
+                                  {formatRegistrationDateTime(activeForm?.registration_open_at)} - {formatRegistrationDateTime(activeForm?.registration_close_at)}
+                                </p>
+                              </div>
                             </div>
-                            <span className="font-medium">{prog.enrollments?.length || 0}</span>
+                          </CardContent>
+                          <div className="pt-0 pb-4 px-4 mt-auto">
+                            <Button variant="default" className="w-full rounded-xl shadow-sm hover:shadow-md transition-all p-0">
+                              <Link to={`/teacher/kelas/program/${prog.id}/detail-program`} className="flex items-center justify-center w-full h-full text-white hover:text-white">
+                                Kelola Program <ArrowRight className="ml-2 h-4 w-4" />
+                              </Link>
+                            </Button>
                           </div>
-                        </div>
-                      </CardContent>
-                      <div className="pt-0 pb-4 px-4 mt-auto">
-                        <Button variant="default" className="w-full rounded-xl shadow-sm hover:shadow-md transition-all p-0">
-                          <Link to={`/teacher/kelas/program/${prog.id}`} className="flex items-center justify-center w-full h-full text-white hover:text-white">
-                            Kelola Program <ArrowRight className="ml-2 h-4 w-4" />
-                          </Link>
-                        </Button>
-                      </div>
-                    </Card>
+                        </Card>
+                      );
+                    })()
                   ))}
                 </div>
               )}

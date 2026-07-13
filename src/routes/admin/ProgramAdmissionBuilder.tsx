@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, GripVertical, Settings, X, Loader2, Type, AlignLeft, List, FileUp, ExternalLink, Copy, CalendarClock, UsersRound } from "lucide-react";
+import { Plus, Trash2, GripVertical, Settings, X, Loader2, Type, AlignLeft, List, FileUp, ExternalLink, Copy, CalendarClock, UsersRound, AlertCircle } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
@@ -20,6 +20,7 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingAll, setIsSavingAll] = useState(false);
+  const [supportsRegistrationWindow, setSupportsRegistrationWindow] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [groupClaimCounts, setGroupClaimCounts] = useState<Record<string, number>>({});
@@ -72,6 +73,9 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
     }
 
     if (formData) {
+      setSupportsRegistrationWindow(
+        "registration_open_at" in formData && "registration_close_at" in formData,
+      );
       formData.group_settings = normalizeGroupSettings(formData.group_settings as Partial<GroupSettings> | null);
       setForm(formData);
       // Fetch fields
@@ -194,15 +198,20 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
     setErrorMessage(null);
     setMessage(null);
 
+    const formPayload: Record<string, unknown> = {
+      title: form.title,
+      description: form.description,
+      group_settings: form.group_settings,
+    };
+
+    if (supportsRegistrationWindow) {
+      formPayload.registration_open_at = form.registration_open_at || null;
+      formPayload.registration_close_at = form.registration_close_at || null;
+    }
+
     const { error: formError } = await supabase
       .from("registration_forms")
-      .update({
-        title: form.title,
-        description: form.description,
-        registration_open_at: form.registration_open_at || null,
-        registration_close_at: form.registration_close_at || null,
-        group_settings: form.group_settings,
-      })
+      .update(formPayload)
       .eq("id", form.id);
 
     const fieldsToSave = fields.map(f => ({
@@ -425,27 +434,44 @@ export function ProgramAdmissionBuilder({ programId }: { programId: string }) {
                 {windowLabelMap[windowState]}
               </span>
             </div>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <label className="grid gap-2 text-sm font-semibold text-slate-700">
-                Dibuka pada
-                <Input
-                  type="datetime-local"
-                  value={toDateTimeLocalValue(form?.registration_open_at)}
-                  onChange={(e) => setForm({ ...form, registration_open_at: fromDateTimeLocalValue(e.target.value) })}
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-semibold text-slate-700">
-                Ditutup pada
-                <Input
-                  type="datetime-local"
-                  value={toDateTimeLocalValue(form?.registration_close_at)}
-                  onChange={(e) => setForm({ ...form, registration_close_at: fromDateTimeLocalValue(e.target.value) })}
-                />
-              </label>
-            </div>
-            <p className="mt-3 text-xs text-slate-500">
-              Rentang saat ini: {formatRegistrationDateTime(form?.registration_open_at)} sampai {formatRegistrationDateTime(form?.registration_close_at)}.
-            </p>
+            {supportsRegistrationWindow ? (
+              <>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                    Dibuka pada
+                    <Input
+                      type="datetime-local"
+                      value={toDateTimeLocalValue(form?.registration_open_at)}
+                      onChange={(e) => setForm({ ...form, registration_open_at: fromDateTimeLocalValue(e.target.value) })}
+                    />
+                  </label>
+                  <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                    Ditutup pada
+                    <Input
+                      type="datetime-local"
+                      value={toDateTimeLocalValue(form?.registration_close_at)}
+                      onChange={(e) => setForm({ ...form, registration_close_at: fromDateTimeLocalValue(e.target.value) })}
+                    />
+                  </label>
+                </div>
+                <p className="mt-3 text-xs text-slate-500">
+                  Rentang saat ini: {formatRegistrationDateTime(form?.registration_open_at)} sampai {formatRegistrationDateTime(form?.registration_close_at)}.
+                </p>
+              </>
+            ) : (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800">
+                <div className="flex gap-3">
+                  <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold">Kolom jadwal belum tersedia di database aktif.</p>
+                    <p className="mt-1 text-sm">
+                      Jalankan migration <code className="rounded bg-white/70 px-1 py-0.5">202607120001_admission_window_group_claims.sql</code>
+                      agar fitur waktu buka/tutup pendaftaran bisa digunakan.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-4">

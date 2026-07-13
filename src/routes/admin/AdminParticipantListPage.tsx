@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, User, Filter, MapPin, GraduationCap, Phone, Upload, Download, Users, UserCheck, PieChart, BadgeCheck, Settings, Key, X, Loader2, CheckCircle2, AlertCircle, FileText, AlertTriangle, FileUp } from "lucide-react";
+import { Plus, Search, User, Filter, MapPin, GraduationCap, Phone, Upload, Download, Users, UserCheck, PieChart, BadgeCheck, Settings, Key, X, Loader2, CheckCircle2, AlertCircle, FileText, AlertTriangle, FileUp, LayoutDashboard, ClipboardList, Database, RefreshCw, ArrowRight, Mail, Building2, Eye, ImageIcon, PenLine, RotateCcw, Save } from "lucide-react";
 import Papa from "papaparse";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../components/ui/card";
@@ -12,23 +12,54 @@ import type { Program } from "../../lib/organization";
 import { fetchSystemSettings, updateSystemSettings, emptySettings } from "../../lib/settings";
 import type { SystemSettings } from "../../lib/settings";
 
-
-const toast = { 
-  success: (msg: string) => window.alert(msg), 
-  error: (msg: string) => window.alert(msg) 
-};
-
 // Extended type to include enrollments
 type ParticipantRow = Participant & {
   enrollments?: Array<{ program_id: string }>;
   profiles?: { full_name: string; email: string; phone: string } | null;
 };
 
+type ParticipantTab = "overview" | "directory" | "operations";
+type TranscriptConfigTab = "identity" | "signature" | "preview";
+
+const participantTabs: Array<{
+  key: ParticipantTab;
+  label: string;
+  desc: string;
+  icon: ComponentType<{ className?: string }>;
+}> = [
+  { key: "overview", label: "Ringkasan", desc: "Kondisi peserta & workflow", icon: LayoutDashboard },
+  { key: "directory", label: "Direktori", desc: "Cari, filter, dan kelola profil", icon: ClipboardList },
+  { key: "operations", label: "Operasional", desc: "Import, akun, dan transkrip", icon: Database },
+];
+
+const transcriptConfigTabs: Array<{
+  key: TranscriptConfigTab;
+  label: string;
+  desc: string;
+  icon: ComponentType<{ className?: string }>;
+}> = [
+  { key: "identity", label: "Identitas Dokumen", desc: "Kop dan tempat tanggal", icon: Building2 },
+  { key: "signature", label: "Penandatangan", desc: "Nama, jabatan, tanda tangan", icon: PenLine },
+  { key: "preview", label: "Preview", desc: "Simulasi tampilan transkrip", icon: Eye },
+];
+
+function isTranscriptColumnError(message: string | null | undefined) {
+  return Boolean(
+    message?.includes("transcript_header_text") ||
+      message?.includes("transcript_place_date_text") ||
+      message?.includes("transcript_official_name") ||
+      message?.includes("transcript_official_title") ||
+      message?.includes("transcript_signature_url"),
+  );
+}
+
 export function AdminParticipantListPage() {
   const navigate = useNavigate();
   const [participants, setParticipants] = useState<ParticipantRow[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<ParticipantTab>("overview");
+  const [feedback, setFeedback] = useState<{ message: string; type: "success" | "error" } | null>(null);
   
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -40,7 +71,7 @@ export function AdminParticipantListPage() {
   const [perPage] = useState(20);
   const [totalCount, setTotalCount] = useState(0);
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
-  const [stats, setStats] = useState({ total: 0, active: 0, male: 0, female: 0 });
+  const [stats, setStats] = useState({ total: 0, active: 0, inactive: 0, archived: 0, male: 0, female: 0 });
 
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -81,21 +112,77 @@ export function AdminParticipantListPage() {
 
   // Debounce search query
   const [isTranscriptConfigOpen, setIsTranscriptConfigOpen] = useState(false);
+  const [transcriptConfigTab, setTranscriptConfigTab] = useState<TranscriptConfigTab>("identity");
   const [transcriptSettings, setTranscriptSettings] = useState<SystemSettings>(emptySettings);
   const [isSavingTranscript, setIsSavingTranscript] = useState(false);
   const [signatureFile, setSignatureFile] = useState<File | null>(null);
+  const [signaturePreviewUrl, setSignaturePreviewUrl] = useState<string | null>(null);
   const [transcriptErrorMsg, setTranscriptErrorMsg] = useState("");
   const [isSuccessState, setIsSuccessState] = useState(false);
+
+  const notify = (message: string, type: "success" | "error" = "success") => {
+    setFeedback({ message, type });
+  };
+
+  useEffect(() => {
+    if (!feedback) return;
+
+    const timer = setTimeout(() => setFeedback(null), 4500);
+    return () => clearTimeout(timer);
+  }, [feedback]);
+
+  useEffect(() => {
+    if (!signatureFile) {
+      setSignaturePreviewUrl(null);
+      return;
+    }
+
+    const url = URL.createObjectURL(signatureFile);
+    setSignaturePreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [signatureFile]);
+
+  const directoryStats = useMemo(() => {
+    const withAccount = participants.filter((participant) => Boolean(participant.user_id)).length;
+    const withoutProgram = participants.filter((participant) => !participant.enrollments?.length).length;
+    const visibleActive = participants.filter((participant) => participant.status === "active").length;
+
+    return {
+      withAccount,
+      withoutProgram,
+      visibleActive,
+      visibleTotal: participants.length,
+    };
+  }, [participants]);
 
   // Load settings when modal opens
   useEffect(() => {
     if (isTranscriptConfigOpen) {
       setIsSuccessState(false);
+      setTranscriptErrorMsg("");
+      setTranscriptConfigTab("identity");
       fetchSystemSettings().then(data => {
-         if (data) setTranscriptSettings(data);
+        if (data) {
+          setTranscriptSettings(data);
+        } else {
+          setTranscriptSettings(emptySettings);
+          setTranscriptErrorMsg("Pengaturan sistem belum tersedia atau tidak bisa dibaca. Pastikan tabel system_settings memiliki satu baris konfigurasi.");
+        }
       });
     }
   }, [isTranscriptConfigOpen]);
+
+  const resetTranscriptDraft = () => {
+    setSignatureFile(null);
+    setTranscriptSettings((current) => ({
+      ...current,
+      transcript_header_text: "",
+      transcript_place_date_text: "Jakarta, ",
+      transcript_official_name: "",
+      transcript_official_title: "",
+      transcript_signature_url: null,
+    }));
+  };
 
   const handleSaveTranscriptSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,6 +190,20 @@ export function AdminParticipantListPage() {
     setTranscriptErrorMsg("");
     
     try {
+      if (!transcriptSettings.id) {
+        throw new Error("Data system_settings belum tersedia. Buka Pengaturan Global terlebih dahulu atau jalankan seed system_settings.");
+      }
+
+      if (signatureFile) {
+        if (!signatureFile.type.startsWith("image/")) {
+          throw new Error("File tanda tangan harus berupa gambar.");
+        }
+
+        if (signatureFile.size > 1_500_000) {
+          throw new Error("Ukuran tanda tangan maksimal 1.5 MB.");
+        }
+      }
+
       let signatureUrl = transcriptSettings.transcript_signature_url;
 
       if (signatureFile) {
@@ -133,7 +234,11 @@ export function AdminParticipantListPage() {
       });
 
       if (error) {
-        setTranscriptErrorMsg("Gagal menyimpan ke database: " + error.message);
+        setTranscriptErrorMsg(
+          isTranscriptColumnError(error.message)
+            ? "Kolom konfigurasi transkrip belum tersedia di database aktif. Jalankan migration 20260627100000_phase_23_transcript_settings.sql."
+            : "Gagal menyimpan ke database: " + error.message,
+        );
       } else {
         setIsSuccessState(true);
         setTimeout(() => {
@@ -152,6 +257,10 @@ export function AdminParticipantListPage() {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetParticipant || resetPassword.length < 6) return;
+    if (!resetParticipant.user_id) {
+      setResetFeedback({ message: "Peserta ini belum tertaut ke akun login, jadi sandi belum bisa direset.", type: "error" });
+      return;
+    }
     
     setIsResetting(true);
     setResetFeedback(null);
@@ -199,17 +308,24 @@ export function AdminParticipantListPage() {
   }, []);
 
   const fetchInitialData = async () => {
-    const { data: progData } = await supabase.from("programs").select("id, name").order("name");
+    const { data: progData, error: programError } = await supabase.from("programs").select("id, name").order("name");
     if (progData) setPrograms(progData as Program[]);
+    if (programError) {
+      notify(`Gagal memuat daftar program: ${programError.message}`, "error");
+    }
 
     const [
       { count: total },
       { count: active },
+      { count: inactive },
+      { count: archived },
       { count: male },
       { count: female }
     ] = await Promise.all([
       supabase.from("participants").select('*', { count: 'exact', head: true }),
       supabase.from("participants").select('*', { count: 'exact', head: true }).eq('status', 'active'),
+      supabase.from("participants").select('*', { count: 'exact', head: true }).eq('status', 'inactive'),
+      supabase.from("participants").select('*', { count: 'exact', head: true }).eq('status', 'archived'),
       supabase.from("participants").select('*', { count: 'exact', head: true }).eq('gender', 'Laki-laki'),
       supabase.from("participants").select('*', { count: 'exact', head: true }).eq('gender', 'Perempuan')
     ]);
@@ -217,6 +333,8 @@ export function AdminParticipantListPage() {
     setStats({
       total: total || 0,
       active: active || 0,
+      inactive: inactive || 0,
+      archived: archived || 0,
       male: male || 0,
       female: female || 0
     });
@@ -246,10 +364,28 @@ export function AdminParticipantListPage() {
     const to = from + perPage - 1;
     query = query.order("created_at", { ascending: false }).range(from, to);
 
-    const { data, error, count } = await query;
+    let { data, error, count } = await query;
+
+    if (error && programFilter === "all") {
+      let fallbackQuery = supabase
+        .from("participants")
+        .select("*", { count: "exact" });
+
+      if (debouncedSearchQuery) {
+        fallbackQuery = fallbackQuery.or(`display_name.ilike.%${debouncedSearchQuery}%,global_participant_number.ilike.%${debouncedSearchQuery}%`);
+      }
+      if (statusFilter !== "all") {
+        fallbackQuery = fallbackQuery.eq("status", statusFilter);
+      }
+
+      const fallbackResult = await fallbackQuery.order("created_at", { ascending: false }).range(from, to);
+      data = fallbackResult.data;
+      error = fallbackResult.error;
+      count = fallbackResult.count;
+    }
 
     if (error) {
-      toast.error("Gagal memuat data peserta");
+      notify(`Gagal memuat data peserta: ${error.message}`, "error");
     } else {
       setParticipants(data as ParticipantRow[]);
       if (count !== null) setTotalCount(count);
@@ -277,13 +413,13 @@ export function AdminParticipantListPage() {
     });
 
     if (error) {
-      toast.error("Gagal menambahkan peserta: " + error.message);
+      notify("Gagal menambahkan peserta: " + error.message, "error");
     } else {
       const result = data as any;
       if (result?.status === 'enrolled_existing') {
-        toast.success("Email sudah terdaftar. Peserta ditautkan" + (form.program_code ? " dan dimasukkan ke program." : "."));
+        notify("Email sudah terdaftar. Peserta ditautkan" + (form.program_code ? " dan dimasukkan ke program." : "."));
       } else {
-        toast.success("Peserta baru berhasil ditambahkan!");
+        notify("Peserta baru berhasil ditambahkan!");
       }
       setIsModalOpen(false);
       setForm({
@@ -299,7 +435,8 @@ export function AdminParticipantListPage() {
         phone: "",
         birth_date: ""
       });
-      fetchParticipants();
+      void fetchInitialData();
+      void fetchParticipants();
     }
     
     setIsSubmitting(false);
@@ -328,7 +465,10 @@ export function AdminParticipantListPage() {
   };
 
   const analyzeCsv = () => {
-    if (!csvFile) return toast.error("Pilih file CSV terlebih dahulu");
+    if (!csvFile) {
+      notify("Pilih file CSV terlebih dahulu", "error");
+      return;
+    }
     setIsSubmitting(true);
 
     Papa.parse(csvFile, {
@@ -360,7 +500,7 @@ export function AdminParticipantListPage() {
         setIsSubmitting(false);
       },
       error: (err) => {
-        toast.error("Gagal membaca file: " + err.message);
+        notify("Gagal membaca file: " + err.message, "error");
         setIsSubmitting(false);
       }
     });
@@ -435,19 +575,19 @@ export function AdminParticipantListPage() {
           <div className="flex flex-col sm:flex-row gap-3">
             <Button 
               onClick={() => setIsTranscriptConfigOpen(true)}
-              className="bg-white/20 text-white hover:bg-white/30 border border-white/20 shadow-sm rounded-full px-6"
+              className="border border-white/30 bg-white/15 !text-white shadow-sm hover:bg-white/25"
             >
               <Settings className="w-4 h-4 mr-2" /> Konfigurasi Transkrip
             </Button>
             <Button 
               onClick={() => setIsMassUploadOpen(true)}
-              className="bg-white/20 text-white hover:bg-white/30 border border-white/20 shadow-sm rounded-full px-6"
+              className="border border-white/30 bg-white/15 !text-white shadow-sm hover:bg-white/25"
             >
               <Upload className="w-4 h-4 mr-2" /> Upload Massal
             </Button>
             <Button 
               onClick={() => setIsModalOpen(true)}
-              className="bg-white text-primary hover:bg-white/90 shadow-lg rounded-full font-semibold px-6"
+              className="bg-white !text-primary shadow-lg hover:bg-white/90"
             >
               <Plus className="w-4 h-4 mr-2" /> Peserta Baru
             </Button>
@@ -455,6 +595,53 @@ export function AdminParticipantListPage() {
         </div>
       </section>
 
+      {feedback && (
+        <div className={`flex items-start gap-3 rounded-xl border p-4 shadow-sm ${
+          feedback.type === "success"
+            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+            : "border-red-200 bg-red-50 text-red-800"
+        }`}>
+          {feedback.type === "success" ? (
+            <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-600" />
+          ) : (
+            <AlertCircle className="mt-0.5 h-5 w-5 text-red-600" />
+          )}
+          <div className="flex-1">
+            <h4 className="text-sm font-semibold">{feedback.type === "success" ? "Berhasil" : "Gagal"}</h4>
+            <p className="mt-0.5 text-sm opacity-90">{feedback.message}</p>
+          </div>
+          <button className="opacity-70 transition-opacity hover:opacity-100" onClick={() => setFeedback(null)} type="button">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      <div className="grid gap-3 rounded-xl border bg-white p-2 shadow-sm md:grid-cols-3">
+        {participantTabs.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.key;
+
+          return (
+            <button
+              className={`flex items-start gap-3 rounded-lg p-4 text-left transition-colors ${
+                isActive ? "bg-primary text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
+              }`}
+              key={item.key}
+              onClick={() => setActiveTab(item.key)}
+              type="button"
+            >
+              <Icon className={`mt-0.5 h-5 w-5 ${isActive ? "text-white" : "text-primary"}`} />
+              <span>
+                <span className="block text-sm font-bold">{item.label}</span>
+                <span className={`mt-0.5 block text-xs ${isActive ? "text-white/75" : "text-slate-500"}`}>{item.desc}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === "overview" && (
+        <>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
         <Card className="bg-primary/5 border-primary/20 shadow-sm relative overflow-hidden group">
           <div className="absolute right-0 top-0 w-24 h-24 bg-primary/10 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
@@ -499,6 +686,81 @@ export function AdminParticipantListPage() {
         </Card>
       </div>
 
+      <div className="grid gap-6 lg:grid-cols-[1fr_0.85fr]">
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <div>
+              <CardTitle>Workflow Peserta</CardTitle>
+              <CardDescription>Kontrol kualitas data peserta dari akun, enrollment, hingga dokumen akademik.</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => { void fetchInitialData(); void fetchParticipants(); }}>
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 md:grid-cols-3">
+              {[
+                { title: "Akun Terhubung", value: directoryStats.withAccount, desc: "Pada halaman aktif", color: "border-emerald-200 bg-emerald-50 text-emerald-800" },
+                { title: "Belum Ada Program", value: directoryStats.withoutProgram, desc: "Perlu dicek enrollment", color: "border-amber-200 bg-amber-50 text-amber-800" },
+                { title: "Aktif Tampil", value: directoryStats.visibleActive, desc: "Di hasil filter saat ini", color: "border-sky-200 bg-sky-50 text-sky-800" },
+              ].map((step) => (
+                <div className={`rounded-lg border p-4 ${step.color}`} key={step.title}>
+                  <p className="text-sm font-semibold">{step.title}</p>
+                  <p className="mt-2 text-3xl font-bold">{isLoading ? "-" : step.value}</p>
+                  <p className="mt-2 text-xs opacity-80">{step.desc}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm font-semibold text-slate-800">Alur kerja yang disarankan</p>
+              <p className="mt-1 text-sm text-slate-600">
+                Gunakan direktori untuk validasi profil, reset akses bila peserta terkunci, lalu buka detail untuk cek wali,
+                enrollment, kelas, halaqah, dan transkrip.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader>
+            <CardTitle>Kesiapan Operasional</CardTitle>
+            <CardDescription>Aksi cepat yang paling sering dipakai admin peserta.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            {[
+              { title: "Tambah peserta individual", desc: "Buat akun dan profil peserta dari form singkat.", action: () => setIsModalOpen(true), icon: Plus },
+              { title: "Upload massal CSV", desc: "Import peserta banyak sekaligus dengan validasi pratinjau.", action: () => setIsMassUploadOpen(true), icon: Upload },
+              { title: "Konfigurasi transkrip", desc: "Atur kop, pejabat, dan tanda tangan transkrip.", action: () => setIsTranscriptConfigOpen(true), icon: Settings },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-4 text-left transition-colors hover:border-primary/30 hover:bg-primary/5"
+                  key={item.title}
+                  onClick={item.action}
+                  type="button"
+                >
+                  <span className="flex min-w-0 items-start gap-3">
+                    <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-bold text-slate-900">{item.title}</span>
+                      <span className="mt-1 block text-xs text-slate-500">{item.desc}</span>
+                    </span>
+                  </span>
+                  <ArrowRight className="h-4 w-4 flex-shrink-0 text-slate-400" />
+                </button>
+              );
+            })}
+          </CardContent>
+        </Card>
+      </div>
+        </>
+      )}
+
+      {activeTab === "directory" && (
       <Card className="mt-8 shadow-sm border-slate-200 overflow-hidden">
         <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4 bg-white">
           <div>
@@ -683,6 +945,77 @@ export function AdminParticipantListPage() {
           )}
         </CardContent>
       </Card>
+      )}
+
+      {activeTab === "operations" && (
+        <div className="grid gap-6 lg:grid-cols-[1fr_0.9fr]">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader>
+              <CardTitle>Pusat Operasional Peserta</CardTitle>
+              <CardDescription>Kelola pekerjaan administratif yang berdampak ke banyak peserta.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-2">
+              <button
+                className="rounded-xl border border-slate-200 bg-white p-5 text-left transition-colors hover:border-primary/30 hover:bg-primary/5"
+                onClick={() => setIsModalOpen(true)}
+                type="button"
+              >
+                <Plus className="mb-4 h-7 w-7 text-primary" />
+                <p className="font-bold text-slate-900">Peserta Baru</p>
+                <p className="mt-2 text-sm text-slate-500">Buat akun, profil peserta, dan opsional langsung enroll ke program.</p>
+              </button>
+              <button
+                className="rounded-xl border border-slate-200 bg-white p-5 text-left transition-colors hover:border-primary/30 hover:bg-primary/5"
+                onClick={() => setIsMassUploadOpen(true)}
+                type="button"
+              >
+                <Upload className="mb-4 h-7 w-7 text-primary" />
+                <p className="font-bold text-slate-900">Upload Massal</p>
+                <p className="mt-2 text-sm text-slate-500">Import CSV dengan pratinjau validasi sebelum dieksekusi.</p>
+              </button>
+              <button
+                className="rounded-xl border border-slate-200 bg-white p-5 text-left transition-colors hover:border-primary/30 hover:bg-primary/5"
+                onClick={() => setIsTranscriptConfigOpen(true)}
+                type="button"
+              >
+                <FileText className="mb-4 h-7 w-7 text-primary" />
+                <p className="font-bold text-slate-900">Template Transkrip</p>
+                <p className="mt-2 text-sm text-slate-500">Atur kop, pejabat penandatangan, dan tanda tangan.</p>
+              </button>
+              <button
+                className="rounded-xl border border-slate-200 bg-white p-5 text-left transition-colors hover:border-primary/30 hover:bg-primary/5"
+                onClick={() => setActiveTab("directory")}
+                type="button"
+              >
+                <Key className="mb-4 h-7 w-7 text-primary" />
+                <p className="font-bold text-slate-900">Reset Akses</p>
+                <p className="mt-2 text-sm text-slate-500">Pilih peserta di direktori lalu gunakan tombol kunci untuk ganti sandi.</p>
+              </button>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader>
+              <CardTitle>Checklist Kualitas Data</CardTitle>
+              <CardDescription>Hal yang perlu rutin dicek agar portal peserta tetap rapi.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {[
+                "Pastikan peserta aktif memiliki akun login yang benar.",
+                "Pastikan peserta baru sudah punya enrollment program aktif.",
+                "Lengkapi nomor WhatsApp dan domisili untuk kebutuhan komunikasi.",
+                "Cek relasi wali pada detail peserta untuk peserta anak.",
+                "Validasi template transkrip sebelum periode penerbitan nilai.",
+              ].map((item) => (
+                <div className="flex gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3" key={item}>
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-600" />
+                  <p className="text-sm text-slate-600">{item}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Modal Tambah Peserta */}
       {isModalOpen && (
@@ -989,96 +1322,289 @@ export function AdminParticipantListPage() {
 
       {/* Modal Transcript Config */}
       {isTranscriptConfigOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="w-full max-w-2xl shadow-2xl overflow-hidden border-none animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <Card className="relative max-h-[92vh] w-full max-w-5xl overflow-hidden border-none shadow-2xl animate-in zoom-in-95 duration-200">
             {isSuccessState ? (
-              <div className="flex flex-col items-center justify-center p-16 h-[400px] bg-white animate-in zoom-in-50 duration-300">
-                <div className="h-20 w-20 bg-emerald-100 rounded-full flex items-center justify-center mb-6 animate-bounce">
+              <div className="flex h-[400px] flex-col items-center justify-center bg-white p-16 animate-in zoom-in-50 duration-300">
+                <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100">
                   <CheckCircle2 className="h-10 w-10 text-emerald-600" />
                 </div>
                 <h3 className="text-2xl font-bold text-slate-800">Berhasil!</h3>
-                <p className="text-slate-500 mt-2 text-center">Konfigurasi transkrip telah tersimpan dengan aman.</p>
+                <p className="mt-2 text-center text-slate-500">Konfigurasi transkrip telah tersimpan dengan aman.</p>
               </div>
             ) : (
-              <>
-                <div className="bg-primary p-6 text-primary-foreground sticky top-0 z-10">
-                  <CardTitle className="text-2xl mb-1 text-white">Konfigurasi Transkrip</CardTitle>
-                  <CardDescription className="text-white/80">Atur header, pejabat penandatangan, dan tanda tangan untuk semua transkrip nilai.</CardDescription>
-                </div>
-                <CardContent className="p-6 bg-white">
-                  <form onSubmit={handleSaveTranscriptSettings} className="space-y-5">
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-slate-700">Teks Header Kop Surat</label>
-                  <textarea 
-                    placeholder="Contoh: YAYASAN PENDIDIKAN IHSANUL ADAB (YPIA)" 
-                    className="w-full h-24 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    value={transcriptSettings.transcript_header_text || ""} 
-                    onChange={e => setTranscriptSettings({...transcriptSettings, transcript_header_text: e.target.value})} 
-                  />
-                  <p className="text-xs text-muted-foreground">Logo akan menggunakan logo sistem secara default.</p>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">Awalan Tempat & Tanggal</label>
-                    <Input 
-                      placeholder="Contoh: Yogyakarta, " 
-                      className="h-10"
-                      value={transcriptSettings.transcript_place_date_text || ""} 
-                      onChange={e => setTranscriptSettings({...transcriptSettings, transcript_place_date_text: e.target.value})} 
-                    />
-                    <p className="text-xs text-muted-foreground">Tanggal cetak akan ditambahkan otomatis di belakangnya.</p>
+              <form onSubmit={handleSaveTranscriptSettings} className="flex max-h-[92vh] flex-col bg-white">
+                <div className="bg-primary p-6 text-primary-foreground">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <CardTitle className="mb-1 text-2xl text-white">Konfigurasi Transkrip</CardTitle>
+                      <CardDescription className="text-white/80">
+                        Atur identitas dokumen, pejabat penandatangan, tanda tangan, dan preview transkrip akademik.
+                      </CardDescription>
+                    </div>
+                    <button
+                      className="rounded-full p-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                      onClick={() => setIsTranscriptConfigOpen(false)}
+                      title="Tutup"
+                      type="button"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">Tanda Tangan (Opsional)</label>
-                    <Input 
-                      type="file"
-                      accept="image/*"
-                      className="h-10 cursor-pointer"
-                      onChange={e => setSignatureFile(e.target.files?.[0] || null)} 
-                    />
-                    {transcriptSettings.transcript_signature_url && !signatureFile && (
-                      <p className="text-xs text-emerald-600 font-medium">✓ Tanda tangan sudah diunggah sebelumnya</p>
+                </div>
+
+                <div className="grid flex-1 overflow-hidden lg:grid-cols-[280px_1fr]">
+                  <aside className="border-r bg-slate-50 p-4">
+                    <div className="grid gap-2">
+                      {transcriptConfigTabs.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = transcriptConfigTab === item.key;
+
+                        return (
+                          <button
+                            className={`flex items-start gap-3 rounded-lg p-3 text-left transition-colors ${
+                              isActive ? "bg-primary text-white shadow-sm" : "text-slate-600 hover:bg-white"
+                            }`}
+                            key={item.key}
+                            onClick={() => setTranscriptConfigTab(item.key)}
+                            type="button"
+                          >
+                            <Icon className={`mt-0.5 h-5 w-5 ${isActive ? "text-white" : "text-primary"}`} />
+                            <span>
+                              <span className="block text-sm font-bold">{item.label}</span>
+                              <span className={`mt-0.5 block text-xs ${isActive ? "text-white/75" : "text-slate-500"}`}>{item.desc}</span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-500">
+                      <p className="font-semibold text-slate-700">Status konfigurasi</p>
+                      <div className="mt-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>Kop dokumen</span>
+                          <Badge variant="outline" className={transcriptSettings.transcript_header_text ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}>
+                            {transcriptSettings.transcript_header_text ? "Terisi" : "Default"}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span>Pejabat</span>
+                          <Badge variant="outline" className={transcriptSettings.transcript_official_name ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}>
+                            {transcriptSettings.transcript_official_name ? "Terisi" : "Default"}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span>Tanda tangan</span>
+                          <Badge variant="outline" className={(signaturePreviewUrl || transcriptSettings.transcript_signature_url) ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-600"}>
+                            {(signaturePreviewUrl || transcriptSettings.transcript_signature_url) ? "Ada" : "Kosong"}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                  </aside>
+
+                  <CardContent className="overflow-y-auto p-6">
+                    {transcriptErrorMsg && (
+                      <div className="mb-5 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">
+                        <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0" />
+                        <p className="text-sm">{transcriptErrorMsg}</p>
+                      </div>
                     )}
-                  </div>
+
+                    {transcriptConfigTab === "identity" && (
+                      <div className="space-y-5">
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900">Identitas Dokumen</h3>
+                          <p className="mt-1 text-sm text-slate-500">Atur teks kop dan format tempat tanggal yang muncul di seluruh transkrip.</p>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="flex items-start gap-3">
+                            <Building2 className="mt-0.5 h-5 w-5 text-primary" />
+                            <div>
+                              <p className="text-sm font-semibold text-slate-800">Logo mengikuti pengaturan global</p>
+                              <p className="mt-1 text-sm text-slate-500">
+                                Transkrip memakai <code className="rounded bg-white px-1 py-0.5">logo_url</code> dari Pengaturan Global.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                          Teks Header Kop Surat
+                          <textarea
+                            className="min-h-[140px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            onChange={e => setTranscriptSettings({ ...transcriptSettings, transcript_header_text: e.target.value })}
+                            placeholder="Contoh: YAYASAN PENDIDIKAN IHSANUL ADAB (YPIA)"
+                            value={transcriptSettings.transcript_header_text || ""}
+                          />
+                          <span className="text-xs font-normal text-muted-foreground">Bisa diisi beberapa baris. Jika kosong, nama institusi akan dipakai.</span>
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                          Awalan Tempat & Tanggal
+                          <Input
+                            className="h-10"
+                            onChange={e => setTranscriptSettings({ ...transcriptSettings, transcript_place_date_text: e.target.value })}
+                            placeholder="Contoh: Yogyakarta, "
+                            value={transcriptSettings.transcript_place_date_text || ""}
+                          />
+                          <span className="text-xs font-normal text-muted-foreground">Tanggal cetak akan ditambahkan otomatis di belakangnya.</span>
+                        </label>
+                      </div>
+                    )}
+
+                    {transcriptConfigTab === "signature" && (
+                      <div className="space-y-5">
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900">Pejabat Penandatangan</h3>
+                          <p className="mt-1 text-sm text-slate-500">Atur nama, jabatan, dan gambar tanda tangan yang tampil di bagian akhir transkrip.</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                          <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                            Nama Pejabat Penandatangan
+                            <Input
+                              className="h-10"
+                              onChange={e => setTranscriptSettings({ ...transcriptSettings, transcript_official_name: e.target.value })}
+                              placeholder="Contoh: Ustadz Fulan, Lc., M.A."
+                              value={transcriptSettings.transcript_official_name || ""}
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                            Jabatan Penandatangan
+                            <Input
+                              className="h-10"
+                              onChange={e => setTranscriptSettings({ ...transcriptSettings, transcript_official_title: e.target.value })}
+                              placeholder="Contoh: Direktur Pendidikan"
+                              value={transcriptSettings.transcript_official_title || ""}
+                            />
+                          </label>
+                        </div>
+
+                        <div className="grid gap-5 md:grid-cols-[1fr_260px]">
+                          <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                            Upload Tanda Tangan
+                            <Input
+                              accept="image/*"
+                              className="h-10 cursor-pointer"
+                              onChange={e => setSignatureFile(e.target.files?.[0] || null)}
+                              type="file"
+                            />
+                            <span className="text-xs font-normal text-muted-foreground">Gunakan PNG transparan bila memungkinkan. Maksimal 1.5 MB.</span>
+                            {transcriptSettings.transcript_signature_url && !signatureFile && (
+                              <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Tanda tangan sudah diunggah sebelumnya
+                              </span>
+                            )}
+                          </label>
+
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                            <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                              <ImageIcon className="h-4 w-4 text-primary" />
+                              Preview Tanda Tangan
+                            </p>
+                            {signaturePreviewUrl || transcriptSettings.transcript_signature_url ? (
+                              <div className="grid h-32 place-items-center rounded-lg border bg-white p-3">
+                                <img
+                                  alt="Preview tanda tangan"
+                                  className="max-h-full max-w-full object-contain"
+                                  src={signaturePreviewUrl || transcriptSettings.transcript_signature_url || ""}
+                                />
+                              </div>
+                            ) : (
+                              <div className="grid h-32 place-items-center rounded-lg border border-dashed bg-white text-center text-xs text-slate-400">
+                                Belum ada tanda tangan
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {transcriptConfigTab === "preview" && (
+                      <div className="space-y-5">
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900">Preview Transkrip</h3>
+                          <p className="mt-1 text-sm text-slate-500">Simulasi tampilan kop dan tanda tangan. Nilai asli tetap mengikuti data akademik peserta.</p>
+                        </div>
+
+                        <div className="mx-auto max-w-2xl rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+                          <div className="border-b-2 border-slate-800 pb-6 text-center">
+                            {transcriptSettings.logo_url && (
+                              <img alt="Logo" className="mx-auto mb-4 h-16 w-auto object-contain" src={transcriptSettings.logo_url} />
+                            )}
+                            <h3 className="font-serif text-2xl font-bold uppercase tracking-widest text-slate-900">Transkrip Akademik</h3>
+                            <p className="mt-3 whitespace-pre-line text-sm font-medium text-slate-700">
+                              {transcriptSettings.transcript_header_text || transcriptSettings.institution_name || "YPIA"}
+                            </p>
+                          </div>
+
+                          <div className="mt-6 grid grid-cols-2 gap-6 text-xs">
+                            <div className="space-y-2">
+                              <p><span className="font-semibold">Nama Peserta</span>: Contoh Peserta</p>
+                              <p><span className="font-semibold">Nomor Induk</span>: NIS-2026-001</p>
+                            </div>
+                            <div className="space-y-2">
+                              <p><span className="font-semibold">Program</span>: Tahsin Dasar</p>
+                              <p><span className="font-semibold">Kelas</span>: Kelas A</p>
+                            </div>
+                          </div>
+
+                          <div className="mt-8 flex justify-end">
+                            <div className="w-64 text-center text-sm">
+                              <p className="text-slate-600">
+                                {transcriptSettings.transcript_place_date_text || "Yogyakarta, "}
+                                {new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
+                              </p>
+                              <div className="my-3 grid h-24 place-items-center">
+                                {signaturePreviewUrl || transcriptSettings.transcript_signature_url ? (
+                                  <img
+                                    alt="Preview tanda tangan"
+                                    className="max-h-full max-w-[180px] object-contain"
+                                    src={signaturePreviewUrl || transcriptSettings.transcript_signature_url || ""}
+                                  />
+                                ) : null}
+                              </div>
+                              <p className="font-bold text-slate-900 underline underline-offset-4">
+                                {transcriptSettings.transcript_official_name || "Kepala Bagian Akademik"}
+                              </p>
+                              <p className="mt-1 text-slate-700">{transcriptSettings.transcript_official_title || "LMS YPIA"}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">Nama Pejabat Penandatangan</label>
-                    <Input 
-                      placeholder="Contoh: Ustadz Fulan, Lc., M.A." 
-                      className="h-10"
-                      value={transcriptSettings.transcript_official_name || ""} 
-                      onChange={e => setTranscriptSettings({...transcriptSettings, transcript_official_name: e.target.value})} 
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">Jabatan Penandatangan</label>
-                    <Input 
-                      placeholder="Contoh: Direktur Pendidikan" 
-                      className="h-10"
-                      value={transcriptSettings.transcript_official_title || ""} 
-                      onChange={e => setTranscriptSettings({...transcriptSettings, transcript_official_title: e.target.value})} 
-                    />
-                  </div>
-                </div>
-
-                {transcriptErrorMsg && (
-                  <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm font-medium border border-red-200">
-                    {transcriptErrorMsg}
-                  </div>
-                )}
-
-                <div className="pt-4 flex justify-end gap-3 border-t border-border/50 mt-6">
-                  <Button type="button" variant="outline" className="px-6" onClick={() => setIsTranscriptConfigOpen(false)}>Batal</Button>
-                  <Button type="submit" disabled={isSavingTranscript} className="bg-primary hover:bg-primary/90 text-primary-foreground px-6">
-                    {isSavingTranscript ? "Menyimpan..." : "Simpan Konfigurasi"}
+                <div className="flex flex-col gap-3 border-t bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <Button type="button" variant="outline" className="bg-white !text-slate-700" onClick={resetTranscriptDraft}>
+                    <RotateCcw className="h-4 w-4" />
+                    Reset Draft
                   </Button>
+                  <div className="flex justify-end gap-3">
+                    <Button type="button" variant="outline" className="bg-white !text-slate-700" onClick={() => setIsTranscriptConfigOpen(false)}>
+                      Batal
+                    </Button>
+                    <Button type="submit" disabled={isSavingTranscript || !transcriptSettings.id} className="bg-primary hover:bg-primary/90 text-primary-foreground px-6">
+                      {isSavingTranscript ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Menyimpan...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-4 w-4" />
+                          Simpan Konfigurasi
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
-                  </form>
-                </CardContent>
-              </>
+              </form>
             )}
           </Card>
         </div>
@@ -1095,8 +1621,9 @@ export function AdminParticipantListPage() {
                 </CardTitle>
                 <CardDescription className="text-white/90">Ubah sandi untuk {resetParticipant.display_name}</CardDescription>
                 {resetParticipant.profiles?.email && (
-                  <div className="mt-2 text-xs font-medium bg-black/20 py-1 px-2 rounded inline-block">
-                    📧 {resetParticipant.profiles.email}
+                  <div className="mt-2 inline-flex items-center gap-1 rounded bg-black/20 px-2 py-1 text-xs font-medium">
+                    <Mail className="h-3.5 w-3.5" />
+                    {resetParticipant.profiles.email}
                   </div>
                 )}
               </div>

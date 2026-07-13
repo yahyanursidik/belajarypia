@@ -311,6 +311,14 @@ export function AppRoutes() {
             }
           />
           <Route
+            path="program/:programId/:section"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <ProgramBuilderPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="keuangan"
             element={
               <ProtectedRoute allowedRoles={["admin", "finance"]}>
@@ -359,6 +367,7 @@ export function AppRoutes() {
           <Route index element={<TeacherDashboardPage />} />
           <Route path="kelas" element={<TeacherClassPage />} />
           <Route path="kelas/program/:programId" element={<ProgramBuilderPage />} />
+          <Route path="kelas/program/:programId/:section" element={<ProgramBuilderPage />} />
           <Route path="kelas/:classId" element={<TeacherClassDashboardPage />} />
           <Route path="konten" element={<TeacherPlaceholderPage />} />
           <Route path="profil" element={<TeacherProfilePage />} />
@@ -408,6 +417,7 @@ export function AppRoutes() {
           <Route path="program" element={<AdminProgramListPage />} />
           <Route path="program/:programId" element={<ProgramBuilderPage />} />
           <Route path="program/:programId/report" element={<AdminProgramReportPage />} />
+          <Route path="program/:programId/:section" element={<ProgramBuilderPage />} />
           <Route path="katalog/:programId" element={<ProgramDetailPage />} />
           <Route path="pendaftaran/:programId" element={<AdmissionPortalPage />} />
           <Route path="cek-status" element={<AdmissionStatusPage />} />

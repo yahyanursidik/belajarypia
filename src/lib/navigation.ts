@@ -13,10 +13,10 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
     case "super_admin":
       return [
         { href: "/system", label: "Pusat Kendali", icon: menuIcon.dashboard },
-        { href: "/system/pengumuman", label: "Pusat Pengumuman", icon: menuIcon.team },
+        { href: "/system/pengumuman", label: "Komunikasi & Pengumuman", icon: menuIcon.team },
         { href: "/system/pengguna", label: "Akses & Pengguna", icon: menuIcon.user },
-        { href: "/system/pendaftaran", label: "Pendaftaran", icon: menuIcon.team },
-        { href: "/system/peserta", label: "Data Peserta", icon: menuIcon.user },
+        { href: "/system/pendaftaran", label: "Admisi & Pendaftaran", icon: menuIcon.team },
+        { href: "/system/peserta", label: "Peserta & Akademik", icon: menuIcon.user },
         { href: "/system/program", label: "Program", icon: menuIcon.book },
         { href: "/system/keuangan", label: "Keuangan", icon: menuIcon.finance },
         { href: "/system/helpdesk", label: "Helpdesk", icon: menuIcon.helpdesk },
@@ -29,9 +29,9 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
     case "admin":
       return [
         { href: "/admin", label: "Dashboard", icon: menuIcon.dashboard },
-        { href: "/admin/pengumuman", label: "Pusat Pengumuman", icon: menuIcon.team },
-        { href: "/admin/pendaftaran", label: "Pendaftaran", icon: menuIcon.team },
-        { href: "/admin/peserta", label: "Data Peserta", icon: menuIcon.user },
+        { href: "/admin/pengumuman", label: "Komunikasi & Pengumuman", icon: menuIcon.team },
+        { href: "/admin/pendaftaran", label: "Admisi & Pendaftaran", icon: menuIcon.team },
+        { href: "/admin/peserta", label: "Peserta & Akademik", icon: menuIcon.user },
         { href: "/admin/program", label: "Program", icon: menuIcon.book },
         { href: "/admin/sertifikat", label: "Template Syahadah", icon: menuIcon.certificate },
         { href: "/admin/sertifikat/kelayakan", label: "Cek Kelayakan", icon: menuIcon.certificate },
@@ -54,7 +54,7 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
     case "teacher":
       return [
         { href: "/teacher", label: "Dashboard", icon: menuIcon.dashboard },
-        { href: "/teacher/kelas", label: "Kelas Saya", icon: menuIcon.book },
+        { href: "/teacher/kelas", label: "Program & Kelas", icon: menuIcon.book },
         { href: "/teacher/konten", label: "Konten Materi", icon: menuIcon.book },
         { href: "/teacher/review", label: "Tugas & Review", icon: menuIcon.user },
         { href: "/teacher/profil", label: "Profil Saya", icon: menuIcon.user },
@@ -77,6 +77,7 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
       return [
         { href: "/learner", label: "Dashboard", icon: menuIcon.dashboard },
         { href: "/learner/program-saya", label: "Program Saya", icon: menuIcon.book },
+        { href: "/learner/cek-status", label: "Cek Pendaftaran", icon: menuIcon.team },
         { href: "/learner/profil", label: "Profil Saya", icon: menuIcon.user },
         { href: "/learner/bantuan", label: "Bantuan", icon: menuIcon.team },
       ];

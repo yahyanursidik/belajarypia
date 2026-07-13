@@ -1,15 +1,41 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Search, RefreshCw, UserCircle, CheckCircle2, XCircle, AlertCircle, Download, X } from "lucide-react";
+import {
+  Search,
+  RefreshCw,
+  UserCircle,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  Download,
+  X,
+  LayoutDashboard,
+  ClipboardList,
+  FileCog,
+  CalendarClock,
+  UsersRound,
+  Clock3,
+  UserCheck,
+  FileText,
+  ArrowRight,
+  LinkIcon,
+  BookOpen,
+  Filter,
+  SlidersHorizontal,
+} from "lucide-react";
 import {
   applicantStatusLabels,
+  formatRegistrationDateTime,
+  getRegistrationWindowState,
   type Applicant,
   type ApplicantAnswer,
   type ApplicantProgramChoice,
   type ApplicantStatus,
+  type RegistrationForm,
+  type RegistrationWindowState,
 } from "../../lib/admission";
 import type { Batch, ClassGroup, Halaqah } from "../../lib/enrollment";
 import { supabase } from "../../lib/supabase";
@@ -19,7 +45,66 @@ type ApplicantListRow = ApplicantProgramChoice & {
   applicants: Applicant;
 };
 
+type ProgramOption = {
+  id: string;
+  name: string;
+  code: string;
+  status: string;
+};
 
+type RegistrationFormSummary = RegistrationForm & {
+  programs?: Pick<ProgramOption, "id" | "name" | "code" | "status"> | null;
+};
+
+type AdmissionStats = {
+  total: number;
+  draft: number;
+  submitted: number;
+  under_review: number;
+  revision_requested: number;
+  accepted: number;
+  rejected: number;
+  openForms: number;
+  groupClaims: number;
+};
+
+type AdmissionTab = "overview" | "review" | "settings";
+
+const admissionTabs: Array<{
+  key: AdmissionTab;
+  label: string;
+  desc: string;
+  icon: ComponentType<{ className?: string }>;
+}> = [
+  { key: "overview", label: "Ringkasan", desc: "Funnel, jadwal, dan kesiapan", icon: LayoutDashboard },
+  { key: "review", label: "Review Pendaftar", desc: "Seleksi, catatan, placement", icon: ClipboardList },
+  { key: "settings", label: "Form & Undangan", desc: "Form, jadwal, link grup", icon: FileCog },
+];
+
+const registrationStateLabel: Record<RegistrationWindowState, string> = {
+  draft: "Draft",
+  upcoming: "Terjadwal",
+  open: "Dibuka",
+  closed: "Ditutup",
+  archived: "Arsip",
+};
+
+const registrationStateClass: Record<RegistrationWindowState, string> = {
+  draft: "bg-slate-50 text-slate-600 border-slate-200",
+  upcoming: "bg-sky-50 text-sky-700 border-sky-200",
+  open: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  closed: "bg-rose-50 text-rose-700 border-rose-200",
+  archived: "bg-slate-50 text-slate-600 border-slate-200",
+};
+
+function isMissingRegistrationWindowColumn(message: string | null | undefined) {
+  return Boolean(
+    message?.includes("registration_forms.registration_open_at") ||
+      message?.includes("registration_forms.registration_close_at") ||
+      message?.includes("registration_open_at") ||
+      message?.includes("registration_close_at"),
+  );
+}
 
 export function AdminApplicantListPage() {
   const [rows, setRows] = useState<ApplicantListRow[]>([]);
@@ -39,9 +124,26 @@ export function AdminApplicantListPage() {
     halaqah_id: "",
   });
   
-  const [activeTab, setActiveTab] = useState<"review" | "settings">("review");
-  const [programs, setPrograms] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<AdmissionTab>("overview");
+  const [programs, setPrograms] = useState<ProgramOption[]>([]);
   const [selectedProgramIdForSettings, setSelectedProgramIdForSettings] = useState<string | null>(null);
+  const [programSearch, setProgramSearch] = useState("");
+  const [programStatusFilter, setProgramStatusFilter] = useState("all");
+  const [programFormFilter, setProgramFormFilter] = useState("all");
+  const [overviewRows, setOverviewRows] = useState<ApplicantListRow[]>([]);
+  const [registrationForms, setRegistrationForms] = useState<RegistrationFormSummary[]>([]);
+  const [stats, setStats] = useState<AdmissionStats>({
+    total: 0,
+    draft: 0,
+    submitted: 0,
+    under_review: 0,
+    revision_requested: 0,
+    accepted: 0,
+    rejected: 0,
+    openForms: 0,
+    groupClaims: 0,
+  });
+  const [isOverviewLoading, setIsOverviewLoading] = useState(true);
 
   // Pagination & Filters
   const [page, setPage] = useState(1);
@@ -68,6 +170,67 @@ export function AdminApplicantListPage() {
     () => rows.find((row) => row.applicant_id === selectedApplicantId) ?? null,
     [rows, selectedApplicantId],
   );
+
+  const registrationFormsByProgramId = useMemo(() => {
+    const formMap = new Map<string, RegistrationFormSummary>();
+
+    for (const form of registrationForms) {
+      if (form.program_id && !formMap.has(form.program_id)) {
+        formMap.set(form.program_id, form);
+      }
+    }
+
+    return formMap;
+  }, [registrationForms]);
+
+  const selectedProgramForSettings = useMemo(
+    () => programs.find((program) => program.id === selectedProgramIdForSettings) ?? null,
+    [programs, selectedProgramIdForSettings],
+  );
+
+  const programStatusOptions = useMemo(
+    () => Array.from(new Set(programs.map((program) => program.status).filter(Boolean))).sort(),
+    [programs],
+  );
+
+  const filteredProgramsForSettings = useMemo(() => {
+    const normalizedSearch = programSearch.trim().toLowerCase();
+
+    return programs.filter((program) => {
+      const form = registrationFormsByProgramId.get(program.id);
+      const windowState = form ? getRegistrationWindowState(form) : "draft";
+      const matchesSearch =
+        !normalizedSearch ||
+        program.name.toLowerCase().includes(normalizedSearch) ||
+        program.code.toLowerCase().includes(normalizedSearch);
+      const matchesStatus = programStatusFilter === "all" || program.status === programStatusFilter;
+      const matchesForm =
+        programFormFilter === "all" ||
+        (programFormFilter === "configured" && Boolean(form)) ||
+        (programFormFilter === "unconfigured" && !form) ||
+        windowState === programFormFilter;
+
+      return matchesSearch && matchesStatus && matchesForm;
+    });
+  }, [programFormFilter, programSearch, programStatusFilter, programs, registrationFormsByProgramId]);
+
+  const visibleProgramsForSettings = filteredProgramsForSettings.slice(0, 80);
+
+  const programPickerStats = useMemo(() => {
+    return programs.reduce(
+      (current, program) => {
+        const form = registrationFormsByProgramId.get(program.id);
+        const windowState = form ? getRegistrationWindowState(form) : "draft";
+
+        current.total += 1;
+        if (program.status === "active") current.active += 1;
+        if (form) current.configured += 1;
+        if (windowState === "open") current.open += 1;
+        return current;
+      },
+      { total: 0, active: 0, configured: 0, open: 0 },
+    );
+  }, [programs, registrationFormsByProgramId]);
 
   useEffect(() => {
     if (selectedRow) {
@@ -171,7 +334,68 @@ export function AdminApplicantListPage() {
 
   const loadPrograms = async () => {
     const { data } = await supabase.from("programs").select("id, name, code, status").order("created_at", { ascending: false });
-    if (data) setPrograms(data);
+    if (data) setPrograms(data as ProgramOption[]);
+  };
+
+  const loadOverview = async () => {
+    setIsOverviewLoading(true);
+
+    const [choiceResult, formResult, claimResult] = await Promise.all([
+      supabase
+        .from("applicant_program_choices")
+        .select(
+          "id, applicant_id, program_id, preferred_schedule, notes, applicants!inner(id, full_name, email, phone, city, gender, birth_date, source_channel, status, submitted_at, created_at), programs(id, code, name, status)"
+        )
+        .order("created_at", { ascending: false })
+        .limit(250),
+      supabase
+        .from("registration_forms")
+        .select("id, program_id, title, description, status, registration_open_at, registration_close_at, group_settings, programs(id, code, name, status)")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("registration_group_link_claims")
+        .select("id"),
+    ]);
+
+    let formRows: unknown[] | null = formResult.data;
+    let formError = formResult.error;
+
+    if (isMissingRegistrationWindowColumn(formError?.message)) {
+      const fallback = await supabase
+        .from("registration_forms")
+        .select("id, program_id, title, description, status, group_settings, programs(id, code, name, status)")
+        .order("created_at", { ascending: false });
+
+      formRows = fallback.data;
+      formError = fallback.error;
+    }
+
+    const nextRows = (choiceResult.data ?? []) as unknown as ApplicantListRow[];
+    const nextForms = (formRows ?? []) as unknown as RegistrationFormSummary[];
+    const nextStats: AdmissionStats = {
+      total: nextRows.length,
+      draft: 0,
+      submitted: 0,
+      under_review: 0,
+      revision_requested: 0,
+      accepted: 0,
+      rejected: 0,
+      openForms: nextForms.filter((form) => getRegistrationWindowState(form) === "open").length,
+      groupClaims: claimResult.data?.length ?? 0,
+    };
+
+    if (choiceResult.error || formError) {
+      setErrorMessage(choiceResult.error?.message || formError?.message || "Gagal memuat ringkasan pendaftaran.");
+    }
+
+    for (const row of nextRows) {
+      nextStats[row.applicants.status] += 1;
+    }
+
+    setOverviewRows(nextRows);
+    setRegistrationForms(nextForms);
+    setStats(nextStats);
+    setIsOverviewLoading(false);
   };
 
   useEffect(() => {
@@ -180,7 +404,12 @@ export function AdminApplicantListPage() {
 
   useEffect(() => {
     void loadPrograms();
+    void loadOverview();
   }, []);
+
+  const refreshAll = async () => {
+    await Promise.all([loadApplicants(), loadOverview(), loadPrograms()]);
+  };
 
   const handleSearch = () => {
     setSearchQuery(searchInput);
@@ -253,7 +482,7 @@ export function AdminApplicantListPage() {
       setErrorMessage(applicantError?.message || notesError?.message || "Terjadi kesalahan.");
     } else {
       setMessage(`Status pendaftaran berubah menjadi ${applicantStatusLabels[status]}.`);
-      await loadApplicants();
+      await refreshAll();
     }
 
     setIsUpdating(false);
@@ -284,7 +513,7 @@ export function AdminApplicantListPage() {
       setErrorMessage(error.message);
     } else {
       setMessage("Applicant diterima, participant dan enrollment berhasil dibuat.");
-      await loadApplicants();
+      await refreshAll();
     }
 
     setIsUpdating(false);
@@ -293,11 +522,11 @@ export function AdminApplicantListPage() {
   return (
     <div className="page-stack">
       <section className="page-hero">
-        <Badge>Phase 3</Badge>
+        <Badge>Admisi</Badge>
         <h2>Pendaftaran</h2>
         <p>
-          Review calon peserta, ubah status workflow, dan pastikan peserta belum
-          dibuat sebelum pendaftaran disetujui.
+          Kelola funnel pendaftaran dari publikasi form, seleksi calon peserta,
+          placement awal, sampai peserta resmi masuk kelas.
         </p>
       </section>
 
@@ -326,14 +555,185 @@ export function AdminApplicantListPage() {
         )}
       </div>
 
-      <div className="flex border-b mb-6 overflow-x-auto hide-scrollbar">
-        <button className={`px-6 py-3 font-semibold text-sm whitespace-nowrap transition-colors ${activeTab === "review" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setActiveTab("review")}>
-          Review Pendaftar
-        </button>
-        <button className={`px-6 py-3 font-semibold text-sm whitespace-nowrap transition-colors ${activeTab === "settings" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setActiveTab("settings")}>
-          Pengaturan Form Pendaftaran
-        </button>
+      <div className="grid gap-3 rounded-xl border bg-white p-2 shadow-sm md:grid-cols-3">
+        {admissionTabs.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.key;
+
+          return (
+            <button
+              key={item.key}
+              className={`flex items-start gap-3 rounded-lg p-4 text-left transition-colors ${
+                isActive ? "bg-primary text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
+              }`}
+              onClick={() => setActiveTab(item.key)}
+              type="button"
+            >
+              <Icon className={`mt-0.5 h-5 w-5 ${isActive ? "text-white" : "text-primary"}`} />
+              <span>
+                <span className="block text-sm font-bold">{item.label}</span>
+                <span className={`mt-0.5 block text-xs ${isActive ? "text-white/75" : "text-slate-500"}`}>{item.desc}</span>
+              </span>
+            </button>
+          );
+        })}
       </div>
+
+      {activeTab === "overview" && (
+        <div className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {[
+              { label: "Total Pendaftar", value: stats.total, icon: UsersRound, tone: "text-slate-700 bg-slate-100" },
+              { label: "Perlu Review", value: stats.submitted + stats.under_review + stats.revision_requested, icon: Clock3, tone: "text-amber-700 bg-amber-50" },
+              { label: "Diterima", value: stats.accepted, icon: UserCheck, tone: "text-emerald-700 bg-emerald-50" },
+              { label: "Form Dibuka", value: stats.openForms, icon: CalendarClock, tone: "text-sky-700 bg-sky-50" },
+            ].map((metric) => {
+              const Icon = metric.icon;
+
+              return (
+                <Card key={metric.label} className="border-slate-200 shadow-sm">
+                  <CardContent className="flex items-center gap-4 p-5">
+                    <div className={`grid h-12 w-12 place-items-center rounded-lg ${metric.tone}`}>
+                      <Icon className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">{metric.label}</p>
+                      <p className="text-3xl font-bold">{isOverviewLoading ? "-" : metric.value}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
+            <Card className="border-slate-200 shadow-sm">
+              <CardHeader className="flex flex-row items-start justify-between gap-4">
+                <div>
+                  <CardTitle>Workflow Admisi</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">Pantau bottleneck utama dari data masuk sampai enrollment.</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => void refreshAll()}>
+                  <RefreshCw className="h-4 w-4" />
+                  Refresh
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-3 md:grid-cols-3">
+                  {[
+                    { title: "Masuk", value: stats.submitted, desc: "Baru submit dan belum diproses", color: "border-sky-200 bg-sky-50 text-sky-800" },
+                    { title: "Direview", value: stats.under_review + stats.revision_requested, desc: "Sedang dicek atau menunggu revisi", color: "border-amber-200 bg-amber-50 text-amber-800" },
+                    { title: "Selesai", value: stats.accepted + stats.rejected, desc: "Diterima atau ditolak", color: "border-emerald-200 bg-emerald-50 text-emerald-800" },
+                  ].map((step) => (
+                    <div className={`rounded-lg border p-4 ${step.color}`} key={step.title}>
+                      <p className="text-sm font-semibold">{step.title}</p>
+                      <p className="mt-2 text-3xl font-bold">{isOverviewLoading ? "-" : step.value}</p>
+                      <p className="mt-2 text-xs opacity-80">{step.desc}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">Klaim tautan grup</p>
+                      <p className="text-xs text-slate-500">Jumlah pendaftar yang sudah membuka tautan grup dari sistem rotasi.</p>
+                    </div>
+                    <div className="flex items-center gap-2 text-primary">
+                      <LinkIcon className="h-4 w-4" />
+                      <span className="text-2xl font-bold">{isOverviewLoading ? "-" : stats.groupClaims}</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-slate-200 shadow-sm">
+              <CardHeader>
+                <CardTitle>Jadwal Form Aktif</CardTitle>
+                <p className="text-sm text-muted-foreground">Kesiapan form pendaftaran per program.</p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {registrationForms.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Belum ada form pendaftaran.</p>
+                ) : (
+                  registrationForms.slice(0, 6).map((form) => {
+                    const state = getRegistrationWindowState(form);
+
+                    return (
+                      <button
+                        className="w-full rounded-lg border border-slate-200 bg-white p-3 text-left transition-colors hover:border-primary/30 hover:bg-primary/5"
+                        key={form.id}
+                        onClick={() => {
+                          if (form.program_id) {
+                            setSelectedProgramIdForSettings(form.program_id);
+                            setActiveTab("settings");
+                          }
+                        }}
+                        type="button"
+                      >
+                        <div className="mb-2 flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-900">{form.programs?.name ?? form.title}</p>
+                            <p className="text-xs text-slate-500">{form.programs?.code ?? "Global"} / {form.title}</p>
+                          </div>
+                          <Badge variant="outline" className={registrationStateClass[state]}>{registrationStateLabel[state]}</Badge>
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          {formatRegistrationDateTime(form.registration_open_at)} - {formatRegistrationDateTime(form.registration_close_at)}
+                        </p>
+                      </button>
+                    );
+                  })
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Pendaftar Terbaru</CardTitle>
+                <p className="text-sm text-muted-foreground">Klik untuk masuk ke mode review.</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setActiveTab("review")}>
+                Buka Review
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {overviewRows.slice(0, 6).map((row) => (
+                  <button
+                    className="rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors hover:border-primary/30 hover:bg-primary/5"
+                    key={row.id}
+                    onClick={() => {
+                      setActiveTab("review");
+                      setSelectedApplicantId(row.applicant_id);
+                      void loadAnswers(row.applicant_id);
+                      void loadPlacementOptions(row.program_id);
+                    }}
+                    type="button"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-900">{row.applicants.full_name}</p>
+                        <p className="truncate text-xs text-slate-500">{row.applicants.email}</p>
+                      </div>
+                      <Badge variant={row.applicants.status === "accepted" ? "default" : "secondary"}>
+                        {applicantStatusLabels[row.applicants.status]}
+                      </Badge>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+                      <FileText className="h-4 w-4" />
+                      <span>{row.programs?.name ?? "Program"}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {activeTab === "review" && (
         <div className="space-y-6">
@@ -524,7 +924,8 @@ export function AdminApplicantListPage() {
                             </p>
                             {isFile ? (
                               <a href={publicUrl} target="_blank" rel="noreferrer" className="mt-1 text-sm text-indigo-600 hover:underline flex items-center gap-1">
-                                📎 Unduh File Lampiran
+                                <Download className="h-4 w-4" />
+                                Unduh File Lampiran
                               </a>
                             ) : (
                               <p className="mt-1 text-sm">{answer.value_text || "-"}</p>
@@ -561,7 +962,7 @@ export function AdminApplicantListPage() {
                       <option value="">Tanpa batch</option>
                       {batches.map((batch) => (
                         <option key={batch.id} value={batch.id}>
-                          {batch.code} — {batch.name}
+                          {batch.code} - {batch.name}
                         </option>
                       ))}
                     </select>
@@ -583,7 +984,7 @@ export function AdminApplicantListPage() {
                       <option value="">Tanpa kelas</option>
                       {classes.map((classGroup) => (
                         <option key={classGroup.id} value={classGroup.id}>
-                          {classGroup.code} — {classGroup.name}
+                          {classGroup.code} - {classGroup.name}
                         </option>
                       ))}
                     </select>
@@ -603,7 +1004,7 @@ export function AdminApplicantListPage() {
                       <option value="">Tanpa halaqah</option>
                       {halaqahs.map((halaqah) => (
                         <option key={halaqah.id} value={halaqah.id}>
-                          {halaqah.code} — {halaqah.name}
+                          {halaqah.code} - {halaqah.name}
                         </option>
                       ))}
                     </select>
@@ -668,32 +1069,193 @@ export function AdminApplicantListPage() {
       )}
 
       {activeTab === "settings" && (
-        <Card className="max-w-4xl mx-auto w-full border-none shadow-none bg-transparent">
-          <CardHeader className="px-0">
-            <CardTitle>Pilih Program</CardTitle>
-            <p className="text-sm text-muted-foreground">Pilih program yang ingin diatur form pendaftarannya.</p>
-          </CardHeader>
-          <CardContent className="px-0">
-            <select
-              className="field-control w-full mb-6 text-sm"
-              value={selectedProgramIdForSettings || ""}
-              onChange={(e) => setSelectedProgramIdForSettings(e.target.value)}
-            >
-              <option value="">-- Pilih Program --</option>
-              {programs.map((p) => (
-                <option key={p.id} value={p.id}>{p.code} - {p.name} {p.status === 'active' ? '' : `(${p.status})`}</option>
-              ))}
-            </select>
-            
-            {selectedProgramIdForSettings ? (
-              <ProgramAdmissionBuilder programId={selectedProgramIdForSettings} />
-            ) : (
-              <div className="text-center p-12 text-muted-foreground border-2 border-dashed border-slate-200 rounded-lg bg-white">
-                Silakan pilih program terlebih dahulu.
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {[
+              { label: "Total Program", value: programPickerStats.total, icon: BookOpen, tone: "bg-slate-100 text-slate-700" },
+              { label: "Program Aktif", value: programPickerStats.active, icon: CheckCircle2, tone: "bg-emerald-50 text-emerald-700" },
+              { label: "Form Tersedia", value: programPickerStats.configured, icon: FileText, tone: "bg-indigo-50 text-indigo-700" },
+              { label: "Sedang Dibuka", value: programPickerStats.open, icon: CalendarClock, tone: "bg-sky-50 text-sky-700" },
+            ].map((metric) => {
+              const Icon = metric.icon;
+
+              return (
+                <Card className="border-slate-200 shadow-sm" key={metric.label}>
+                  <CardContent className="flex items-center gap-4 p-5">
+                    <div className={`grid h-12 w-12 place-items-center rounded-lg ${metric.tone}`}>
+                      <Icon className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">{metric.label}</p>
+                      <p className="text-3xl font-bold">{metric.value}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-[380px_1fr]">
+            <Card className="border-slate-200 shadow-sm xl:sticky xl:top-6 xl:self-start">
+              <CardHeader>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle>Pilih Program</CardTitle>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Cari dan filter program sebelum mengatur form, jadwal, dan undangan grup.
+                    </p>
+                  </div>
+                  <Button size="icon" variant="outline" onClick={() => void refreshAll()} title="Refresh program">
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                  <input
+                    className="field-control w-full pl-9 text-sm"
+                    onChange={(event) => setProgramSearch(event.target.value)}
+                    placeholder="Cari kode atau nama program..."
+                    value={programSearch}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="grid gap-1 text-xs font-semibold text-slate-500">
+                    <span className="flex items-center gap-1">
+                      <Filter className="h-3.5 w-3.5" />
+                      Status
+                    </span>
+                    <select
+                      className="field-control text-sm"
+                      onChange={(event) => setProgramStatusFilter(event.target.value)}
+                      value={programStatusFilter}
+                    >
+                      <option value="all">Semua</option>
+                      {programStatusOptions.map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="grid gap-1 text-xs font-semibold text-slate-500">
+                    <span className="flex items-center gap-1">
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                      Form
+                    </span>
+                    <select
+                      className="field-control text-sm"
+                      onChange={(event) => setProgramFormFilter(event.target.value)}
+                      value={programFormFilter}
+                    >
+                      <option value="all">Semua</option>
+                      <option value="configured">Sudah Ada Form</option>
+                      <option value="unconfigured">Belum Ada Form</option>
+                      <option value="open">Dibuka</option>
+                      <option value="upcoming">Terjadwal</option>
+                      <option value="closed">Ditutup</option>
+                      <option value="draft">Draft</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                  <span>{filteredProgramsForSettings.length} program cocok</span>
+                  {filteredProgramsForSettings.length > visibleProgramsForSettings.length && (
+                    <span>Tampilkan 80 teratas</span>
+                  )}
+                </div>
+
+                <div className="max-h-[560px] space-y-2 overflow-y-auto pr-1">
+                  {visibleProgramsForSettings.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+                      Tidak ada program yang cocok dengan filter.
+                    </div>
+                  ) : (
+                    visibleProgramsForSettings.map((program) => {
+                      const form = registrationFormsByProgramId.get(program.id);
+                      const windowState = form ? getRegistrationWindowState(form) : "draft";
+                      const isSelected = selectedProgramIdForSettings === program.id;
+
+                      return (
+                        <button
+                          className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                            isSelected
+                              ? "border-primary bg-primary/5 shadow-sm"
+                              : "border-slate-200 bg-white hover:border-primary/30 hover:bg-primary/5"
+                          }`}
+                          key={program.id}
+                          onClick={() => setSelectedProgramIdForSettings(program.id)}
+                          type="button"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-bold text-slate-900">{program.name}</p>
+                              <p className="mt-0.5 text-xs font-semibold uppercase text-slate-400">{program.code}</p>
+                            </div>
+                            <Badge variant={program.status === "active" ? "default" : "secondary"}>{program.status}</Badge>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Badge variant="outline" className={registrationStateClass[windowState]}>
+                              {form ? registrationStateLabel[windowState] : "Belum Ada Form"}
+                            </Badge>
+                            {form?.registration_open_at || form?.registration_close_at ? (
+                              <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500">
+                                {formatRegistrationDateTime(form.registration_open_at)} - {formatRegistrationDateTime(form.registration_close_at)}
+                              </span>
+                            ) : null}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="min-w-0 space-y-4">
+              {selectedProgramForSettings ? (
+                <Card className="border-slate-200 shadow-sm">
+                  <CardContent className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Program dipilih</p>
+                      <h3 className="truncate text-xl font-bold text-slate-900">{selectedProgramForSettings.name}</h3>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {selectedProgramForSettings.code} / status {selectedProgramForSettings.status}
+                      </p>
+                    </div>
+                    {(() => {
+                      const selectedForm = registrationFormsByProgramId.get(selectedProgramForSettings.id);
+                      const selectedState = selectedForm ? getRegistrationWindowState(selectedForm) : "draft";
+
+                      return (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline" className={registrationStateClass[selectedState]}>
+                            {selectedForm ? registrationStateLabel[selectedState] : "Form akan dibuat"}
+                          </Badge>
+                          <Button size="sm" variant="outline" onClick={() => setSelectedProgramIdForSettings(null)}>
+                            Ganti Program
+                          </Button>
+                        </div>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {selectedProgramIdForSettings ? (
+                <ProgramAdmissionBuilder programId={selectedProgramIdForSettings} />
+              ) : (
+                <div className="rounded-xl border-2 border-dashed border-slate-200 bg-white p-12 text-center text-muted-foreground">
+                  <BookOpen className="mx-auto mb-4 h-12 w-12 text-slate-300" />
+                  <p className="font-semibold text-slate-700">Pilih satu program dari panel kiri.</p>
+                  <p className="mt-1 text-sm">Setelah dipilih, pengaturan form, jadwal buka/tutup, dan undangan grup akan tampil di sini.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

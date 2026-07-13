@@ -1,10 +1,37 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Plus, BookOpen, Clock, Settings, X, ArrowRight, Filter, GraduationCap, Edit2, Archive, LayoutGrid, List, Users, UserCheck } from "lucide-react";
+import {
+  AlertCircle,
+  Archive,
+  ArrowRight,
+  BookOpen,
+  CalendarDays,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Clock,
+  Download,
+  Edit2,
+  Filter,
+  GraduationCap,
+  LayoutGrid,
+  Layers,
+  Library,
+  List,
+  Plus,
+  RefreshCw,
+  Search,
+  Settings,
+  Trophy,
+  Users,
+  UserCheck,
+  X,
+} from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   allowedMvpFeatureFlags,
@@ -47,7 +74,38 @@ const initialProgramForm: ProgramFormState = {
 
 type ProgramWithEnrollments = Program & {
   enrollments?: Array<{ id: string }>;
+  created_at?: string | null;
 };
+
+type ProgramSection = "detail-program" | "silabus" | "kurikulum" | "angkatan-kelas" | "bank-soal" | "peserta" | "kelulusan";
+
+const statusOptions: Array<{ value: "all" | ProgramStatus; label: string }> = [
+  { value: "all", label: "Semua" },
+  { value: "active", label: "Aktif" },
+  { value: "draft", label: "Draft" },
+  { value: "archived", label: "Arsip" },
+];
+
+const statusMeta: Record<ProgramStatus, { label: string; className: string; bar: string }> = {
+  active: { label: "Aktif", className: "border-emerald-200 bg-emerald-50 text-emerald-700", bar: "bg-emerald-500" },
+  draft: { label: "Draft", className: "border-amber-200 bg-amber-50 text-amber-700", bar: "bg-amber-400" },
+  archived: { label: "Diarsipkan", className: "border-slate-200 bg-slate-100 text-slate-700", bar: "bg-slate-300" },
+};
+
+const programSections: Array<{ section: ProgramSection; label: string; icon: typeof Settings }> = [
+  { section: "detail-program", label: "Detail", icon: Settings },
+  { section: "silabus", label: "Silabus", icon: ClipboardList },
+  { section: "kurikulum", label: "Kurikulum", icon: Layers },
+  { section: "angkatan-kelas", label: "Angkatan", icon: CalendarDays },
+  { section: "peserta", label: "Peserta", icon: Users },
+  { section: "bank-soal", label: "Bank Soal", icon: Library },
+  { section: "kelulusan", label: "Kelulusan", icon: Trophy },
+];
+
+const getCurriculumLabel = (model: string) => (model === "angkatan" ? "Terjadwal (Angkatan)" : "Mandiri (Evergreen)");
+const getProgramSectionPath = (programId: string, section: ProgramSection) => `/system/program/${programId}/${section}`;
+const getVisibleProgramSections = (program: ProgramWithEnrollments) =>
+  programSections.filter((item) => item.section !== "angkatan-kelas" || program.curriculum_model === "angkatan");
 
 export function AdminProgramListPage() {
   const [units, setUnits] = useState<Unit[]>([]);
@@ -63,27 +121,32 @@ export function AdminProgramListPage() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 12;
+  const [pageSize, setPageSize] = useState(12);
   const [sortBy, setSortBy] = useState("name-asc");
   
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const loadData = async () => {
-    setIsLoading(true);
+  const loadData = useCallback(async (silent = false) => {
+    if (silent) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
     setErrorMessage(null);
 
-    const [{ data: unitRows, error: unitError }, { data: programRows, error: programError }, { data: staffRows }] =
+    const [{ data: unitRows, error: unitError }, { data: programRows, error: programError }, { data: staffRows, error: staffError }] =
       await Promise.all([
         supabase.from("units").select("id, organization_id, code, name, description, status").order("name"),
         supabase.from("programs").select("id, unit_id, code, name, description, program_type, curriculum_model, delivery_mode, status, feature_flags, teacher_user_id, created_at, units(code, name), enrollments(id)").order("name"),
         supabase.from("profiles").select("id, full_name, email")
       ]);
 
-    if (unitError || programError) {
-      setErrorMessage(unitError?.message ?? programError?.message ?? "Gagal memuat data.");
+    if (unitError || programError || staffError) {
+      setErrorMessage(unitError?.message ?? programError?.message ?? staffError?.message ?? "Gagal memuat data.");
     } else {
       setUnits((unitRows ?? []) as Unit[]);
       setPrograms((programRows ?? []) as unknown as ProgramWithEnrollments[]);
@@ -91,11 +154,12 @@ export function AdminProgramListPage() {
     }
 
     setIsLoading(false);
-  };
+    setIsRefreshing(false);
+  }, []);
 
   useEffect(() => {
     void loadData();
-  }, []);
+  }, [loadData]);
 
   const setFlag = (key: MvpFeatureFlagKey, value: boolean) => {
     if (key === "use_ai_assist" || key === "use_audio_submission" || key === "use_video_submission") {
@@ -110,35 +174,62 @@ export function AdminProgramListPage() {
     }));
   };
 
-  const filteredPrograms = programs.filter((p) => {
-    const nameMatch = (p.name || "").toLowerCase().includes(searchQuery.toLowerCase());
-    const codeMatch = (p.code || "").toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesSearch = nameMatch || codeMatch;
-    const matchesType = filterType === "all" || p.curriculum_model === filterType;
-    const matchesStatus = filterStatus === "all" || p.status === filterStatus;
-    return matchesSearch && matchesType && matchesStatus;
-  }).sort((a, b) => {
-    if (sortBy === "name-asc") return (a.name || "").localeCompare(b.name || "");
-    if (sortBy === "name-desc") return (b.name || "").localeCompare(a.name || "");
-    if (sortBy === "newest") {
-      const dateA = (a as any).created_at ? new Date((a as any).created_at).getTime() : 0;
-      const dateB = (b as any).created_at ? new Date((b as any).created_at).getTime() : 0;
-      return dateB - dateA;
-    }
-    if (sortBy === "oldest") {
-      const dateA = (a as any).created_at ? new Date((a as any).created_at).getTime() : 0;
-      const dateB = (b as any).created_at ? new Date((b as any).created_at).getTime() : 0;
-      return dateA - dateB;
-    }
-    return 0;
-  });
+  const stats = useMemo(() => {
+    const totalParticipants = programs.reduce((sum, program) => sum + (program.enrollments?.length ?? 0), 0);
+    return {
+      total: programs.length,
+      active: programs.filter((program) => program.status === "active").length,
+      draft: programs.filter((program) => program.status === "draft").length,
+      archived: programs.filter((program) => program.status === "archived").length,
+      scheduled: programs.filter((program) => program.curriculum_model === "angkatan").length,
+      totalParticipants,
+    };
+  }, [programs]);
 
-  const totalPages = Math.ceil(filteredPrograms.length / itemsPerPage);
-  const currentPrograms = filteredPrograms.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const filteredPrograms = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    return programs.filter((program) => {
+      const nameMatch = (program.name || "").toLowerCase().includes(query);
+      const codeMatch = (program.code || "").toLowerCase().includes(query);
+      const descriptionMatch = (program.description || "").toLowerCase().includes(query);
+      const matchesSearch = query.length === 0 || nameMatch || codeMatch || descriptionMatch;
+      const matchesType = filterType === "all" || program.curriculum_model === filterType;
+      const matchesStatus = filterStatus === "all" || program.status === filterStatus;
+      return matchesSearch && matchesType && matchesStatus;
+    }).sort((a, b) => {
+      if (sortBy === "name-asc") return (a.name || "").localeCompare(b.name || "");
+      if (sortBy === "name-desc") return (b.name || "").localeCompare(a.name || "");
+      if (sortBy === "participants") return (b.enrollments?.length ?? 0) - (a.enrollments?.length ?? 0);
+      if (sortBy === "newest") {
+        const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return dateB - dateA;
+      }
+      if (sortBy === "oldest") {
+        const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return dateA - dateB;
+      }
+      return 0;
+    });
+  }, [filterStatus, filterType, programs, searchQuery, sortBy]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredPrograms.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStartIndex = filteredPrograms.length === 0 ? 0 : (safeCurrentPage - 1) * pageSize + 1;
+  const pageEndIndex = Math.min(safeCurrentPage * pageSize, filteredPrograms.length);
+  const currentPrograms = filteredPrograms.slice((safeCurrentPage - 1) * pageSize, safeCurrentPage * pageSize);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, filterType, filterStatus, sortBy]);
+  }, [searchQuery, filterType, filterStatus, sortBy, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const openCreateModal = () => {
     setForm(initialProgramForm);
@@ -179,18 +270,64 @@ export function AdminProgramListPage() {
     }
   };
 
+  const exportProgramsToCSV = () => {
+    const rows = [["Kode", "Nama Program", "Model", "Status", "Peserta", "Pengampu", "Dibuat"]];
+    filteredPrograms.forEach((program) => {
+      const teacher = staff.find((item) => item.id === program.teacher_user_id);
+      rows.push([
+        program.code,
+        program.name,
+        getCurriculumLabel(program.curriculum_model),
+        statusMeta[program.status]?.label ?? program.status,
+        String(program.enrollments?.length ?? 0),
+        teacher?.full_name ?? teacher?.email ?? "-",
+        program.created_at ? new Date(program.created_at).toLocaleDateString("id-ID") : "-",
+      ]);
+    });
+
+    const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `program-lms-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
-    <div className="page-stack">
-      {/* Header & Actions */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Katalog Program</h2>
-          <p className="text-muted-foreground mt-1">Kelola dan kembangkan program pembelajaran Anda.</p>
+    <div className="page-stack pb-12">
+      <section className="page-hero">
+        <Badge className="relative z-10 bg-white/15 text-white hover:bg-white/20">Manajemen Program</Badge>
+        <div className="relative z-10 mt-4 flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <h2>Katalog Program</h2>
+            <p>
+              Kelola lifecycle program, kurikulum, peserta, bank soal, dan kelulusan dari satu pusat kendali yang mudah dipindai.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              type="button"
+              onClick={() => void loadData(true)}
+              disabled={isRefreshing}
+              variant="outline"
+              className="h-10 border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            >
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+              Muat Ulang
+            </Button>
+            <Button onClick={exportProgramsToCSV} disabled={filteredPrograms.length === 0} className="h-10 bg-white !text-primary hover:bg-white/90">
+              <Download className="h-4 w-4" />
+              Export CSV
+            </Button>
+            <Button onClick={openCreateModal} className="h-10 bg-amber-400 text-slate-950 hover:bg-amber-300">
+              <Plus className="h-4 w-4" />
+              Buat Program
+            </Button>
+          </div>
         </div>
-        <Button onClick={openCreateModal} className="rounded-full shadow-md hover:shadow-lg transition-all" size="lg">
-          <Plus className="mr-2 h-5 w-5" /> Buat Program Baru
-        </Button>
-      </div>
+      </section>
 
       {errorMessage && (
         <Alert className="animate-in fade-in slide-in-from-top-2 border-red-500 bg-red-50 text-red-900">
@@ -205,70 +342,136 @@ export function AdminProgramListPage() {
         </Alert>
       )}
 
-      {/* Filters & Search Toolbar */}
-      <div className="bg-white/80 backdrop-blur-md border border-muted/60 shadow-sm rounded-xl p-4 mb-6 flex flex-col md:flex-row gap-4 items-center justify-between">
-        <div className="relative flex-1 w-full max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input 
-            placeholder="Cari nama atau kode program..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 bg-white/50 focus:bg-white border-muted/40 h-11 rounded-lg transition-all shadow-sm"
+      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <ProgramMetricCard title="Total Program" value={stats.total} description="semua status" icon={BookOpen} />
+        <ProgramMetricCard title="Aktif" value={stats.active} description="terlihat peserta" icon={CheckCircle2} />
+        <ProgramMetricCard title="Draft" value={stats.draft} description="perlu dilengkapi" icon={ClipboardList} />
+        <ProgramMetricCard title="Arsip" value={stats.archived} description="tidak aktif" icon={Archive} />
+        <ProgramMetricCard title="Angkatan" value={stats.scheduled} description="pakai batch kelas" icon={CalendarDays} />
+        <ProgramMetricCard title="Peserta" value={stats.totalParticipants} description="total enrollment" icon={Users} />
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Workflow Pengelolaan Program</CardTitle>
+          <CardDescription>Gunakan daftar ini untuk menjaga program siap dipublikasikan, kurikulum lengkap, dan peserta mudah ditindaklanjuti.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 lg:grid-cols-3">
+          <ProgramWorkflowItem
+            done={stats.draft === 0}
+            title="Review program draft"
+            description={`${stats.draft} program belum aktif. Lengkapi detail, silabus, kurikulum, dan form pendaftaran sebelum dipublikasi.`}
+            action="Filter Draft"
+            onClick={() => setFilterStatus("draft")}
           />
-        </div>
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          <div className="flex items-center gap-2 bg-muted/20 px-3 py-1.5 rounded-lg border border-muted/40">
-            <Filter className="h-4 w-4 text-muted-foreground hidden sm:block" />
-            <select 
-              className="bg-transparent border-none text-sm font-medium focus:ring-0 outline-none cursor-pointer text-slate-700"
+          <ProgramWorkflowItem
+            done={stats.active > 0}
+            title="Pantau program aktif"
+            description={`${stats.active} program aktif. Masuk ke submenu Peserta, Bank Soal, atau Kelulusan untuk operasional harian.`}
+            action="Lihat Aktif"
+            onClick={() => setFilterStatus("active")}
+          />
+          <ProgramWorkflowItem
+            done={stats.archived === 0}
+            title="Bersihkan arsip"
+            description={`${stats.archived} program diarsipkan. Aktifkan kembali jika masih dipakai atau biarkan sebagai riwayat.`}
+            action="Lihat Arsip"
+            onClick={() => setFilterStatus("archived")}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-4">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <CardTitle>Direktori Program</CardTitle>
+              <CardDescription>Cari, filter, sortir, lalu masuk langsung ke submenu yang dibutuhkan.</CardDescription>
+            </div>
+            <div className="flex border border-muted/40 rounded-lg overflow-hidden bg-white shrink-0 p-0.5 shadow-sm">
+              <button
+                type="button"
+                className={`p-2 rounded-md transition-colors ${viewMode === "grid" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/50"}`}
+                onClick={() => setViewMode("grid")}
+                title="Tampilan Grid"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                className={`p-2 rounded-md transition-colors ${viewMode === "table" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/50"}`}
+                onClick={() => setViewMode("table")}
+                title="Tampilan Tabel"
+              >
+                <List className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_auto] lg:items-center">
+            <div className="relative w-full">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Cari nama, kode, atau deskripsi program..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-11 pl-9"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {statusOptions.map((option) => (
+                <Button
+                  key={option.value}
+                  type="button"
+                  variant={filterStatus === option.value ? "default" : "outline"}
+                  className="h-10 rounded-full px-4"
+                  onClick={() => setFilterStatus(option.value)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/20 p-3">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <select
+              className="field-control h-10 w-full bg-white sm:w-52"
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
             >
-              <option value="all">Semua Tipe</option>
+              <option value="all">Semua Model</option>
               <option value="mandiri">Mandiri</option>
-              <option value="angkatan">Terjadwal</option>
+              <option value="angkatan">Terjadwal / Angkatan</option>
             </select>
-            <div className="w-px h-4 bg-border mx-1"></div>
-            <select 
-              className="bg-transparent border-none text-sm font-medium focus:ring-0 outline-none cursor-pointer text-slate-700"
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-            >
-              <option value="all">Semua Status</option>
-              <option value="active">Aktif</option>
-              <option value="draft">Draft</option>
-              <option value="archived">Diarsipkan</option>
-            </select>
-            <div className="w-px h-4 bg-border mx-1"></div>
-            <select 
-              className="bg-transparent border-none text-sm font-medium focus:ring-0 outline-none cursor-pointer text-slate-700"
+            <select
+              className="field-control h-10 w-full bg-white sm:w-44"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
             >
-              <option value="name-asc">A-Z</option>
-              <option value="name-desc">Z-A</option>
+              <option value="name-asc">Nama A-Z</option>
+              <option value="name-desc">Nama Z-A</option>
+              <option value="participants">Peserta terbanyak</option>
               <option value="newest">Terbaru</option>
               <option value="oldest">Terlama</option>
             </select>
-          </div>
-          <div className="flex border border-muted/40 rounded-lg overflow-hidden bg-white shrink-0 p-0.5 shadow-sm">
-            <button 
-              className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted/50'}`}
-              onClick={() => setViewMode('grid')}
-              title="Tampilan Grid"
+            <select
+              className="field-control h-10 w-full bg-white sm:w-36"
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
             >
-              <LayoutGrid className="h-4 w-4" />
-            </button>
-            <button 
-              className={`p-2 rounded-md transition-colors ${viewMode === 'table' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted/50'}`}
-              onClick={() => setViewMode('table')}
-              title="Tampilan Tabel"
-            >
-              <List className="h-4 w-4" />
-            </button>
+              <option value={9}>9 / halaman</option>
+              <option value={12}>12 / halaman</option>
+              <option value={24}>24 / halaman</option>
+              <option value={48}>48 / halaman</option>
+            </select>
+            <p className="ml-auto text-sm text-muted-foreground">
+              {filteredPrograms.length} dari {programs.length} program
+            </p>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Program Grid */}
       {isLoading ? (
@@ -292,7 +495,7 @@ export function AdminProgramListPage() {
             <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
               {currentPrograms.map((program) => (
                 <Card key={program.id} className="overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300 border-border/40 group flex flex-col bg-white">
-                  <div className={`h-1.5 w-full ${program.status === 'active' ? 'bg-primary' : program.status === 'draft' ? 'bg-amber-400' : 'bg-slate-300'}`} />
+                  <div className={`h-1.5 w-full ${statusMeta[program.status]?.bar ?? statusMeta.draft.bar}`} />
                   <CardHeader className="pb-4">
                     <div className="flex justify-between items-start mb-2">
                       <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 font-semibold tracking-wider text-[10px]">
@@ -329,8 +532,8 @@ export function AdminProgramListPage() {
                             <><GraduationCap className="h-4 w-4 text-primary" /> <span className="font-medium text-slate-700">Angkatan</span></>
                           )}
                         </div>
-                        <Badge variant={program.status === "active" ? "default" : "secondary"} className="capitalize text-[10px] h-5 shadow-sm">
-                          {program.status}
+                        <Badge variant="outline" className={`h-5 text-[10px] shadow-sm ${statusMeta[program.status]?.className ?? statusMeta.draft.className}`}>
+                          {statusMeta[program.status]?.label ?? program.status}
                         </Badge>
                       </div>
 
@@ -343,10 +546,23 @@ export function AdminProgramListPage() {
                           {program.enrollments?.length || 0}
                         </Badge>
                       </div>
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        {getVisibleProgramSections(program).map((item) => {
+                          const Icon = item.icon;
+                          return (
+                            <Link key={item.section} to={getProgramSectionPath(program.id, item.section)}>
+                              <Button variant="outline" className="h-9 w-full justify-start gap-2 px-3 text-xs">
+                                <Icon className="h-3.5 w-3.5 text-primary" />
+                                <span className="truncate">{item.label}</span>
+                              </Button>
+                            </Link>
+                          );
+                        })}
+                      </div>
                     </div>
                   </CardContent>
                   <div className="p-4 pt-0 mt-auto">
-                    <Link to={`/system/program/${program.id}`} className="block">
+                    <Link to={getProgramSectionPath(program.id, "detail-program")} className="block">
                       <Button variant="default" className="w-full rounded-xl shadow-md group-hover:shadow-lg transition-all bg-primary hover:bg-primary/90 text-primary-foreground h-11">
                         Kelola Program <ArrowRight className="ml-2 h-4 w-4" />
                       </Button>
@@ -358,13 +574,14 @@ export function AdminProgramListPage() {
           ) : (
             <Card className="border-border/50 shadow-sm overflow-hidden bg-white rounded-xl">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
+                <table className="w-full min-w-[1080px] text-sm text-left">
                   <thead className="bg-slate-50/80 border-b border-border/50 text-slate-500 text-xs uppercase tracking-wider">
                     <tr>
                       <th className="px-6 py-4 font-semibold">Program</th>
-                      <th className="px-6 py-4 font-semibold">Tipe</th>
+                      <th className="px-6 py-4 font-semibold">Model</th>
                       <th className="px-6 py-4 font-semibold">Peserta</th>
                       <th className="px-6 py-4 font-semibold">Status</th>
+                      <th className="px-6 py-4 font-semibold">Submenu Cepat</th>
                       <th className="px-6 py-4 font-semibold text-right">Aksi</th>
                     </tr>
                   </thead>
@@ -393,14 +610,28 @@ export function AdminProgramListPage() {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <Badge variant={program.status === "active" ? "default" : "secondary"} className="capitalize">
-                            {program.status}
+                          <Badge variant="outline" className={statusMeta[program.status]?.className ?? statusMeta.draft.className}>
+                            {statusMeta[program.status]?.label ?? program.status}
                           </Badge>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-1.5">
+                            {getVisibleProgramSections(program).map((item) => {
+                              const Icon = item.icon;
+                              return (
+                                <Link key={item.section} to={getProgramSectionPath(program.id, item.section)} title={item.label}>
+                                  <Button variant="outline" size="sm" className="h-8 w-8 p-0">
+                                    <Icon className="h-3.5 w-3.5" />
+                                  </Button>
+                                </Link>
+                              );
+                            })}
+                          </div>
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
-                            <Link to={`/system/program/${program.id}`}>
-                              <Button variant="default" size="sm" className="h-8 text-xs px-4 rounded-full shadow-sm bg-primary/90 hover:bg-primary">Kelola</Button>
+                            <Link to={getProgramSectionPath(program.id, "detail-program")}>
+                              <Button variant="default" size="sm" className="h-8 min-w-[84px] text-xs px-4 rounded-full shadow-sm bg-primary/90 hover:bg-primary">Kelola</Button>
                             </Link>
                             <div className="w-px h-5 bg-border mx-1"></div>
                             <Link to={`/system/program/${program.id}/report`} title="Laporan">
@@ -423,32 +654,33 @@ export function AdminProgramListPage() {
           )}
 
           {/* Pagination Controls */}
-          {totalPages > 1 && (
+          {filteredPrograms.length > 0 && (
             <div className="flex flex-col sm:flex-row items-center justify-between pt-2 pb-8 gap-4">
               <p className="text-sm text-slate-500">
-                Menampilkan <span className="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span> hingga <span className="font-medium">{Math.min(currentPage * itemsPerPage, filteredPrograms.length)}</span> dari <span className="font-medium">{filteredPrograms.length}</span> program
+                Menampilkan <span className="font-medium">{pageStartIndex}</span> hingga <span className="font-medium">{pageEndIndex}</span> dari <span className="font-medium">{filteredPrograms.length}</span> program
               </p>
-              <div className="flex flex-wrap justify-center gap-1">
+              <div className="flex flex-wrap items-center justify-center gap-1">
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  disabled={currentPage === 1}
+                  disabled={safeCurrentPage === 1}
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  className="hidden sm:inline-flex"
+                  className="h-9 min-w-9 px-3"
+                  title="Halaman sebelumnya"
                 >
-                  Sebelumnya
+                  <ChevronLeft className="h-4 w-4" />
+                  <span className="hidden sm:inline">Sebelumnya</span>
                 </Button>
-                
-                {/* Simple pagination numbers - could be optimized for many pages, but good enough for now */}
+                 
                 {Array.from({ length: totalPages }, (_, i) => i + 1)
-                  .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
+                  .filter(p => p === 1 || p === totalPages || Math.abs(p - safeCurrentPage) <= 2)
                   .map((page, i, arr) => (
                     <div key={page} className="flex items-center">
                       {i > 0 && arr[i - 1] !== page - 1 && <span className="px-2 text-slate-400">...</span>}
                       <Button
-                        variant={currentPage === page ? "default" : "outline"}
+                        variant={safeCurrentPage === page ? "default" : "outline"}
                         size="sm"
-                        className={currentPage === page ? "pointer-events-none" : ""}
+                        className={`h-9 min-w-9 px-3 ${safeCurrentPage === page ? "pointer-events-none" : ""}`}
                         onClick={() => setCurrentPage(page)}
                       >
                         {page}
@@ -459,11 +691,13 @@ export function AdminProgramListPage() {
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  disabled={currentPage === totalPages}
+                  disabled={safeCurrentPage === totalPages}
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  className="hidden sm:inline-flex"
+                  className="h-9 min-w-9 px-3"
+                  title="Halaman berikutnya"
                 >
-                  Selanjutnya
+                  <span className="hidden sm:inline">Selanjutnya</span>
+                  <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -688,6 +922,61 @@ export function AdminProgramListPage() {
           </Card>
         </div>
       )}
+    </div>
+  );
+}
+
+function ProgramMetricCard({
+  title,
+  value,
+  description,
+  icon: Icon,
+}: {
+  title: string;
+  value: number;
+  description: string;
+  icon: typeof BookOpen;
+}) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+        <Icon className="h-4 w-4 text-primary" />
+      </CardHeader>
+      <CardContent>
+        <p className="text-3xl font-bold">{value}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ProgramWorkflowItem({
+  done,
+  title,
+  description,
+  action,
+  onClick,
+}: {
+  done: boolean;
+  title: string;
+  description: string;
+  action: string;
+  onClick: () => void;
+}) {
+  return (
+    <div className="rounded-xl border bg-background p-4">
+      <div className="flex items-start gap-3">
+        {done ? <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-600" /> : <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />}
+        <div className="min-w-0">
+          <p className="font-semibold">{title}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+          <Button type="button" variant={done ? "outline" : "default"} size="sm" className="mt-3 h-9 whitespace-nowrap" onClick={onClick}>
+            <Filter className="h-4 w-4" />
+            {action}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

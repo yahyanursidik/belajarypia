@@ -1,6 +1,30 @@
-import { useEffect, useMemo, useState, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, BookOpen, Presentation, FileText, Video, PlayCircle, ChevronDown, ChevronRight, Edit2, Trash2, X, Plus, Upload, ExternalLink } from "lucide-react";
+import { type ComponentType, useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import {
+  AlertCircle,
+  ArrowLeft,
+  BookOpen,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  Edit2,
+  ExternalLink,
+  FileText,
+  Layers,
+  Library,
+  PlayCircle,
+  Plus,
+  Presentation,
+  Settings,
+  Trash2,
+  Trophy,
+  Upload,
+  Users,
+  Video,
+  X,
+} from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -62,6 +86,36 @@ type UploadPreview = {
   url: string;
 };
 
+type ProgramTab = "info" | "kurikulum" | "peserta" | "angkatan" | "bank_soal" | "silabus" | "kelulusan";
+type ProgramTabItem = {
+  key: ProgramTab;
+  label: string;
+  desc: string;
+  icon: ComponentType<{ className?: string }>;
+  count?: number;
+};
+
+const programTabSegments: Record<ProgramTab, string> = {
+  info: "detail-program",
+  silabus: "silabus",
+  kurikulum: "kurikulum",
+  angkatan: "angkatan-kelas",
+  bank_soal: "bank-soal",
+  peserta: "peserta",
+  kelulusan: "kelulusan",
+};
+
+const programSegmentTabs = Object.entries(programTabSegments).reduce<Record<string, ProgramTab>>((acc, [tab, segment]) => {
+  acc[segment] = tab as ProgramTab;
+  return acc;
+}, {});
+
+const programStatusMeta = {
+  active: { label: "Aktif", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  draft: { label: "Draft", className: "border-amber-200 bg-amber-50 text-amber-700" },
+  archived: { label: "Diarsipkan", className: "border-slate-200 bg-slate-100 text-slate-700" },
+};
+
 const createMaterialLinkDraft = (): MaterialLinkDraft => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
   label: "",
@@ -80,11 +134,19 @@ const getMaterialCategoryLabel = (category: DocumentFile["file_category"]) => {
   }
 };
 
+const getCurriculumLabel = (model: string) => model === "angkatan" ? "Terjadwal (Angkatan)" : "Mandiri (Evergreen)";
+
+const getProgramTabFromSegment = (segment?: string): ProgramTab => {
+  if (!segment) return "info";
+  return programSegmentTabs[segment] ?? "info";
+};
+
 /* ───────────────── Component ───────────────── */
 
 export function ProgramBuilderPage() {
-  const { programId } = useParams<{ programId: string }>();
+  const { programId, section } = useParams<{ programId: string; section?: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuthSession();
 
   /* ── Data State ── */
@@ -111,7 +173,7 @@ export function ProgramBuilderPage() {
   const [lessonModalMode, setLessonModalMode] = useState<"materi" | "kuis">("materi");
 
   /* ── UI State ── */
-  const [activeTab, setActiveTab] = useState<"info" | "kurikulum" | "peserta" | "angkatan" | "bank_soal" | "silabus" | "kelulusan">("info");
+  const activeTab = getProgramTabFromSegment(section);
   const [isLessonModalOpen, setIsLessonModalOpen] = useState(false);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
@@ -254,22 +316,22 @@ export function ProgramBuilderPage() {
   };
 
   /* ── Data Loading ── */
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!programId) return;
     setIsLoading(true);
     setErrorMessage(null);
 
     const [
-      { data: prog },
-      { data: batchRows },
-      { data: classRows },
-      { data: halaqahRows },
-      { data: levelRows },
-      { data: moduleRows },
-      { data: lessonRows },
-      { data: docRows },
-      { data: staffRows },
-      { data: bankRows },
+      programResult,
+      batchResult,
+      classResult,
+      halaqahResult,
+      levelResult,
+      moduleResult,
+      lessonResult,
+      docResult,
+      staffResult,
+      bankResult,
     ] = await Promise.all([
       supabase.from("programs").select("*").eq("id", programId).single(),
       supabase.from("batches").select("*").eq("program_id", programId).order("created_at"),
@@ -282,6 +344,33 @@ export function ProgramBuilderPage() {
       supabase.from("profiles").select("id, full_name, email"),
       supabase.from("question_banks").select("*").eq("program_id", programId).order("created_at"),
     ]);
+
+    const firstError =
+      programResult.error ||
+      batchResult.error ||
+      classResult.error ||
+      halaqahResult.error ||
+      levelResult.error ||
+      moduleResult.error ||
+      lessonResult.error ||
+      docResult.error ||
+      staffResult.error ||
+      bankResult.error;
+
+    if (firstError) {
+      setErrorMessage(`Gagal memuat detail program: ${firstError.message}`);
+    }
+
+    const prog = programResult.data;
+    const batchRows = batchResult.data;
+    const classRows = classResult.data;
+    const halaqahRows = halaqahResult.data;
+    const levelRows = levelResult.data;
+    const moduleRows = moduleResult.data;
+    const lessonRows = lessonResult.data;
+    const docRows = docResult.data;
+    const staffRows = staffResult.data;
+    const bankRows = bankResult.data;
 
     if (prog) {
       setProgram(prog as unknown as Program);
@@ -304,9 +393,41 @@ export function ProgramBuilderPage() {
     setStaff((staffRows ?? []) as StaffProfile[]);
     setQuestionBanks((bankRows ?? []) as any[]);
     setIsLoading(false);
-  };
+  }, [programId]);
 
-  useEffect(() => { void loadData(); }, [programId]);
+  useEffect(() => { void loadData(); }, [loadData]);
+
+  const programBasePath = useMemo(() => {
+    if (!programId) return location.pathname;
+    const marker = `/program/${programId}`;
+    const markerIndex = location.pathname.indexOf(marker);
+    if (markerIndex === -1) return location.pathname;
+    return `${location.pathname.slice(0, markerIndex)}${marker}`;
+  }, [location.pathname, programId]);
+
+  const getProgramSectionPath = useCallback((tab: ProgramTab) => {
+    return `${programBasePath}/${programTabSegments[tab]}`;
+  }, [programBasePath]);
+
+  const navigateToProgramTab = useCallback((tab: ProgramTab, options?: { replace?: boolean }) => {
+    navigate(getProgramSectionPath(tab), { replace: options?.replace ?? false });
+  }, [getProgramSectionPath, navigate]);
+
+  useEffect(() => {
+    if (!programId) return;
+    const isKnownSection = !section || Boolean(programSegmentTabs[section]);
+    if (!isKnownSection) {
+      navigateToProgramTab("info", { replace: true });
+      return;
+    }
+    if (!section) {
+      navigateToProgramTab("info", { replace: true });
+      return;
+    }
+    if (program && activeTab === "angkatan" && program.curriculum_model !== "angkatan") {
+      navigateToProgramTab("kurikulum", { replace: true });
+    }
+  }, [activeTab, navigateToProgramTab, program, programId, section]);
 
   /* ── Derived data ── */
   const classScopedHalaqahs = halaqahs;
@@ -317,6 +438,22 @@ export function ProgramBuilderPage() {
     })),
     [lessons, modules],
   );
+
+  const programSummary = useMemo(() => {
+    const publishedLessons = lessons.filter((lesson) => lesson.visibility_status === "published").length;
+    const quizLessons = lessons.filter((lesson) => lesson.lesson_type === "quiz" || lesson.lesson_type === "exam").length;
+
+    return {
+      modules: modules.length,
+      lessons: lessons.length,
+      publishedLessons,
+      quizLessons,
+      batches: batches.length,
+      classes: classes.length,
+      halaqahs: halaqahs.length,
+      questionBanks: questionBanks.length,
+    };
+  }, [batches.length, classes.length, halaqahs.length, lessons, modules.length, questionBanks.length]);
 
   /* ── Generic submit helper ── */
   const submit = async (
@@ -347,7 +484,8 @@ export function ProgramBuilderPage() {
     setLessonForm({ 
       ...emptyLesson, 
       module_id: moduleId,
-      lesson_type: mode === "kuis" ? "quiz" : "content" 
+      lesson_type: mode === "kuis" ? "quiz" : "content",
+      duration_minutes: mode === "kuis" ? "" : "60",
     });
     setEditingLessonId(null);
     setMaterialLinks([createMaterialLinkDraft()]);
@@ -587,6 +725,27 @@ export function ProgramBuilderPage() {
     setErrorMessage(null);
     setMessage(null);
 
+    if (lessonForm.lesson_type === "live_session" && !lessonForm.external_url.trim()) {
+      setErrorMessage("Link meeting wajib diisi untuk sesi live.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (lessonForm.lesson_type === "live_session" && !lessonForm.release_at) {
+      setErrorMessage("Tanggal dan waktu mulai wajib diisi untuk sesi live.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    if ((lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam") && lessonForm.passing_grade) {
+      const passingGrade = Number(lessonForm.passing_grade);
+      if (Number.isNaN(passingGrade) || passingGrade < 0 || passingGrade > 100) {
+        setErrorMessage("Passing grade harus berada di rentang 0 sampai 100.");
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     const autoCode = `MTR-${Date.now().toString(36).toUpperCase()}`;
     const cleanedMaterialLinks = materialLinks
       .map((link) => ({
@@ -609,7 +768,7 @@ export function ProgramBuilderPage() {
       content_body: lessonForm.content_body.trim() || null,
       external_url: primaryExternalUrl,
       passing_grade: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? (lessonForm.passing_grade ? Number(lessonForm.passing_grade) : null) : null,
-      duration_minutes: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? (lessonForm.duration_minutes ? Number(lessonForm.duration_minutes) : null) : null,
+      duration_minutes: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" || lessonForm.lesson_type === "live_session" ? (lessonForm.duration_minutes ? Number(lessonForm.duration_minutes) : null) : null,
       max_attempts: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? (lessonForm.max_attempts ? Number(lessonForm.max_attempts) : null) : null,
       is_strict_mode: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? lessonForm.is_strict_mode : false,
       max_tab_switches: lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam" ? Number(lessonForm.max_tab_switches || 3) : 3,
@@ -761,15 +920,104 @@ export function ProgramBuilderPage() {
           <AlertTitle>Error</AlertTitle>
           <AlertDescription>Program tidak ditemukan atau Anda tidak memiliki akses.</AlertDescription>
         </Alert>
-        <Button onClick={() => navigate(-1)} variant="outline">Kembali</Button>
+        <Button onClick={() => navigate(-1)} variant="outline" className="h-10 w-fit whitespace-nowrap !text-foreground">
+          <ArrowLeft className="h-4 w-4" />
+          Kembali
+        </Button>
       </div>
     );
   }
 
+  const statusMeta = programStatusMeta[program.status] ?? programStatusMeta.draft;
+  const programTabs: ProgramTabItem[] = [
+    { key: "info", label: "Detail Program", desc: "Profil, status, dan statistik", icon: Settings },
+    { key: "silabus", label: "Silabus", desc: "Narasi program untuk publik", icon: ClipboardList },
+    { key: "kurikulum", label: "Kurikulum", desc: "Tahapan, modul, dan materi", icon: Layers, count: programSummary.lessons },
+    ...(program.curriculum_model === "angkatan"
+      ? [{ key: "angkatan" as const, label: "Angkatan & Kelas", desc: "Batch, kelas, dan halaqah", icon: CalendarDays, count: programSummary.classes + programSummary.halaqahs }]
+      : []),
+    { key: "bank_soal", label: "Bank Soal", desc: "Repositori soal program", icon: Library, count: programSummary.questionBanks },
+    { key: "peserta", label: "Peserta", desc: "Direktori peserta program", icon: Users },
+    { key: "kelulusan", label: "Kelulusan", desc: "Rubrik dan predikat akhir", icon: Trophy },
+  ];
+  const activeProgramTab = programTabs.find((tab) => tab.key === activeTab) ?? programTabs[0];
+  const sectionStats = [
+    { label: "Modul", value: programSummary.modules },
+    { label: "Materi", value: programSummary.lessons },
+    { label: "Kelas", value: programSummary.classes },
+    { label: "Bank Soal", value: programSummary.questionBanks },
+  ];
+  const selectedLessonModule = modules.find((module) => module.id === lessonForm.module_id);
+  const lessonWorkflowSteps = lessonModalMode === "kuis"
+    ? [
+        "Tentukan judul dan tipe evaluasi",
+        "Atur kelulusan, durasi, percobaan, dan anti-cheat",
+        "Simpan lalu kelola butir soal dari daftar kurikulum",
+      ]
+    : [
+        "Tentukan judul dan tipe pertemuan",
+        "Tambahkan sumber belajar atau jadwal live",
+        "Lengkapi deskripsi agar peserta paham konteks materi",
+      ];
+
   return (
-    <div className="page-stack">
+    <div className="page-stack w-full max-w-none">
       {/* ── Header ── */}
-      <div className="flex items-center gap-4 mb-2">
+      <div className="page-hero flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="border-white/35 bg-white/15 font-mono text-white">
+              {program.code}
+            </Badge>
+            <Badge variant="outline" className={statusMeta.className}>
+              {statusMeta.label}
+            </Badge>
+            <Badge variant="outline" className="border-white/35 bg-white/10 text-white">
+              {getCurriculumLabel(program.curriculum_model)}
+            </Badge>
+            <Badge variant="outline" className="border-white/35 bg-white/10 text-white capitalize">
+              {program.delivery_mode}
+            </Badge>
+          </div>
+          <h1 className="mt-3 text-3xl font-bold leading-tight text-white">{program.name}</h1>
+          <p className="mt-2 max-w-3xl text-sm text-white/80">
+            {program.description || "Kelola struktur program, materi, peserta, silabus, bank soal, dan kelulusan dari satu halaman detail."}
+          </p>
+        </div>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
+          <Button
+            variant="outline"
+            onClick={() => navigate(-1)}
+            className="h-10 min-w-[110px] whitespace-nowrap border-white/35 bg-white/15 !text-white hover:bg-white/25 hover:!text-white"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Kembali
+          </Button>
+          <Button
+            onClick={() => navigateToProgramTab("peserta")}
+            className="h-10 min-w-[140px] whitespace-nowrap bg-white !text-primary shadow-lg hover:bg-white/90"
+          >
+            <Users className="h-4 w-4" />
+            Kelola Peserta
+          </Button>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Workflow Kesiapan Program</CardTitle>
+          <p className="text-xs text-muted-foreground">Checklist minimum sebelum program dibuka untuk peserta.</p>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-5">
+          <ProgramChecklistItem done={Boolean(program.syllabus?.trim())} label="Silabus tersedia" />
+          <ProgramChecklistItem done={programSummary.modules > 0} label="Modul dibuat" />
+          <ProgramChecklistItem done={programSummary.lessons > 0} label="Materi tersedia" />
+          <ProgramChecklistItem done={program.curriculum_model !== "angkatan" || programSummary.classes > 0} label="Kelas siap" />
+          <ProgramChecklistItem done={program.grading_rubric ? program.grading_rubric.length > 0 : false} label="Rubrik kelulusan" />
+        </CardContent>
+      </Card>
+
+      <div className="hidden">
         <Button variant="ghost" className="h-10 w-10 p-0 rounded-full shrink-0" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
@@ -783,27 +1031,50 @@ export function ProgramBuilderPage() {
         </div>
       </div>
 
-      {/* ── Tab Navigation ── */}
-      <div className="flex gap-2 border-b pb-4 mb-6 overflow-x-auto">
-        {([
-          { key: "info" as const, label: "📝 Info Program" },
-          { key: "silabus" as const, label: "📋 Silabus" },
-          { key: "kurikulum" as const, label: "📚 Kurikulum & Materi" },
-          ...(program.curriculum_model === "angkatan" ? [{ key: "angkatan" as const, label: "👥 Angkatan & Kelas" }] : []),
-          { key: "bank_soal" as const, label: "🏦 Bank Soal" },
-          { key: "peserta" as const, label: "👥 Info Peserta" },
-          { key: "kelulusan" as const, label: "🏆 Kelulusan" },
-        ]).map(tab => (
-          <Button
-            key={tab.key}
-            variant={activeTab === tab.key ? "default" : "outline"}
-            onClick={() => setActiveTab(tab.key)}
-            className="rounded-full whitespace-nowrap"
-          >
-            {tab.label}
-          </Button>
-        ))}
-      </div>
+      <div className="grid gap-6 lg:grid-cols-[270px_minmax(0,1fr)] lg:items-start">
+        <aside className="lg:sticky lg:top-24">
+          <Card className="overflow-hidden">
+            <CardHeader className="border-b bg-muted/30 pb-3">
+              <CardTitle className="text-base">Menu Program</CardTitle>
+              <p className="text-xs text-muted-foreground">Setiap submenu membuka halaman mandiri.</p>
+            </CardHeader>
+            <CardContent className="grid gap-1.5 p-2">
+              {programTabs.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.key;
+
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => navigateToProgramTab(tab.key)}
+                    className={`flex min-h-12 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition ${
+                      isActive ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-muted"
+                    }`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold">{tab.label}</span>
+                        <span className={`block truncate text-[11px] ${isActive ? "text-primary-foreground/75" : "text-muted-foreground"}`}>
+                          {tab.desc}
+                        </span>
+                      </span>
+                    </span>
+                    {typeof tab.count === "number" && (
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${isActive ? "bg-white/20" : "bg-muted text-muted-foreground"}`}>
+                        {tab.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </CardContent>
+          </Card>
+        </aside>
+
+        <main className="min-w-0 space-y-6">
+          <ProgramSectionHeader tab={activeProgramTab} stats={sectionStats} />
 
       {/* ── Toast Notifications ── */}
       {(message || errorMessage) && (
@@ -1019,12 +1290,32 @@ export function ProgramBuilderPage() {
                           )}
 
                           {/* Add Lesson Button */}
-                          <div className="p-3 bg-muted/20 border-t grid gap-2 md:grid-cols-2">
-                            <Button variant="outline" className="w-full border-dashed rounded-lg" onClick={() => openCreateLessonModal(module.id, "materi")}>
-                              <Plus className="h-4 w-4 mr-2" /> Tambah Pertemuan / Materi
+                          <div className="grid gap-3 border-t bg-muted/20 p-3 md:grid-cols-2">
+                            <Button
+                              variant="outline"
+                              className="h-auto min-h-[76px] w-full justify-start gap-3 border-dashed p-4 text-left"
+                              onClick={() => openCreateLessonModal(module.id, "materi")}
+                            >
+                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+                                <Plus className="h-4 w-4" />
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block font-semibold">Tambah Pertemuan / Materi</span>
+                                <span className="block text-xs font-normal text-muted-foreground">Video, dokumen, tugas, atau sesi live.</span>
+                              </span>
                             </Button>
-                            <Button variant="outline" className="w-full border-dashed rounded-lg text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-200" onClick={() => openCreateLessonModal(module.id, "kuis")}>
-                              <FileText className="h-4 w-4 mr-2" /> Tambah Kuis / Ujian
+                            <Button
+                              variant="outline"
+                              className="h-auto min-h-[76px] w-full justify-start gap-3 border-dashed border-orange-200 p-4 text-left text-orange-700 hover:bg-orange-50 hover:text-orange-800"
+                              onClick={() => openCreateLessonModal(module.id, "kuis")}
+                            >
+                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-700">
+                                <FileText className="h-4 w-4" />
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block font-semibold">Tambah Kuis / Ujian</span>
+                                <span className="block text-xs font-normal text-orange-700/75">Atur passing grade, durasi, dan bank soal.</span>
+                              </span>
                             </Button>
                           </div>
                         </div>
@@ -1406,20 +1697,68 @@ export function ProgramBuilderPage() {
       {/* ═══════════════ UNIFIED LESSON MODAL ═══════════════ */}
       {isLessonModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-200">
-            <CardHeader className="sticky top-0 bg-background/95 backdrop-blur z-10 border-b flex flex-row items-center justify-between py-4">
-              <CardTitle className="text-xl flex items-center gap-2 text-primary">
-                <Presentation className="h-5 w-5" />
-                {editingLessonId
-                  ? (lessonModalMode === "kuis" ? "Edit Kuis / Ujian" : "Edit Pertemuan / Materi")
-                  : (lessonModalMode === "kuis" ? "Buat Kuis / Ujian Baru" : "Buat Pertemuan / Materi Baru")}
-              </CardTitle>
+          <Card className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+            <CardHeader className="shrink-0 border-b bg-background/95 py-4 backdrop-blur">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <CardTitle className={`flex items-center gap-2 text-xl ${lessonModalMode === "kuis" ? "text-orange-700" : "text-primary"}`}>
+                    {lessonModalMode === "kuis" ? <FileText className="h-5 w-5" /> : <Presentation className="h-5 w-5" />}
+                    {editingLessonId
+                      ? (lessonModalMode === "kuis" ? "Edit Kuis / Ujian" : "Edit Pertemuan / Materi")
+                      : (lessonModalMode === "kuis" ? "Buat Kuis / Ujian Baru" : "Buat Pertemuan / Materi Baru")}
+                  </CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {lessonModalMode === "kuis"
+                      ? "Siapkan evaluasi dengan pengaturan nilai, durasi, percobaan, dan alur kelola soal."
+                      : "Siapkan materi belajar, sumber konten, jadwal rilis, atau sesi live untuk peserta."}
+                  </p>
+                </div>
               <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsLessonModalOpen(false)}>
                 <X className="h-5 w-5" />
               </Button>
+              </div>
             </CardHeader>
-            <CardContent className="p-6">
-              <form className="space-y-5" onSubmit={handleLessonSubmit}>
+            <CardContent className="overflow-y-auto p-0">
+              <form className="grid lg:grid-cols-[280px_minmax(0,1fr)]" onSubmit={handleLessonSubmit}>
+                <aside className="space-y-4 border-b bg-muted/25 p-5 lg:border-b-0 lg:border-r">
+                  <div className="rounded-xl border bg-background p-4">
+                    <p className="text-xs font-medium uppercase text-muted-foreground">Mata Pelajaran</p>
+                    <p className="mt-1 text-sm font-semibold">{selectedLessonModule ? `${selectedLessonModule.code} - ${selectedLessonModule.title}` : "Belum dipilih"}</p>
+                  </div>
+                  <div className="rounded-xl border bg-background p-4">
+                    <p className="text-xs font-medium uppercase text-muted-foreground">Workflow</p>
+                    <div className="mt-3 space-y-3">
+                      {lessonWorkflowSteps.map((step, index) => (
+                        <div key={step} className="flex gap-3">
+                          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${lessonModalMode === "kuis" ? "bg-orange-100 text-orange-700" : "bg-primary/10 text-primary"}`}>
+                            {index + 1}
+                          </span>
+                          <p className="text-sm leading-snug text-muted-foreground">{step}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border bg-background p-4">
+                    <p className="text-xs font-medium uppercase text-muted-foreground">Status Simpan</p>
+                    <div className="mt-3 grid gap-2 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span>Judul</span>
+                        {lessonForm.title.trim() ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <AlertCircle className="h-4 w-4 text-amber-600" />}
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Rilis</span>
+                        <Badge variant="outline" className="bg-muted/40">{lessonForm.visibility_status}</Badge>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>{lessonModalMode === "kuis" ? "Evaluasi" : "Konten"}</span>
+                        {lessonModalMode === "kuis" || lessonForm.external_url.trim() || selectedUploadFiles.length > 0 || lessonForm.content_body.trim()
+                          ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                          : <AlertCircle className="h-4 w-4 text-amber-600" />}
+                      </div>
+                    </div>
+                  </div>
+                </aside>
+                <div className="space-y-5 p-5">
                 {/* Title */}
                 <div className="space-y-2">
                   <label className="text-sm font-semibold">{lessonModalMode === "kuis" ? "Judul Kuis / Ujian" : "Judul Materi"} <span className="text-red-500">*</span></label>
@@ -1507,7 +1846,7 @@ export function ProgramBuilderPage() {
                       </div>
                       <div className="space-y-2">
                         <label className="text-xs font-medium text-muted-foreground">Estimasi Durasi</label>
-                        <select className="field-control h-11" value={lessonForm.order_no || "60"} onChange={e => setLessonForm(c => ({ ...c, order_no: e.target.value }))}>
+                        <select className="field-control h-11" value={lessonForm.duration_minutes || "60"} onChange={e => setLessonForm(c => ({ ...c, duration_minutes: e.target.value }))}>
                           <option value="30">30 Menit</option>
                           <option value="60">1 Jam</option>
                           <option value="90">1.5 Jam</option>
@@ -1788,11 +2127,12 @@ export function ProgramBuilderPage() {
                 </div>
 
                 {/* Submit */}
-                <div className="flex justify-end gap-3 pt-4 border-t">
+                <div className="sticky bottom-0 -mx-5 flex justify-end gap-3 border-t bg-background/95 px-5 pt-4 pb-1 backdrop-blur">
                   <Button type="button" variant="outline" onClick={() => setIsLessonModalOpen(false)}>Batal</Button>
                   <Button disabled={isSubmitting} type="submit" className={`px-8 shadow-md ${lessonModalMode === "kuis" ? "bg-orange-600 hover:bg-orange-700" : ""}`}>
                     {isSubmitting ? "Menyimpan..." : editingLessonId ? "Simpan Perubahan" : (lessonModalMode === "kuis" ? "Simpan Kuis" : "Simpan Materi")}
                   </Button>
+                </div>
                 </div>
               </form>
             </CardContent>
@@ -2188,6 +2528,46 @@ export function ProgramBuilderPage() {
         </div>
       )}
 
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function ProgramSectionHeader({ tab, stats }: { tab: ProgramTabItem; stats: Array<{ label: string; value: number }> }) {
+  const Icon = tab.icon;
+
+  return (
+    <section className="rounded-xl border bg-card p-5 shadow-sm">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Icon className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase text-muted-foreground">Halaman Program</p>
+            <h2 className="mt-1 text-2xl font-bold leading-tight">{tab.label}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{tab.desc}</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:min-w-[360px]">
+          {stats.map((stat) => (
+            <div key={stat.label} className="rounded-lg border bg-muted/30 px-3 py-2">
+              <p className="text-[11px] font-medium text-muted-foreground">{stat.label}</p>
+              <p className="mt-1 text-lg font-bold">{stat.value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ProgramChecklistItem({ done, label }: { done: boolean; label: string }) {
+  return (
+    <div className="flex min-h-12 items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
+      <span className="text-sm font-medium">{label}</span>
+      {done ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" /> : <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />}
     </div>
   );
 }

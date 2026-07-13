@@ -6,9 +6,25 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FullPageLoader } from "@/components/ui/full-page-loader";
-import { BookOpen, Award, IdCard, GraduationCap, Megaphone } from "lucide-react";
+import { BookOpen, Award, IdCard, GraduationCap, Megaphone, CalendarClock, ClipboardCheck, ArrowRight } from "lucide-react";
 import type { Enrollment, OnboardingProgress, Participant } from "../../lib/enrollment";
+import {
+  formatRegistrationDateTime,
+  getRegistrationWindowState,
+  type RegistrationForm,
+  type RegistrationWindowState,
+} from "../../lib/admission";
 import { supabase } from "../../lib/supabase";
+
+type AvailableProgram = {
+  id: string;
+  name: string;
+  code: string;
+  description: string | null;
+  feature_flags?: {
+    use_direct_enrollment?: boolean;
+  } | null;
+};
 
 export function LearnerDashboardPage() {
   const { user } = useAuthSession();
@@ -16,7 +32,8 @@ export function LearnerDashboardPage() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [onboarding, setOnboarding] = useState<OnboardingProgress[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
-  const [availablePrograms, setAvailablePrograms] = useState<any[]>([]);
+  const [availablePrograms, setAvailablePrograms] = useState<AvailableProgram[]>([]);
+  const [registrationFormsByProgramId, setRegistrationFormsByProgramId] = useState<Record<string, RegistrationForm>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -127,7 +144,43 @@ export function LearnerDashboardPage() {
             if (!aActive && bActive) return 1;
             return 0;
           });
-        setAvailablePrograms(available);
+        setAvailablePrograms(available as AvailableProgram[]);
+
+        const availableProgramIds = available.map((program) => program.id);
+        if (availableProgramIds.length > 0) {
+          const formResult = await supabase
+            .from("registration_forms")
+            .select("id, program_id, title, description, status, registration_open_at, registration_close_at, group_settings")
+            .in("program_id", availableProgramIds)
+            .eq("status", "active")
+            .order("created_at", { ascending: false });
+
+          let formRows: unknown[] | null = formResult.data;
+
+          if (
+            formResult.error?.message.includes("registration_open_at") ||
+            formResult.error?.message.includes("registration_close_at")
+          ) {
+            const fallback = await supabase
+              .from("registration_forms")
+              .select("id, program_id, title, description, status, group_settings")
+              .in("program_id", availableProgramIds)
+              .eq("status", "active")
+              .order("created_at", { ascending: false });
+
+            formRows = fallback.data;
+          }
+
+          const formMap: Record<string, RegistrationForm> = {};
+          for (const form of (formRows ?? []) as RegistrationForm[]) {
+            if (form.program_id && !formMap[form.program_id]) {
+              formMap[form.program_id] = form as RegistrationForm;
+            }
+          }
+          setRegistrationFormsByProgramId(formMap);
+        } else {
+          setRegistrationFormsByProgramId({});
+        }
       }
 
       setIsLoading(false);
@@ -190,6 +243,20 @@ export function LearnerDashboardPage() {
   const activeEnrollments = enrollments.filter(
     (enrollment) => enrollment.enrollment_status === "active",
   );
+  const registrationStateLabel: Record<RegistrationWindowState, string> = {
+    draft: "Belum Aktif",
+    upcoming: "Terjadwal",
+    open: "Dibuka",
+    closed: "Ditutup",
+    archived: "Diarsipkan",
+  };
+  const registrationStateClass: Record<RegistrationWindowState, string> = {
+    draft: "bg-slate-100 text-slate-600 border-slate-200",
+    upcoming: "bg-sky-50 text-sky-700 border-sky-200",
+    open: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    closed: "bg-rose-50 text-rose-700 border-rose-200",
+    archived: "bg-slate-100 text-slate-600 border-slate-200",
+  };
 
   if (isLoading) {
     return <FullPageLoader message="Memuat dashboard peserta..." />;
@@ -298,8 +365,18 @@ export function LearnerDashboardPage() {
 
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle>Katalog Program</CardTitle>
-          <p className="text-sm text-muted-foreground">Program yang tersedia untuk Anda ikuti.</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle>Katalog Program</CardTitle>
+              <p className="text-sm text-muted-foreground">Program yang tersedia untuk Anda ikuti.</p>
+            </div>
+            <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
+              <Link to="/learner/cek-status">
+                <ClipboardCheck className="h-4 w-4" />
+                Cek Status Pendaftaran
+              </Link>
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {successMessage && (
@@ -321,12 +398,32 @@ export function LearnerDashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {availablePrograms.map((program) => {
                 const isDirectEnroll = program.feature_flags?.use_direct_enrollment === true;
+                const registrationForm = registrationFormsByProgramId[program.id];
+                const registrationState = isDirectEnroll
+                  ? "open"
+                  : getRegistrationWindowState(registrationForm);
+                const canSubmitForm = registrationState === "open";
+
                 return (
-                  <div className="rounded-lg border p-4 flex flex-col justify-between" key={program.id}>
+                  <div className="rounded-lg border bg-white p-4 flex flex-col justify-between shadow-sm hover:border-primary/30 hover:shadow-md transition-all" key={program.id}>
                     <div>
-                      <h3 className="font-semibold text-lg">{program.name}</h3>
-                      <Badge variant="outline" className="mb-2">{program.code}</Badge>
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
+                        <Badge variant="outline">{program.code}</Badge>
+                        <span className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${registrationStateClass[registrationState]}`}>
+                          {isDirectEnroll ? "Daftar Langsung" : registrationStateLabel[registrationState]}
+                        </span>
+                      </div>
+                      <h3 className="font-semibold text-lg leading-tight">{program.name}</h3>
                       <p className="text-sm text-muted-foreground line-clamp-3 mb-4">{program.description || "Tidak ada deskripsi."}</p>
+                      {!isDirectEnroll && (
+                        <div className="mb-4 rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600">
+                          <div className="mb-1 flex items-center gap-2 font-semibold text-slate-700">
+                            <CalendarClock className="h-4 w-4 text-primary" />
+                            Periode Pendaftaran
+                          </div>
+                          <p>{formatRegistrationDateTime(registrationForm?.registration_open_at)} - {formatRegistrationDateTime(registrationForm?.registration_close_at)}</p>
+                        </div>
+                      )}
                     </div>
                     <div>
                       {isDirectEnroll ? (
@@ -340,10 +437,13 @@ export function LearnerDashboardPage() {
                       ) : (
                         <Button 
                           className="w-full" 
-                          variant="outline" 
+                          variant={canSubmitForm ? "default" : "outline"} 
                           asChild
                         >
-                          <Link to={`/learner/pendaftaran/${program.id}`}>Lihat Form Pendaftaran</Link>
+                          <Link to={`/learner/pendaftaran/${program.id}`}>
+                            {canSubmitForm ? "Isi Form Pendaftaran" : "Lihat Jadwal"}
+                            <ArrowRight className="h-4 w-4" />
+                          </Link>
                         </Button>
                       )}
                     </div>

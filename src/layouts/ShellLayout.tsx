@@ -1,6 +1,6 @@
-import { BookOpen, GraduationCap, Settings, User, Users, Bell, LogOut } from "lucide-react";
+import { BookOpen, GraduationCap, Settings, User, Users, Bell, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { ComponentType, PropsWithChildren } from "react";
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuthSession } from "../app/providers/authSessionContext";
 import { Button } from "../components/ui/button";
@@ -42,8 +42,16 @@ export function ShellLayout({
   const navigate = useNavigate();
   const { profile, primaryRole, signOut } = useAuthSession();
   const { settings } = useSystemSettings();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("ypia-sidebar-collapsed") === "true");
   const BrandIcon = iconByVariant[variant];
   const displayName = profile?.full_name ?? profile?.email ?? "Pengguna";
+  const getMobileNavLabel = (label: string) =>
+    label
+      .replace("Program & Kelas", "Kelas")
+      .replace("Cek Pendaftaran", "Status")
+      .replace("Tugas & Review", "Review")
+      .replace("Program Saya", "Program")
+      .replace("Profil Saya", "Profil");
   
   // Get initials for avatar
   const initials = displayName
@@ -55,6 +63,15 @@ export function ShellLayout({
 
   const themeKey = settings?.portal_themes?.[variant === "superadmin" ? "admin" : variant];
   const themeStyles = getThemeStyles(themeKey);
+  const activeMenuHref = useMemo(() => {
+    return menuItems
+      .filter((item) =>
+        item.href === "/"
+          ? location.pathname === item.href
+          : location.pathname === item.href || location.pathname.startsWith(`${item.href}/`),
+      )
+      .sort((first, second) => second.href.length - first.href.length)[0]?.href;
+  }, [location.pathname, menuItems]);
 
   useEffect(() => {
     if (Object.keys(themeStyles).length === 0) return;
@@ -70,32 +87,46 @@ export function ShellLayout({
     };
   }, [themeStyles]);
 
+  useEffect(() => {
+    localStorage.setItem("ypia-sidebar-collapsed", String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
   return (
-    <div className={`app-shell app-shell-${variant}`}>
+    <div className={cn(`app-shell app-shell-${variant}`, sidebarCollapsed && "app-shell--sider-collapsed")}>
       <aside className={cn("app-shell__sider print:hidden", (variant === "learner" || variant === "teacher") && "!hidden md:!flex")}>
-        <Link to="/" className="app-shell__brand" aria-label={appName}>
+        <div className="app-shell__sidebar-top">
+        <Link to="/" className="app-shell__brand" aria-label={appName} title={settings?.institution_name || appName}>
           <span className="app-shell__brand-icon">
             <BrandIcon className="h-6 w-6 text-white" />
           </span>
-          <span className="min-w-0">
+          <span className="app-shell__brand-copy min-w-0">
             <span className="app-shell__brand-title">{settings?.institution_name || appName}</span>
             <span className="app-shell__brand-subtitle">
               {settings?.institution_profile || "Yayasan Pendidikan Ihsanul Adab (YPIA)"}
             </span>
           </span>
         </Link>
+        <Button
+          type="button"
+          variant="ghost"
+          className="app-shell__collapse-button"
+          onClick={() => setSidebarCollapsed((current) => !current)}
+          aria-label={sidebarCollapsed ? "Perluas sidebar" : "Ciutkan sidebar"}
+          title={sidebarCollapsed ? "Perluas sidebar" : "Ciutkan sidebar"}
+        >
+          {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+        </Button>
+        </div>
         <nav className="app-shell__menu" aria-label="Navigasi utama">
           {menuItems.map((item) => {
             const Icon = item.icon;
-            const isActive =
-              item.href === "/"
-                ? location.pathname === item.href
-                : location.pathname.startsWith(item.href);
+            const isActive = item.href === activeMenuHref;
 
             return (
               <Link
                 key={item.href}
                 to={item.href}
+                title={item.label}
                 className={cn("app-shell__menu-item", isActive && "is-active")}
               >
                 <Icon className="h-4 w-4 opacity-80" />
@@ -118,7 +149,7 @@ export function ShellLayout({
               </Button>
               <div className="h-8 w-[1px] bg-border mx-2"></div>
               <Link 
-                to={variant === 'superadmin' ? '/system/profil' : variant === 'admin' ? '/admin/profil' : variant === 'teacher' ? '/teacher/konten' : '/learner'}
+                to={variant === 'superadmin' ? '/system/profil' : variant === 'admin' ? '/admin/profil' : variant === 'teacher' ? '/teacher/profil' : '/learner/profil'}
                 className="flex items-center gap-3 hover:bg-slate-100/80 p-1 pr-3 -ml-1 rounded-full transition-all cursor-pointer"
                 title="Pengaturan Profil Saya"
               >
@@ -169,10 +200,7 @@ export function ShellLayout({
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-50 flex items-center justify-around pb-safe h-16 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
           {menuItems.map((item) => {
             const Icon = item.icon;
-            const isActive =
-              item.href === "/"
-                ? location.pathname === item.href
-                : location.pathname.startsWith(item.href);
+            const isActive = item.href === activeMenuHref;
 
             return (
               <Link
@@ -193,7 +221,7 @@ export function ShellLayout({
                   "text-[11px] leading-tight", 
                   isActive ? "text-primary font-bold" : "text-slate-500 font-medium"
                 )}>
-                  {item.label.replace(' Saya', '')}
+                  {getMobileNavLabel(item.label)}
                 </span>
               </Link>
             );

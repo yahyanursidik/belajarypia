@@ -87,6 +87,11 @@ a {
   display: grid;
   min-height: 100vh;
   grid-template-columns: 280px minmax(0, 1fr);
+  transition: grid-template-columns 0.25s ease;
+}
+
+.app-shell--sider-collapsed {
+  grid-template-columns: 88px minmax(0, 1fr);
 }
 
 /* ── Sidebar ────────────────────────────────────────────────────────── */
@@ -101,6 +106,8 @@ a {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  overflow-x: hidden;
+  transition: padding 0.25s ease;
 }
 
 /* Subtle Islamic geometric overlay on sidebar */
@@ -163,6 +170,11 @@ a {
   z-index: 1;
 }
 
+.app-shell__sidebar-top {
+  position: relative;
+  z-index: 1;
+}
+
 .app-shell__brand-icon {
   display: grid;
   width: 44px;
@@ -178,6 +190,25 @@ a {
 .app-shell__brand-title,
 .app-shell__brand-subtitle {
   display: block;
+}
+
+.app-shell__brand-copy {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.app-shell__collapse-button {
+  width: 100%;
+  height: 36px;
+  margin: 0 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.app-shell__collapse-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
 }
 
 .app-shell__brand-title {
@@ -232,6 +263,14 @@ a {
   position: relative;
 }
 
+.app-shell__menu-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: opacity 0.16s ease, width 0.16s ease;
+}
+
 .app-shell__menu-item:hover {
   background: rgba(255, 255, 255, 0.07);
   color: #ffffff;
@@ -256,6 +295,51 @@ a {
   width: 3px;
   border-radius: 0 3px 3px 0;
   background: hsl(42 70% 55%);
+}
+
+.app-shell--sider-collapsed .app-shell__sider {
+  padding: 20px 12px;
+}
+
+.app-shell--sider-collapsed .app-shell__brand {
+  justify-content: center;
+  min-height: 52px;
+  margin-bottom: 8px;
+  padding: 0;
+}
+
+.app-shell--sider-collapsed .app-shell__brand-copy,
+.app-shell--sider-collapsed .app-shell__menu-item span {
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-4px);
+}
+
+.app-shell--sider-collapsed .app-shell__collapse-button {
+  width: 44px;
+  margin-inline: auto;
+  padding: 0;
+}
+
+.app-shell--sider-collapsed .app-shell__menu {
+  gap: 8px;
+}
+
+.app-shell--sider-collapsed .app-shell__menu-item {
+  justify-content: center;
+  gap: 0;
+  min-height: 44px;
+  padding: 0;
+}
+
+.app-shell--sider-collapsed .app-shell__menu-item:hover {
+  transform: none;
+}
+
+.app-shell--sider-collapsed .app-shell__menu-item svg {
+  width: 18px;
+  height: 18px;
 }
 
 /* ── Main area ──────────────────────────────────────────────────────── */
@@ -529,12 +613,46 @@ a {
     grid-template-columns: 1fr;
   }
 
+  .app-shell--sider-collapsed {
+    grid-template-columns: 1fr;
+  }
+
   .app-shell__sider {
     position: static;
     height: auto;
     padding: 16px;
     border-right: none;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .app-shell--sider-collapsed .app-shell__sider {
+    padding: 16px;
+  }
+
+  .app-shell--sider-collapsed .app-shell__brand {
+    justify-content: flex-start;
+    min-height: 64px;
+    margin-bottom: 12px;
+    padding: 0 8px;
+  }
+
+  .app-shell--sider-collapsed .app-shell__brand-copy,
+  .app-shell--sider-collapsed .app-shell__menu-item span {
+    width: auto;
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+
+  .app-shell--sider-collapsed .app-shell__menu-item {
+    justify-content: flex-start;
+    gap: 12px;
+    min-height: auto;
+    padding: 11px 14px;
+  }
+
+  .app-shell__collapse-button {
+    display: none;
   }
 
   .app-shell__sider::before,

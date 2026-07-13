@@ -6,16 +6,30 @@ import { supabase } from "../../lib/supabase";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import {
+  formatRegistrationDateTime,
+  getRegistrationWindowState,
+  type RegistrationForm,
+} from "../../lib/admission";
 
 interface DashboardMetrics {
   totalPrograms: number;
   totalClasses: number;
+  openAdmissions: number;
+  pendingApplicants: number;
 }
 
 export function TeacherDashboardPage() {
   const { user, profile } = useAuthSession();
-  const [metrics, setMetrics] = useState<DashboardMetrics>({ totalPrograms: 0, totalClasses: 0 });
+  const [metrics, setMetrics] = useState<DashboardMetrics>({
+    totalPrograms: 0,
+    totalClasses: 0,
+    openAdmissions: 0,
+    pendingApplicants: 0,
+  });
   const [recentItems, setRecentItems] = useState<any[]>([]);
+  const [admissionForms, setAdmissionForms] = useState<RegistrationForm[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -25,11 +39,12 @@ export function TeacherDashboardPage() {
     
     async function fetchDashboardData() {
       try {
-        // Fetch Programs Count
-        const { count: programsCount } = await supabase
+        // Fetch assigned programs
+        const { data: assignedProgramsData } = await supabase
           .from("programs")
-          .select("*", { count: "exact", head: true })
-          .eq("teacher_user_id", user!.id);
+          .select("id, name, code, curriculum_model, created_at")
+          .eq("teacher_user_id", user!.id)
+          .order("created_at", { ascending: false });
           
         // Fetch Classes Count
         const { count: classesCount } = await supabase
@@ -45,26 +60,43 @@ export function TeacherDashboardPage() {
           .order("created_at", { ascending: false })
           .limit(3);
 
-        // Fetch Recent Programs
-        const { data: recentProgramsData, error: progErr } = await supabase
-          .from("programs")
-          .select("id, name, code, curriculum_model, created_at")
-          .eq("teacher_user_id", user!.id)
-          .order("created_at", { ascending: false })
-          .limit(3);
+        const assignedProgramIds = (assignedProgramsData ?? []).map((program) => program.id);
+        let formsByProgram: RegistrationForm[] = [];
+        let pendingApplicants = 0;
 
-        if (progErr) console.error("Error fetching recent programs:", progErr);
+        if (assignedProgramIds.length > 0) {
+          const { data: formsData } = await supabase
+            .from("registration_forms")
+            .select("id, program_id, title, description, status, registration_open_at, registration_close_at, group_settings")
+            .in("program_id", assignedProgramIds)
+            .eq("status", "active")
+            .order("created_at", { ascending: false });
+
+          formsByProgram = (formsData ?? []) as RegistrationForm[];
+
+          const { data: applicantChoices } = await supabase
+            .from("applicant_program_choices")
+            .select("id, program_id, applicants!inner(status)")
+            .in("program_id", assignedProgramIds);
+
+          pendingApplicants = (applicantChoices ?? []).filter((choice: any) =>
+            ["submitted", "under_review", "revision_requested"].includes(choice.applicants?.status),
+          ).length;
+        }
 
         if (isMounted) {
           setMetrics({
-            totalPrograms: programsCount || 0,
-            totalClasses: classesCount || 0
+            totalPrograms: assignedProgramsData?.length || 0,
+            totalClasses: classesCount || 0,
+            openAdmissions: formsByProgram.filter((form) => getRegistrationWindowState(form) === "open").length,
+            pendingApplicants,
           });
+          setAdmissionForms(formsByProgram.slice(0, 4));
           
           // Combine and sort
           const combined = [
             ...(recentClassesData || []).map(c => ({ ...c, itemType: 'class' })),
-            ...(recentProgramsData || []).map(p => ({ ...p, itemType: 'program' }))
+            ...(assignedProgramsData || []).slice(0, 3).map(p => ({ ...p, itemType: 'program' }))
           ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
           .slice(0, 3);
           
@@ -147,6 +179,38 @@ export function TeacherDashboardPage() {
                 </div>
               </CardContent>
             </Card>
+
+            <Card className="bg-white border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-4 rounded-xl bg-sky-50 text-sky-600">
+                  <ClipboardCheck className="w-8 h-8" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-500">Pendaftaran Dibuka</p>
+                  {isLoading ? (
+                    <Skeleton className="h-8 w-16 mt-1" />
+                  ) : (
+                    <h3 className="text-3xl font-bold text-slate-900">{metrics.openAdmissions}</h3>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-4 rounded-xl bg-amber-50 text-amber-600">
+                  <ClipboardCheck className="w-8 h-8" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-500">Perlu Review</p>
+                  {isLoading ? (
+                    <Skeleton className="h-8 w-16 mt-1" />
+                  ) : (
+                    <h3 className="text-3xl font-bold text-slate-900">{metrics.pendingApplicants}</h3>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           {/* Recent Items Table */}
@@ -185,7 +249,7 @@ export function TeacherDashboardPage() {
                         </div>
                       </div>
                       <Button variant="outline" size="sm" asChild className="shrink-0 bg-white hover:bg-primary hover:text-white">
-                        <Link to={item.itemType === 'class' ? `/teacher/kelas/${item.id}` : `/teacher/kelas/program/${item.id}`}>
+                        <Link to={item.itemType === 'class' ? `/teacher/kelas/${item.id}` : `/teacher/kelas/program/${item.id}/detail-program`}>
                           {item.itemType === 'class' ? 'Buka Kelas' : 'Kelola Program'}
                         </Link>
                       </Button>
@@ -209,6 +273,52 @@ export function TeacherDashboardPage() {
 
         {/* Right Column: Quick Actions */}
         <div className="md:col-span-4 space-y-6">
+          <Card className="bg-white border-slate-200 shadow-sm">
+            <CardHeader>
+              <CardTitle>Status Pendaftaran</CardTitle>
+              <CardDescription>Jadwal formulir pada program yang Anda ampu.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {isLoading ? (
+                <>
+                  <Skeleton className="h-20 w-full rounded-lg" />
+                  <Skeleton className="h-20 w-full rounded-lg" />
+                </>
+              ) : admissionForms.length === 0 ? (
+                <p className="text-sm text-slate-500">Belum ada form pendaftaran aktif pada program yang Anda ampu.</p>
+              ) : (
+                admissionForms.map((form) => {
+                  const state = getRegistrationWindowState(form);
+                  const stateClass = state === "open"
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : state === "upcoming"
+                      ? "bg-sky-50 text-sky-700 border-sky-200"
+                      : "bg-slate-50 text-slate-600 border-slate-200";
+
+                  return (
+                    <div key={form.id} className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="min-w-0 truncate text-sm font-semibold text-slate-900">{form.title}</p>
+                        <Badge variant="outline" className={stateClass}>
+                          {state === "open" ? "Dibuka" : state === "upcoming" ? "Terjadwal" : "Tutup"}
+                        </Badge>
+                      </div>
+                      <p className="text-xs leading-relaxed text-slate-500">
+                        {formatRegistrationDateTime(form.registration_open_at)} - {formatRegistrationDateTime(form.registration_close_at)}
+                      </p>
+                    </div>
+                  );
+                })
+              )}
+              <Button asChild variant="outline" className="w-full">
+                <Link to="/teacher/kelas">
+                  Kelola Program & Kelas
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+
           <Card className="bg-white border-slate-200 shadow-sm sticky top-6">
             <CardHeader>
               <CardTitle>Akses Cepat</CardTitle>
