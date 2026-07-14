@@ -146,6 +146,11 @@ const LearnerHelpPage = lazy(() =>
     default: module.LearnerHelpPage,
   })),
 );
+const LearnerFinancePage = lazy(() =>
+  import("./learner/LearnerFinancePage").then((module) => ({
+    default: module.LearnerFinancePage,
+  })),
+);
 const AdmissionPortalPage = lazy(() =>
   import("./public/AdmissionPortalPage").then((module) => ({
     default: module.AdmissionPortalPage,
@@ -214,6 +219,16 @@ const TeacherClassPage = lazy(() =>
 const TeacherClassDashboardPage = lazy(() =>
   import("./teacher/TeacherClassDashboardPage").then((module) => ({
     default: module.TeacherClassDashboardPage,
+  })),
+);
+const TeacherContentPage = lazy(() =>
+  import("./teacher/TeacherContentPage").then((module) => ({
+    default: module.TeacherContentPage,
+  })),
+);
+const TeacherReviewPage = lazy(() =>
+  import("./teacher/TeacherReviewPage").then((module) => ({
+    default: module.TeacherReviewPage,
   })),
 );
 const TeacherProfilePage = lazy(() =>
@@ -327,6 +342,14 @@ export function AppRoutes() {
             }
           />
           <Route
+            path="helpdesk"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "helpdesk"]}>
+                <SystemHelpdeskPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="sertifikat"
             element={
               <ProtectedRoute allowedRoles={["admin"]}>
@@ -369,7 +392,8 @@ export function AppRoutes() {
           <Route path="kelas/program/:programId" element={<ProgramBuilderPage />} />
           <Route path="kelas/program/:programId/:section" element={<ProgramBuilderPage />} />
           <Route path="kelas/:classId" element={<TeacherClassDashboardPage />} />
-          <Route path="konten" element={<TeacherPlaceholderPage />} />
+          <Route path="konten" element={<TeacherContentPage />} />
+          <Route path="review" element={<TeacherReviewPage />} />
           <Route path="profil" element={<TeacherProfilePage />} />
           <Route path="*" element={<TeacherPlaceholderPage />} />
         </Route>
@@ -392,6 +416,7 @@ export function AppRoutes() {
           <Route path="lesson/:lessonId/quiz" element={<LearnerQuizPage />} />
           <Route path="transkrip/:enrollmentId" element={<LearnerTranscriptPage />} />
           <Route path="profil" element={<LearnerProfilePage />} />
+          <Route path="keuangan" element={<LearnerFinancePage />} />
           <Route path="pendaftaran/:programId" element={<AdmissionPortalPage />} />
           <Route path="cek-status" element={<AdmissionStatusPage />} />
           <Route path="bantuan" element={<LearnerHelpPage />} />

@@ -49,6 +49,10 @@ const faqs = [
   {
     question: "Kapan sertifikat (Syahadah) saya diterbitkan?",
     answer: "Sertifikat akan diterbitkan setelah Anda menyelesaikan seluruh materi dan ujian dengan status 'Lulus', serta melunasi administrasi jika ada. Tombol unduh sertifikat akan otomatis muncul di bagian bawah halaman Program."
+  },
+  {
+    question: "Bagaimana jika ada kendala pembayaran, infaq, donasi, atau wakaf?",
+    answer: "Buat tiket bantuan dengan kategori Pembayaran, Donasi & Keuangan. Sertakan nama program, nominal, tanggal transfer, kanal pembayaran, dan bukti pembayaran agar admin keuangan dapat melakukan verifikasi lebih cepat."
   }
 ];
 
@@ -485,7 +489,7 @@ export function LearnerHelpPage() {
                     >
                       <option value="technical_issue">Kendala Teknis (Error, Akses)</option>
                       <option value="academic">Akademik (Materi, Ujian, Nilai)</option>
-                      <option value="billing">Pembayaran & Keuangan</option>
+                      <option value="billing">Pembayaran, Donasi & Keuangan</option>
                       <option value="account">Profil & Akun</option>
                       <option value="other">Lainnya</option>
                     </select>

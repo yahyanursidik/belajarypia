@@ -298,7 +298,7 @@ export function AdminAnnouncementsPage() {
               <RefreshCw className="h-4 w-4" />
               Refresh
             </Button>
-            <Button onClick={() => openCompose("published")} className="bg-white text-primary hover:bg-white/90">
+            <Button onClick={() => openCompose("published")} className="bg-white !text-primary hover:bg-white/90">
               <Plus className="h-4 w-4" />
               Buat Pengumuman
             </Button>

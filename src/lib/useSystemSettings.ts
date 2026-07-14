@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
-import type { SystemSettings } from "./settings";
+import { emptySettings, type SystemSettings } from "./settings";
 
 export function useSystemSettings() {
   const [settings, setSettings] = useState<SystemSettings | null>(null);
@@ -17,7 +17,7 @@ export function useSystemSettings() {
 
         if (error) throw error;
         if (data) {
-          setSettings(data as SystemSettings);
+          setSettings({ ...emptySettings, ...(data as SystemSettings) });
         }
       } catch (err) {
         console.error("Failed to fetch system settings:", err);

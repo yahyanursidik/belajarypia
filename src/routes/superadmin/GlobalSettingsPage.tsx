@@ -82,6 +82,10 @@ function buildSettingsPayload(formData: Partial<SystemSettings>): Partial<System
   return {
     institution_name: formData.institution_name?.trim() || emptySettings.institution_name,
     institution_profile: formData.institution_profile || null,
+    app_sidebar_title: formData.app_sidebar_title?.trim() || emptySettings.app_sidebar_title,
+    app_sidebar_subtitle: formData.app_sidebar_subtitle?.trim() || emptySettings.app_sidebar_subtitle,
+    system_header_title: formData.system_header_title?.trim() || emptySettings.system_header_title,
+    system_header_subtitle: formData.system_header_subtitle?.trim() || emptySettings.system_header_subtitle,
     contact_email: formData.contact_email || null,
     contact_phone: formData.contact_phone || null,
     address: formData.address || null,
@@ -120,6 +124,7 @@ export function GlobalSettingsPage() {
 
   const completionItems = [
     { label: "Nama lembaga", completed: Boolean(formData.institution_name?.trim()), icon: Building2 },
+    { label: "Teks tampilan", completed: Boolean(formData.app_sidebar_title?.trim() && formData.system_header_title?.trim()), icon: Monitor },
     { label: "Email kontak", completed: Boolean(formData.contact_email?.trim()), icon: Mail },
     { label: "Nomor bantuan", completed: Boolean(formData.contact_phone?.trim()), icon: Phone },
     { label: "Alamat", completed: Boolean(formData.address?.trim()), icon: MapPin },
@@ -206,6 +211,10 @@ export function GlobalSettingsPage() {
       .insert({
         institution_name: emptySettings.institution_name,
         institution_profile: emptySettings.institution_profile,
+        app_sidebar_title: emptySettings.app_sidebar_title,
+        app_sidebar_subtitle: emptySettings.app_sidebar_subtitle,
+        system_header_title: emptySettings.system_header_title,
+        system_header_subtitle: emptySettings.system_header_subtitle,
         contact_email: emptySettings.contact_email,
         contact_phone: emptySettings.contact_phone,
         address: emptySettings.address,
@@ -250,11 +259,21 @@ export function GlobalSettingsPage() {
     const { error, data } = await updateSystemSettings(settings.id, payload);
 
     if (error) {
-      if (isSettingsColumnError(error, ["portal_themes", "login_logo_url", "favicon_url"])) {
+      if (
+        isSettingsColumnError(error, [
+          "portal_themes",
+          "login_logo_url",
+          "favicon_url",
+          "app_sidebar_title",
+          "app_sidebar_subtitle",
+          "system_header_title",
+          "system_header_subtitle",
+        ])
+      ) {
         showFeedback({
           type: "error",
           message:
-            "Struktur tabel system_settings belum lengkap. Jalankan migration branding/portal theme terbaru, terutama 20260626144957_phase_18_portal_themes.sql.",
+            "Struktur tabel system_settings belum lengkap. Jalankan migration branding/portal theme dan migration 202607140002_system_display_text_settings.sql.",
         });
       } else {
         showFeedback({ type: "error", message: error.message });
@@ -633,6 +652,69 @@ export function GlobalSettingsPage() {
 
           {activeTab === "identity" && (
             <div className="grid gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Teks Tampilan Aplikasi</CardTitle>
+                  <CardDescription>
+                    Atur teks yang tampil di sidebar dan header system. Gunakan teks pendek agar layout tetap rapi.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold">Judul Sidebar</label>
+                      <Input
+                        value={formData.app_sidebar_title || ""}
+                        onChange={(event) => setFormData((prev) => ({ ...prev, app_sidebar_title: event.target.value }))}
+                        placeholder="Contoh: YPIA"
+                      />
+                      <p className="text-xs text-muted-foreground">Disarankan 1-3 kata.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold">Subjudul Sidebar</label>
+                      <Input
+                        value={formData.app_sidebar_subtitle || ""}
+                        onChange={(event) => setFormData((prev) => ({ ...prev, app_sidebar_subtitle: event.target.value }))}
+                        placeholder="Contoh: Portal Pembelajaran"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold">Judul Header System</label>
+                      <Input
+                        value={formData.system_header_title || ""}
+                        onChange={(event) => setFormData((prev) => ({ ...prev, system_header_title: event.target.value }))}
+                        placeholder="Contoh: Pusat Kendali Sistem"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold">Subjudul Header System</label>
+                      <Input
+                        value={formData.system_header_subtitle || ""}
+                        onChange={(event) => setFormData((prev) => ({ ...prev, system_header_subtitle: event.target.value }))}
+                        placeholder="Contoh: Tata Kelola & Pemantauan LMS"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 rounded-xl border bg-muted/20 p-4 md:grid-cols-[240px_minmax(0,1fr)]">
+                    <div className="rounded-lg border bg-primary p-4 text-primary-foreground">
+                      <p className="text-lg font-bold">{formData.app_sidebar_title || emptySettings.app_sidebar_title}</p>
+                      <p className="mt-1 text-sm text-primary-foreground/80">
+                        {formData.app_sidebar_subtitle || emptySettings.app_sidebar_subtitle}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border bg-background p-4">
+                      <p className="text-lg font-bold text-foreground">
+                        {formData.system_header_title || emptySettings.system_header_title}
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {formData.system_header_subtitle || emptySettings.system_header_subtitle}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardHeader>
                   <CardTitle>Informasi Dasar Lembaga</CardTitle>

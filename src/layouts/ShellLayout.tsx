@@ -63,6 +63,8 @@ export function ShellLayout({
 
   const themeKey = settings?.portal_themes?.[variant === "superadmin" ? "admin" : variant];
   const themeStyles = getThemeStyles(themeKey);
+  const sidebarTitle = settings?.app_sidebar_title || "YPIA";
+  const sidebarSubtitle = settings?.app_sidebar_subtitle || "Portal Pembelajaran";
   const activeMenuHref = useMemo(() => {
     return menuItems
       .filter((item) =>
@@ -95,15 +97,13 @@ export function ShellLayout({
     <div className={cn(`app-shell app-shell-${variant}`, sidebarCollapsed && "app-shell--sider-collapsed")}>
       <aside className={cn("app-shell__sider print:hidden", (variant === "learner" || variant === "teacher") && "!hidden md:!flex")}>
         <div className="app-shell__sidebar-top">
-        <Link to="/" className="app-shell__brand" aria-label={appName} title={settings?.institution_name || appName}>
+        <Link to="/" className="app-shell__brand" aria-label={appName} title={sidebarTitle}>
           <span className="app-shell__brand-icon">
             <BrandIcon className="h-6 w-6 text-white" />
           </span>
           <span className="app-shell__brand-copy min-w-0">
-            <span className="app-shell__brand-title">{settings?.institution_name || appName}</span>
-            <span className="app-shell__brand-subtitle">
-              {settings?.institution_profile || "Yayasan Pendidikan Ihsanul Adab (YPIA)"}
-            </span>
+            <span className="app-shell__brand-title">{sidebarTitle}</span>
+            <span className="app-shell__brand-subtitle">{sidebarSubtitle}</span>
           </span>
         </Link>
         <Button

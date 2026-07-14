@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { BookOpen, Users, ClipboardCheck, ArrowRight, BookMarked, User } from "lucide-react";
+import { BookOpen, Users, ClipboardCheck, ArrowRight, BookMarked, FileText, User } from "lucide-react";
 import { useAuthSession } from "../../app/providers/authSessionContext";
 import { supabase } from "../../lib/supabase";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
@@ -335,6 +335,17 @@ export function TeacherDashboardPage() {
                   <p className="text-xs text-slate-500">Kelola kurikulum & peserta</p>
                 </div>
                 <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-primary transition-colors" />
+              </Link>
+
+              <Link to="/teacher/konten" className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-sky-500/30 hover:bg-sky-50 transition-all group">
+                <div className="p-2.5 rounded-lg bg-sky-100 text-sky-600 group-hover:bg-sky-500 group-hover:text-white transition-colors">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-slate-900 group-hover:text-sky-700 transition-colors">Konten Materi</p>
+                  <p className="text-xs text-slate-500">Cek publish, dokumen, dan soal</p>
+                </div>
+                <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-sky-600 transition-colors" />
               </Link>
               
               <Link to="/teacher/review" className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-amber-500/30 hover:bg-amber-50 transition-all group">

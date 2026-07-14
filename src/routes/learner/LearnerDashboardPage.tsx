@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FullPageLoader } from "@/components/ui/full-page-loader";
-import { BookOpen, Award, IdCard, GraduationCap, Megaphone, CalendarClock, ClipboardCheck, ArrowRight } from "lucide-react";
+import { BookOpen, Award, IdCard, GraduationCap, Megaphone, CalendarClock, ClipboardCheck, ArrowRight, HelpCircle, User, WalletCards } from "lucide-react";
 import type { Enrollment, OnboardingProgress, Participant } from "../../lib/enrollment";
 import {
   formatRegistrationDateTime,
@@ -362,6 +362,28 @@ export function LearnerDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="mt-6 border-border/60 shadow-sm">
+        <CardHeader>
+          <CardTitle>Alur Peserta</CardTitle>
+          <p className="text-sm text-muted-foreground">Akses cepat ke pekerjaan utama selama mengikuti program.</p>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {[
+            { title: "Lanjut Belajar", desc: "Buka program dan materi yang sedang diikuti.", href: "/learner/program-saya", icon: BookOpen },
+            { title: "Cek Pendaftaran", desc: "Pantau status formulir dan program baru.", href: "/learner/cek-status", icon: ClipboardCheck },
+            { title: "Keuangan", desc: "Lihat transaksi, infaq, dan kanal pembayaran.", href: "/learner/keuangan", icon: WalletCards },
+            { title: "Profil", desc: "Perbarui data diri dan kontak peserta.", href: "/learner/profil", icon: User },
+            { title: "Bantuan", desc: "Ajukan tiket kendala akademik atau keuangan.", href: "/learner/bantuan", icon: HelpCircle },
+          ].map((item) => (
+            <Link key={item.title} to={item.href} className="rounded-lg border border-border/60 p-4 transition-colors hover:border-primary/30 hover:bg-primary/5">
+              <item.icon className="h-5 w-5 text-primary" />
+              <p className="mt-3 font-semibold text-foreground">{item.title}</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{item.desc}</p>
+            </Link>
+          ))}
+        </CardContent>
+      </Card>
 
       <Card className="mt-6">
         <CardHeader>

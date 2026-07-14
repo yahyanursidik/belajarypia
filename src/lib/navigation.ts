@@ -18,13 +18,11 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
         { href: "/system/pendaftaran", label: "Admisi & Pendaftaran", icon: menuIcon.team },
         { href: "/system/peserta", label: "Peserta & Akademik", icon: menuIcon.user },
         { href: "/system/program", label: "Program", icon: menuIcon.book },
-        { href: "/system/keuangan", label: "Keuangan", icon: menuIcon.finance },
+        { href: "/system/keuangan", label: "Keuangan & Akuntansi", icon: menuIcon.finance },
         { href: "/system/helpdesk", label: "Helpdesk", icon: menuIcon.helpdesk },
         { href: "/system/audit", label: "Audit Sistem", icon: menuIcon.audit },
         { href: "/system/pengaturan", label: "Pengaturan Global", icon: menuIcon.settings },
-        { href: "/system/sertifikat", label: "Template Syahadah", icon: menuIcon.certificate },
-        { href: "/system/sertifikat/kelayakan", label: "Cek Kelayakan", icon: menuIcon.certificate },
-        { href: "/system/sertifikat/antrean", label: "Antrean Penerbitan", icon: menuIcon.certificate },
+        { href: "/system/sertifikat", label: "Syahadah & Sertifikat", icon: menuIcon.certificate },
       ];
     case "admin":
       return [
@@ -33,14 +31,13 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
         { href: "/admin/pendaftaran", label: "Admisi & Pendaftaran", icon: menuIcon.team },
         { href: "/admin/peserta", label: "Peserta & Akademik", icon: menuIcon.user },
         { href: "/admin/program", label: "Program", icon: menuIcon.book },
-        { href: "/admin/sertifikat", label: "Template Syahadah", icon: menuIcon.certificate },
-        { href: "/admin/sertifikat/kelayakan", label: "Cek Kelayakan", icon: menuIcon.certificate },
-        { href: "/admin/sertifikat/antrean", label: "Antrean Penerbitan", icon: menuIcon.certificate },
+        { href: "/admin/keuangan", label: "Keuangan & Akuntansi", icon: menuIcon.finance },
+        { href: "/admin/sertifikat", label: "Syahadah & Sertifikat", icon: menuIcon.certificate },
       ];
     case "finance":
       return [
         { href: "/admin", label: "Dashboard", icon: menuIcon.dashboard },
-        { href: "/admin/keuangan", label: "Keuangan", icon: menuIcon.finance },
+        { href: "/admin/keuangan", label: "Keuangan & Akuntansi", icon: menuIcon.finance },
       ];
     case "helpdesk":
       return [
@@ -78,6 +75,7 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
         { href: "/learner", label: "Dashboard", icon: menuIcon.dashboard },
         { href: "/learner/program-saya", label: "Program Saya", icon: menuIcon.book },
         { href: "/learner/cek-status", label: "Cek Pendaftaran", icon: menuIcon.team },
+        { href: "/learner/keuangan", label: "Keuangan", icon: menuIcon.finance },
         { href: "/learner/profil", label: "Profil Saya", icon: menuIcon.user },
         { href: "/learner/bantuan", label: "Bantuan", icon: menuIcon.team },
       ];

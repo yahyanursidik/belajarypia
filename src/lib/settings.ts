@@ -5,6 +5,10 @@ export type SystemSettings = {
   id: string;
   institution_name: string;
   institution_profile: string | null;
+  app_sidebar_title?: string | null;
+  app_sidebar_subtitle?: string | null;
+  system_header_title?: string | null;
+  system_header_subtitle?: string | null;
   logo_url: string | null;
   login_logo_url: string | null;
   favicon_url: string | null;
@@ -25,6 +29,10 @@ export const emptySettings: SystemSettings = {
   id: "",
   institution_name: "YPIA",
   institution_profile: null,
+  app_sidebar_title: "YPIA",
+  app_sidebar_subtitle: "Portal Pembelajaran",
+  system_header_title: "Pusat Kendali Sistem",
+  system_header_subtitle: "Tata Kelola & Pemantauan LMS",
   logo_url: null,
   login_logo_url: null,
   favicon_url: null,

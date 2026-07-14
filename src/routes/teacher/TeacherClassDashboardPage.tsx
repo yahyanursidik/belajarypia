@@ -75,7 +75,9 @@ export function TeacherClassDashboardPage() {
             </div>
             <h3 className="font-semibold text-lg text-slate-900">Daftar Peserta</h3>
             <p className="text-sm text-slate-500">Kelola dan lihat perkembangan murid di kelas ini.</p>
-            <Button variant="outline" className="w-full mt-4" disabled>Segera Hadir</Button>
+            <Button asChild variant="outline" className="w-full mt-4">
+              <Link to={`/teacher/kelas/program/${classData.programs?.id}/peserta`}>Buka Peserta</Link>
+            </Button>
           </CardContent>
         </Card>
 
@@ -86,7 +88,9 @@ export function TeacherClassDashboardPage() {
             </div>
             <h3 className="font-semibold text-lg text-slate-900">Penilaian</h3>
             <p className="text-sm text-slate-500">Berikan nilai untuk tugas, kuis, atau setoran.</p>
-            <Button variant="outline" className="w-full mt-4" disabled>Segera Hadir</Button>
+            <Button asChild variant="outline" className="w-full mt-4">
+              <Link to="/teacher/review">Buka Review</Link>
+            </Button>
           </CardContent>
         </Card>
 
@@ -97,7 +101,9 @@ export function TeacherClassDashboardPage() {
             </div>
             <h3 className="font-semibold text-lg text-slate-900">Jadwal & Presensi</h3>
             <p className="text-sm text-slate-500">Kelola jadwal pertemuan (halaqah) dan absensi.</p>
-            <Button variant="outline" className="w-full mt-4" disabled>Segera Hadir</Button>
+            <Button asChild variant="outline" className="w-full mt-4">
+              <Link to={`/teacher/kelas/program/${classData.programs?.id}/angkatan-kelas`}>Kelola Kelas</Link>
+            </Button>
           </CardContent>
         </Card>
       </div>

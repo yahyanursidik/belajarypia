@@ -58,6 +58,17 @@ const getInitials = (name: string) => {
   return name.split(" ").map(n => n[0]).join("").substring(0, 2).toUpperCase();
 };
 
+const getCategoryLabel = (category: string) => {
+  const labels: Record<string, string> = {
+    technical_issue: "Kendala Teknis",
+    academic: "Akademik",
+    billing: "Pembayaran, Donasi & Keuangan",
+    account: "Akun",
+    other: "Lainnya",
+  };
+  return labels[category] ?? category.replace("_", " ");
+};
+
 export function SystemHelpdeskPage() {
   const { user } = useAuthSession();
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -284,7 +295,7 @@ export function SystemHelpdeskPage() {
                   >
                     <option value="all">Semua Kategori</option>
                     <option value="technical_issue">Kendala Teknis</option>
-                    <option value="billing">Pembayaran</option>
+                    <option value="billing">Pembayaran, Donasi & Keuangan</option>
                     <option value="account">Akun</option>
                     <option value="other">Lainnya</option>
                   </select>
@@ -402,7 +413,7 @@ export function SystemHelpdeskPage() {
                   <Badge variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20 border-transparent shadow-none">{selectedTicket.ticket_number}</Badge>
                   <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider bg-muted/50 px-2 py-0.5 rounded-md flex items-center gap-1.5">
                     <Tag className="w-3 h-3" />
-                    {selectedTicket.category.replace('_', ' ')}
+                    {getCategoryLabel(selectedTicket.category)}
                   </span>
                   <span className="text-xs text-muted-foreground flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5 opacity-70" /> 

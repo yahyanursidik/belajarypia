@@ -1,265 +1,717 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
 import { Link } from "react-router-dom";
-import { format } from "date-fns";
-import { 
-  Server, ShieldCheck, Users, Activity, Building, Database, 
-  ArrowRight, BookOpen, Users as UsersIcon, FileText, BadgeDollarSign, 
-  FileCheck, ShieldAlert, GraduationCap, BarChart3
+import {
+  Activity,
+  AlertCircle,
+  ArrowRight,
+  BadgeDollarSign,
+  BellRing,
+  BookOpen,
+  Building2,
+  CheckCircle2,
+  ClipboardList,
+  Database,
+  FileCheck,
+  FileText,
+  GraduationCap,
+  HelpCircle,
+  KeyRound,
+  LayoutDashboard,
+  Megaphone,
+  RefreshCw,
+  Server,
+  Settings,
+  ShieldAlert,
+  ShieldCheck,
+  Trophy,
+  UserCog,
+  Users,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { supabase } from "../../lib/supabase";
+import { useSystemSettings } from "../../lib/useSystemSettings";
+import { cn } from "../../lib/utils";
+
+type DashboardMetrics = {
+  users: number;
+  programs: number;
+  activePrograms: number;
+  draftPrograms: number;
+  participants: number;
+  units: number;
+  applicants: number;
+  activeForms: number;
+  failedCertificateBatches: number;
+  openTickets: number;
+};
+
+type AuditLogRow = {
+  id: string;
+  user_id: string | null;
+  action: string | null;
+  entity_type: string | null;
+  created_at: string | null;
+};
+
+type ProfileLite = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+};
+
+type AuditLogItem = AuditLogRow & {
+  actorName: string;
+};
+
+type IconType = ComponentType<{ className?: string }>;
+
+type ModuleLink = {
+  label: string;
+  href: string;
+};
+
+type ModuleCard = {
+  title: string;
+  description: string;
+  href: string;
+  icon: IconType;
+  tone: string;
+  links: ModuleLink[];
+};
+
+const initialMetrics: DashboardMetrics = {
+  users: 0,
+  programs: 0,
+  activePrograms: 0,
+  draftPrograms: 0,
+  participants: 0,
+  units: 0,
+  applicants: 0,
+  activeForms: 0,
+  failedCertificateBatches: 0,
+  openTickets: 0,
+};
+
+function countFrom(response: { count: number | null }): number {
+  return response.count ?? 0;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return "Terjadi kendala saat memuat data beranda system.";
+}
+
+function formatDateTime(value: string | null): string {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function buildErrorSummary(errors: Array<unknown>): string | null {
+  const message = errors
+    .map((error) => {
+      if (!error || typeof error !== "object" || !("message" in error)) return null;
+      return String((error as { message?: string }).message ?? "");
+    })
+    .filter(Boolean)
+    .at(0);
+
+  return message ? `Sebagian data belum berhasil dimuat: ${message}` : null;
+}
 
 export function SuperAdminDashboardPage() {
-  const [recentLogs, setRecentLogs] = useState<any[]>([]);
-  const [metrics, setMetrics] = useState({ users: 0, programs: 0, participants: 0, units: 0 });
+  const { settings } = useSystemSettings();
+  const dashboardTitle = settings?.system_header_title || "Pusat Kendali Sistem";
+  const [metrics, setMetrics] = useState<DashboardMetrics>(initialMetrics);
+  const [recentLogs, setRecentLogs] = useState<AuditLogItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const [logsRes, usersRes, programsRes, participantsRes, unitsRes] = await Promise.all([
-          supabase.from("audit_logs").select("*, profiles(full_name)").order("created_at", { ascending: false }).limit(5),
-          supabase.from("profiles").select("id", { count: "exact", head: true }),
-          supabase.from("programs").select("id", { count: "exact", head: true }),
-          supabase.from("participants").select("id", { count: "exact", head: true }),
-          supabase.from("units").select("id", { count: "exact", head: true }),
-        ]);
+  const loadDashboardData = useCallback(async (silent = false) => {
+    if (silent) setIsRefreshing(true);
+    else setIsLoading(true);
+    setErrorMessage(null);
 
-        if (!logsRes.error && logsRes.data) setRecentLogs(logsRes.data);
-        setMetrics({
-          users: usersRes.count ?? 0,
-          programs: programsRes.count ?? 0,
-          participants: participantsRes.count ?? 0,
-          units: unitsRes.count ?? 0,
-        });
-      } catch (err) {
-        console.error("Failed to fetch dashboard data", err);
-      }
+    try {
+      const [
+        usersRes,
+        programsRes,
+        activeProgramsRes,
+        draftProgramsRes,
+        participantsRes,
+        unitsRes,
+        applicantsRes,
+        activeFormsRes,
+        failedCertificateBatchesRes,
+        openTicketsRes,
+        logsRes,
+      ] = await Promise.all([
+        supabase.from("profiles").select("id", { count: "exact", head: true }),
+        supabase.from("programs").select("id", { count: "exact", head: true }),
+        supabase.from("programs").select("id", { count: "exact", head: true }).eq("status", "active"),
+        supabase.from("programs").select("id", { count: "exact", head: true }).eq("status", "draft"),
+        supabase.from("participants").select("id", { count: "exact", head: true }),
+        supabase.from("units").select("id", { count: "exact", head: true }),
+        supabase.from("applicants").select("id", { count: "exact", head: true }),
+        supabase.from("registration_forms").select("id", { count: "exact", head: true }).eq("is_active", true),
+        supabase.from("certificate_issuance_batches").select("id", { count: "exact", head: true }).eq("status", "failed"),
+        supabase.from("helpdesk_tickets").select("id", { count: "exact", head: true }).in("status", ["open", "in_progress"]),
+        supabase
+          .from("audit_logs")
+          .select("id,user_id,action,entity_type,created_at")
+          .order("created_at", { ascending: false })
+          .limit(6),
+      ]);
+
+      const possibleErrors = [
+        usersRes.error,
+        programsRes.error,
+        activeProgramsRes.error,
+        draftProgramsRes.error,
+        participantsRes.error,
+        unitsRes.error,
+        applicantsRes.error,
+        activeFormsRes.error,
+        failedCertificateBatchesRes.error,
+        openTicketsRes.error,
+        logsRes.error,
+      ];
+      setErrorMessage(buildErrorSummary(possibleErrors));
+
+      setMetrics({
+        users: countFrom(usersRes),
+        programs: countFrom(programsRes),
+        activePrograms: countFrom(activeProgramsRes),
+        draftPrograms: countFrom(draftProgramsRes),
+        participants: countFrom(participantsRes),
+        units: countFrom(unitsRes),
+        applicants: countFrom(applicantsRes),
+        activeForms: countFrom(activeFormsRes),
+        failedCertificateBatches: countFrom(failedCertificateBatchesRes),
+        openTickets: countFrom(openTicketsRes),
+      });
+
+      const rawLogs = (logsRes.data ?? []) as AuditLogRow[];
+      const userIds = Array.from(new Set(rawLogs.map((log) => log.user_id).filter((id): id is string => Boolean(id))));
+      const profilesRes = userIds.length
+        ? await supabase.from("profiles").select("id,full_name,email").in("id", userIds)
+        : { data: [] as ProfileLite[], error: null };
+
+      if (profilesRes.error) setErrorMessage(buildErrorSummary([profilesRes.error]));
+
+      const profileMap = new Map(
+        ((profilesRes.data ?? []) as ProfileLite[]).map((profile) => [
+          profile.id,
+          profile.full_name || profile.email || "Pengguna",
+        ]),
+      );
+
+      setRecentLogs(
+        rawLogs.map((log) => ({
+          ...log,
+          actorName: log.user_id ? profileMap.get(log.user_id) ?? "Pengguna" : "Sistem",
+        })),
+      );
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
     }
-    fetchData();
   }, []);
 
-  const shortcuts = [
-    { to: "/system/pendaftaran", icon: FileText, label: "Pendaftaran", desc: "Kelola calon peserta" },
-    { to: "/system/peserta", icon: UsersIcon, label: "Data Peserta", desc: "Direktori profil" },
-    { to: "/system/program", icon: BookOpen, label: "Program", desc: "Katalog & kurikulum" },
-    { to: "/system/keuangan", icon: BadgeDollarSign, label: "Keuangan", desc: "Transaksi & tagihan" },
-    { to: "/system/audit", icon: ShieldAlert, label: "Audit Log", desc: "Riwayat aktivitas" },
-    { to: "/system/pengaturan", icon: FileCheck, label: "Pengaturan", desc: "Konfigurasi sistem" },
+  useEffect(() => {
+    void loadDashboardData();
+  }, [loadDashboardData]);
+
+  const priorityItems = useMemo(
+    () => [
+      {
+        label: "Form pendaftaran aktif",
+        value: metrics.activeForms,
+        description: "Pastikan jadwal buka/tutup dan link undangan tetap relevan.",
+        href: "/system/pendaftaran",
+        icon: ClipboardList,
+        tone: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      },
+      {
+        label: "Program draft",
+        value: metrics.draftPrograms,
+        description: "Lengkapi detail, silabus, kurikulum, kelas, bank soal, dan kelulusan.",
+        href: "/system/program",
+        icon: BookOpen,
+        tone: "bg-amber-50 text-amber-700 border-amber-200",
+      },
+      {
+        label: "Tiket layanan terbuka",
+        value: metrics.openTickets,
+        description: "Tindak lanjuti kendala peserta, pengajar, dan admin unit.",
+        href: "/system/helpdesk",
+        icon: HelpCircle,
+        tone: "bg-sky-50 text-sky-700 border-sky-200",
+      },
+      {
+        label: "Batch sertifikat gagal",
+        value: metrics.failedCertificateBatches,
+        description: "Periksa antrean penerbitan syahadah dan jalankan ulang bila perlu.",
+        href: "/system/sertifikat/antrean",
+        icon: FileCheck,
+        tone: "bg-rose-50 text-rose-700 border-rose-200",
+      },
+    ],
+    [metrics.activeForms, metrics.draftPrograms, metrics.failedCertificateBatches, metrics.openTickets],
+  );
+
+  const moduleGroups = useMemo(
+    () => [
+      {
+        title: "Operasional Akademik",
+        description: "Kelola alur belajar dari admisi sampai kelulusan.",
+        modules: [
+          {
+            title: "Admisi & Pendaftaran",
+            description: "Form, jadwal pendaftaran, undangan grup, dan data pendaftar.",
+            href: "/system/pendaftaran",
+            icon: ClipboardList,
+            tone: "bg-emerald-50 text-emerald-700",
+            links: [
+              { label: "Form & Undangan", href: "/system/pendaftaran" },
+              { label: "Pendaftar", href: "/system/pendaftaran?tab=pendaftar" },
+              { label: "Workflow", href: "/system/pendaftaran?tab=workflow" },
+            ],
+          },
+          {
+            title: "Peserta & Akademik",
+            description: "Direktori peserta, detail profil, transkrip, dan progres belajar.",
+            href: "/system/peserta",
+            icon: Users,
+            tone: "bg-teal-50 text-teal-700",
+            links: [
+              { label: "Direktori", href: "/system/peserta" },
+              { label: "Konfigurasi Transkrip", href: "/system/peserta?tab=transkrip" },
+              { label: "Detail Peserta", href: "/system/peserta" },
+            ],
+          },
+          {
+            title: "Program",
+            description: "Detail program, silabus, kurikulum, kelas, bank soal, dan kelulusan.",
+            href: "/system/program",
+            icon: GraduationCap,
+            tone: "bg-indigo-50 text-indigo-700",
+            links: [
+              { label: "Katalog", href: "/system/program" },
+              { label: "Kurikulum", href: "/system/program" },
+              { label: "Bank Soal", href: "/system/program" },
+            ],
+          },
+          {
+            title: "Syahadah & Sertifikat",
+            description: "Template, cek kelayakan, antrean penerbitan, dan audit output.",
+            href: "/system/sertifikat",
+            icon: Trophy,
+            tone: "bg-amber-50 text-amber-700",
+            links: [
+              { label: "Template", href: "/system/sertifikat" },
+              { label: "Cek Kelayakan", href: "/system/sertifikat/kelayakan" },
+              { label: "Antrean", href: "/system/sertifikat/antrean" },
+            ],
+          },
+        ] satisfies ModuleCard[],
+      },
+      {
+        title: "Komunikasi & Layanan",
+        description: "Publikasi informasi, pembayaran, dan dukungan pengguna.",
+        modules: [
+          {
+            title: "Pengumuman",
+            description: "Broadcast informasi ke role, program, dan kanal peserta.",
+            href: "/system/pengumuman",
+            icon: Megaphone,
+            tone: "bg-cyan-50 text-cyan-700",
+            links: [
+              { label: "Semua Pengumuman", href: "/system/pengumuman" },
+              { label: "Buat Baru", href: "/system/pengumuman" },
+            ],
+          },
+          {
+            title: "Keuangan & Akuntansi",
+            description: "Pantau transaksi, infaq, donasi, wakaf, kanal pembayaran, reminder donatur, dan jurnal akuntansi.",
+            href: "/system/keuangan",
+            icon: BadgeDollarSign,
+            tone: "bg-lime-50 text-lime-700",
+            links: [
+              { label: "Ringkasan", href: "/system/keuangan" },
+              { label: "Transaksi", href: "/system/keuangan?tab=transactions" },
+              { label: "Donatur Rutin", href: "/system/keuangan?tab=recurring" },
+              { label: "Akuntansi", href: "/system/keuangan?tab=accounting" },
+            ],
+          },
+          {
+            title: "Helpdesk",
+            description: "Triage tiket, eskalasi kendala, dan pantau SLA layanan.",
+            href: "/system/helpdesk",
+            icon: HelpCircle,
+            tone: "bg-sky-50 text-sky-700",
+            links: [
+              { label: "Tiket Aktif", href: "/system/helpdesk" },
+              { label: "Riwayat", href: "/system/helpdesk" },
+            ],
+          },
+        ] satisfies ModuleCard[],
+      },
+      {
+        title: "Tata Kelola Sistem",
+        description: "Akses, konfigurasi global, dan jejak aktivitas kritis.",
+        modules: [
+          {
+            title: "Akses & Pengguna",
+            description: "Role, akun admin, pengajar, peserta, dan kebijakan akses.",
+            href: "/system/pengguna",
+            icon: UserCog,
+            tone: "bg-violet-50 text-violet-700",
+            links: [
+              { label: "Pengguna", href: "/system/pengguna" },
+              { label: "Role", href: "/system/pengguna" },
+            ],
+          },
+          {
+            title: "Audit Sistem",
+            description: "Telusuri aktivitas, perubahan data, dan kejadian penting.",
+            href: "/system/audit",
+            icon: ShieldAlert,
+            tone: "bg-rose-50 text-rose-700",
+            links: [
+              { label: "Log Aktivitas", href: "/system/audit" },
+              { label: "Filter Risiko", href: "/system/audit" },
+            ],
+          },
+          {
+            title: "Pengaturan Global",
+            description: "Konfigurasi identitas, fitur, portal, dan aturan LMS.",
+            href: "/system/pengaturan",
+            icon: Settings,
+            tone: "bg-slate-100 text-slate-700",
+            links: [
+              { label: "Konfigurasi", href: "/system/pengaturan" },
+              { label: "Portal", href: "/system/pengaturan" },
+            ],
+          },
+        ] satisfies ModuleCard[],
+      },
+    ],
+    [],
+  );
+
+  const metricCards = [
+    {
+      label: "Pengguna",
+      value: metrics.users.toLocaleString("id-ID"),
+      description: "Akun lintas role",
+      icon: Users,
+      href: "/system/pengguna",
+    },
+    {
+      label: "Program",
+      value: metrics.programs.toLocaleString("id-ID"),
+      description: `${metrics.activePrograms} aktif, ${metrics.draftPrograms} draft`,
+      icon: GraduationCap,
+      href: "/system/program",
+    },
+    {
+      label: "Peserta",
+      value: metrics.participants.toLocaleString("id-ID"),
+      description: "Profil akademik",
+      icon: BookOpen,
+      href: "/system/peserta",
+    },
+    {
+      label: "Pendaftar",
+      value: metrics.applicants.toLocaleString("id-ID"),
+      description: `${metrics.activeForms} form aktif`,
+      icon: FileText,
+      href: "/system/pendaftaran",
+    },
+    {
+      label: "Unit",
+      value: metrics.units.toLocaleString("id-ID"),
+      description: "Unit operasional",
+      icon: Building2,
+      href: "/system/pengaturan",
+    },
   ];
 
   return (
     <div className="page-stack space-y-6 pb-12">
-      {/* Hero Banner — uses page-hero for dynamic theme */}
       <section className="page-hero">
-        <Badge variant="secondary" className="mb-4 bg-white/20 text-white border-white/30 backdrop-blur-sm shadow-sm">
-          SUPER ADMIN PANEL
-        </Badge>
-        <div className="flex flex-col md:flex-row md:items-center gap-6">
-          <div className="hidden md:flex h-20 w-20 rounded-2xl bg-white/10 backdrop-blur-xl items-center justify-center border border-white/20 shadow-inner">
-            <Server className="h-10 w-10 text-white drop-shadow-md" />
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="hidden h-16 w-16 items-center justify-center rounded-2xl border border-white/20 bg-white/10 shadow-inner backdrop-blur-xl sm:flex">
+              <LayoutDashboard className="h-8 w-8 text-white" />
+            </div>
+            <div>
+              <Badge variant="secondary" className="mb-3 border-white/30 bg-white/20 text-white shadow-sm backdrop-blur-sm">
+                BERANDA SYSTEM
+              </Badge>
+              <h1 className="text-3xl font-bold tracking-tight text-white">{dashboardTitle}</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/80">
+                Pantau prioritas operasional, masuk ke modul penting, dan cek kesehatan LMS dari satu halaman kerja.
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-white/70 text-sm font-medium mb-1 tracking-wide uppercase">Assalamu'alaikum 👋</p>
-            <h2 className="text-white text-3xl font-bold tracking-tight">Pusat Kendali Sistem YPIA</h2>
-            <p className="text-white/80 max-w-xl text-sm leading-relaxed mt-1">
-              Pantau kesehatan server, kelola hak akses global, dan navigasikan seluruh modul operasional LMS dari satu tempat.
-            </p>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              className="bg-white !text-primary hover:bg-white/90"
+              onClick={() => void loadDashboardData(true)}
+              disabled={isRefreshing}
+            >
+              <RefreshCw className={cn("mr-2 h-4 w-4", isRefreshing && "animate-spin")} />
+              Muat Ulang
+            </Button>
+            <Button asChild variant="secondary" className="bg-white/15 text-white hover:bg-white/25">
+              <Link to="/system/program">
+                <GraduationCap className="mr-2 h-4 w-4" />
+                Kelola Program
+              </Link>
+            </Button>
+            <Button asChild variant="secondary" className="bg-white/15 text-white hover:bg-white/25">
+              <Link to="/system/pengaturan">
+                <Settings className="mr-2 h-4 w-4" />
+                Pengaturan
+              </Link>
+            </Button>
           </div>
         </div>
       </section>
 
-      {/* Live Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="rounded-xl border-border/40 shadow-sm hover:shadow-md hover:border-primary/20 transition-all group bg-primary/5 relative overflow-hidden">
-          <div className="absolute right-0 top-0 w-20 h-20 bg-primary/10 rounded-bl-full -mr-3 -mt-3 transition-transform group-hover:scale-110"></div>
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-primary">Total Pengguna</CardTitle>
-            <Users className="h-4 w-4 text-primary group-hover:scale-110 transition-transform" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight text-foreground">{metrics.users.toLocaleString('id-ID')}</div>
-            <p className="text-xs text-muted-foreground mt-1">Akun terdaftar</p>
-          </CardContent>
-        </Card>
-        
-        <Card className="rounded-xl border-border/40 shadow-sm hover:shadow-md hover:border-primary/20 transition-all group">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Program</CardTitle>
-            <GraduationCap className="h-4 w-4 text-primary/70 group-hover:scale-110 transition-transform" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight text-foreground">{metrics.programs}</div>
-            <p className="text-xs text-muted-foreground mt-1">Program aktif</p>
-          </CardContent>
-        </Card>
+      {errorMessage && (
+        <Alert className="border-amber-200 bg-amber-50 text-amber-900">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Data belum lengkap</AlertTitle>
+          <AlertDescription>{errorMessage}</AlertDescription>
+        </Alert>
+      )}
 
-        <Card className="rounded-xl border-border/40 shadow-sm hover:shadow-md hover:border-primary/20 transition-all group">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Peserta</CardTitle>
-            <BarChart3 className="h-4 w-4 text-primary/70 group-hover:scale-110 transition-transform" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight text-foreground">{metrics.participants.toLocaleString('id-ID')}</div>
-            <p className="text-xs text-muted-foreground mt-1">Peserta terdaftar</p>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-xl border-border/40 shadow-sm hover:shadow-md hover:border-primary/20 transition-all group">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Unit Aktif</CardTitle>
-            <Building className="h-4 w-4 text-primary/70 group-hover:scale-110 transition-transform" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight text-foreground">{metrics.units}</div>
-            <p className="text-xs text-muted-foreground mt-1">Unit operasional</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Main Content Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Left Column: Quick Actions */}
-        <div className="lg:col-span-2 space-y-6">
-          <Card className="border-border/40 shadow-sm overflow-hidden">
-            <CardHeader className="bg-slate-50/50 border-b border-border/40">
-              <CardTitle>Pintasan Operasional</CardTitle>
-              <CardDescription>Akses cepat ke modul-modul administratif utama.</CardDescription>
-            </CardHeader>
-            <CardContent className="p-6">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                {shortcuts.map((s) => (
-                  <Link key={s.to} to={s.to}>
-                    <Button variant="outline" className="w-full h-28 flex flex-col gap-2 items-center justify-center hover:bg-primary/5 hover:border-primary/30 hover:text-primary transition-all group/btn">
-                      <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center group-hover/btn:bg-primary/20 transition-colors">
-                        <s.icon className="h-5 w-5 text-primary" />
-                      </div>
-                      <div className="text-center">
-                        <span className="text-sm font-semibold block">{s.label}</span>
-                        <span className="text-[10px] text-muted-foreground">{s.desc}</span>
-                      </div>
-                    </Button>
-                  </Link>
-                ))}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        {metricCards.map((metric) => (
+          <Card key={metric.label} className="border-border/60 shadow-sm">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">{metric.label}</p>
+                  <p className="mt-2 text-3xl font-bold tracking-tight text-foreground">
+                    {isLoading ? "-" : metric.value}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">{metric.description}</p>
+                </div>
+                <div className="rounded-xl bg-primary/10 p-2 text-primary">
+                  <metric.icon className="h-5 w-5" />
+                </div>
               </div>
+              <Button asChild variant="ghost" className="mt-4 h-auto p-0 text-primary hover:bg-transparent hover:text-primary">
+                <Link to={metric.href}>
+                  Buka modul
+                  <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                </Link>
+              </Button>
             </CardContent>
           </Card>
-          
-          <Card className="border-border/40 shadow-sm">
-            <CardHeader className="bg-slate-50/50 border-b border-border/40">
-              <CardTitle className="flex items-center gap-2">
-                <Database className="h-5 w-5 text-primary" />
-                Infrastruktur
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-6">
-              <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center p-4 rounded-xl border border-border/50 bg-slate-50/50 hover:bg-slate-50 transition-colors gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-white rounded-lg border shadow-sm mt-0.5">
-                      <Server className="h-4 w-4 text-slate-600" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-sm">Supabase Database</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Koneksi stabil, sinkronisasi otomatis berjalan normal</p>
-                    </div>
-                  </div>
-                  <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100 w-fit shrink-0">Aktif & Sinkron</Badge>
+        ))}
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-6">
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader>
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <CardTitle>Menu & Workflow System</CardTitle>
+                  <CardDescription>
+                    Sub menu dikelompokkan berdasarkan pekerjaan agar admin bisa bergerak tanpa menumpuk halaman.
+                  </CardDescription>
                 </div>
-                
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center p-4 rounded-xl border border-border/50 bg-slate-50/50 hover:bg-slate-50 transition-colors gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-white rounded-lg border shadow-sm mt-0.5">
-                      <Database className="h-4 w-4 text-slate-600" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-sm">Penyimpanan Storage (Contabo S3)</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Digunakan untuk menyimpan video & materi modul</p>
-                    </div>
-                  </div>
-                  <Badge variant="outline" className="text-slate-600 w-fit shrink-0">Aman</Badge>
-                </div>
+                <Button asChild variant="outline">
+                  <Link to="/system/audit">
+                    <ShieldCheck className="mr-2 h-4 w-4" />
+                    Audit
+                  </Link>
+                </Button>
               </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {moduleGroups.map((group) => (
+                <section key={group.title} className="space-y-3">
+                  <div>
+                    <h2 className="text-base font-semibold text-foreground">{group.title}</h2>
+                    <p className="text-sm text-muted-foreground">{group.description}</p>
+                  </div>
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {group.modules.map((module) => (
+                      <Card key={module.title} className="border-border/60 shadow-none">
+                        <CardContent className="p-4">
+                          <div className="flex items-start gap-3">
+                            <div className={cn("rounded-xl p-2", module.tone)}>
+                              <module.icon className="h-5 w-5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h3 className="font-semibold leading-tight text-foreground">{module.title}</h3>
+                                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{module.description}</p>
+                                </div>
+                                <Button asChild size="icon" variant="ghost" className="h-8 w-8 shrink-0">
+                                  <Link to={module.href} aria-label={`Buka ${module.title}`}>
+                                    <ArrowRight className="h-4 w-4" />
+                                  </Link>
+                                </Button>
+                              </div>
+                              <div className="mt-4 flex flex-wrap gap-2">
+                                {module.links.map((link) => (
+                                  <Button key={`${module.title}-${link.label}`} asChild size="sm" variant="outline" className="h-8">
+                                    <Link to={link.href}>{link.label}</Link>
+                                  </Button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </section>
+              ))}
             </CardContent>
           </Card>
         </div>
 
-        {/* Right Column: Audit Logs & Security */}
-        <div className="space-y-6">
-          <Card className="border-border/40 shadow-sm h-full flex flex-col">
-            <CardHeader className="pb-3 border-b border-border/30 bg-slate-50/50">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                  <ShieldAlert className="h-4 w-4 text-primary" />
-                  Aktivitas Terbaru
-                </CardTitle>
-                <Link to="/system/audit">
-                  <Button variant="ghost" size="icon" className="h-6 w-6">
-                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                  </Button>
+        <aside className="space-y-6">
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BellRing className="h-5 w-5 text-primary" />
+                Prioritas Hari Ini
+              </CardTitle>
+              <CardDescription>Hal yang paling perlu dipantau dari beranda system.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {priorityItems.map((item) => (
+                <Link key={item.label} to={item.href} className="block rounded-lg border border-border/60 p-3 transition-colors hover:bg-muted/50">
+                  <div className="flex items-start gap-3">
+                    <div className={cn("rounded-lg border p-2", item.tone)}>
+                      <item.icon className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-medium text-foreground">{item.label}</p>
+                        <Badge variant="secondary">{isLoading ? "-" : item.value.toLocaleString("id-ID")}</Badge>
+                      </div>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{item.description}</p>
+                    </div>
+                  </div>
                 </Link>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Database className="h-5 w-5 text-primary" />
+                Kesehatan System
+              </CardTitle>
+              <CardDescription>Ringkasan status layanan inti LMS.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {[
+                { label: "Database", desc: "Query dashboard berhasil dijalankan.", icon: Database, ok: !errorMessage },
+                { label: "Audit Log", desc: "Aktivitas terakhir dapat ditelusuri.", icon: ShieldCheck, ok: !errorMessage },
+                { label: "Portal", desc: "Navigasi utama siap digunakan.", icon: Server, ok: true },
+                { label: "Akses", desc: "Menu super admin tersedia.", icon: KeyRound, ok: true },
+              ].map((item) => (
+                <div key={item.label} className="flex items-start justify-between gap-3 rounded-lg border border-border/60 p-3">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-lg bg-muted p-2 text-muted-foreground">
+                      <item.icon className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{item.label}</p>
+                      <p className="text-xs text-muted-foreground">{item.desc}</p>
+                    </div>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={item.ok ? "border-emerald-200 text-emerald-700" : "border-amber-200 text-amber-700"}
+                  >
+                    {item.ok ? "Normal" : "Perlu cek"}
+                  </Badge>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-primary" />
+                    Aktivitas Terbaru
+                  </CardTitle>
+                  <CardDescription>Log terbaru tanpa join schema cache.</CardDescription>
+                </div>
+                <Button asChild size="icon" variant="ghost">
+                  <Link to="/system/audit" aria-label="Buka audit sistem">
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
               </div>
             </CardHeader>
-            <CardContent className="pt-5 flex-1">
-              {recentLogs.length > 0 ? (
-                <div className="space-y-5">
-                  {recentLogs.map((log, i) => (
-                    <div key={log.id} className="flex gap-3 relative">
-                      {/* Vertical line connector */}
-                      {i !== recentLogs.length - 1 && (
-                        <div className="absolute left-[11px] top-[24px] bottom-[-20px] w-px bg-border" />
-                      )}
-                      
-                      <div className="relative z-10 mt-1 rounded-full bg-primary/10 border border-primary/20 p-1 h-6 w-6 flex items-center justify-center shrink-0">
-                        <Activity className="h-3 w-3 text-primary" />
+            <CardContent>
+              {recentLogs.length ? (
+                <div className="space-y-4">
+                  {recentLogs.map((log) => (
+                    <div key={log.id} className="flex gap-3">
+                      <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <Activity className="h-3.5 w-3.5" />
                       </div>
-                      
-                      <div className="flex-1 pb-1">
-                        <div className="flex justify-between items-start">
-                          <p className="text-sm font-medium leading-none text-foreground/90">
-                            {log.profiles?.full_name || "Sistem"}
-                          </p>
-                          <span className="text-[10px] text-muted-foreground whitespace-nowrap ml-2">
-                            {format(new Date(log.created_at), "HH:mm")}
-                          </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="truncate text-sm font-medium text-foreground">{log.actorName}</p>
+                          <span className="shrink-0 text-xs text-muted-foreground">{formatDateTime(log.created_at)}</span>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1.5 flex items-center flex-wrap gap-1.5">
-                          <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 font-mono bg-slate-50 text-slate-600">
-                            {log.action}
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                          <Badge variant="outline" className="h-5 px-1.5 font-mono text-[10px]">
+                            {log.action ?? "activity"}
                           </Badge>
-                          pada <span className="capitalize text-foreground/80 font-medium">{log.entity_type}</span>
-                        </p>
+                          <span>{log.entity_type ?? "system"}</span>
+                        </div>
                       </div>
                     </div>
                   ))}
-                  
-                  <div className="pt-2">
-                    <Link to="/system/audit" className="block w-full">
-                      <Button variant="outline" className="w-full text-xs h-9 hover:bg-primary/5 hover:text-primary transition-colors">
-                        Lihat Semua Audit Sistem
-                      </Button>
-                    </Link>
-                  </div>
+                  <Button asChild variant="outline" className="w-full">
+                    <Link to="/system/audit">Lihat Semua Aktivitas</Link>
+                  </Button>
                 </div>
               ) : (
-                <div className="h-full flex flex-col items-center justify-center text-center space-y-3 py-12 opacity-70">
-                  <div className="p-4 bg-primary/10 rounded-full">
-                    <ShieldCheck className="h-8 w-8 text-primary/60" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-700">Sistem Aman Terkendali</p>
-                    <p className="text-xs text-muted-foreground mt-1 max-w-[200px] mx-auto">
-                      Belum ada pergerakan atau aktivitas mencurigakan yang terekam.
-                    </p>
-                  </div>
+                <div className="rounded-lg border border-dashed border-border p-6 text-center">
+                  <CheckCircle2 className="mx-auto h-8 w-8 text-primary/70" />
+                  <p className="mt-2 text-sm font-medium text-foreground">Belum ada aktivitas terbaru</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Data akan muncul setelah ada aksi admin di system.</p>
                 </div>
               )}
             </CardContent>
           </Card>
-        </div>
-
+        </aside>
       </div>
     </div>
   );
