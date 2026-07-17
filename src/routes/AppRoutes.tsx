@@ -420,7 +420,6 @@ export function AppRoutes() {
           <Route index element={<TeacherPortalHomePage />} />
           <Route path="kelas" element={<TeacherClassPage />} />
           <Route path="kelas/program/:programId" element={<ProgramBuilderPage />} />
-          <Route path="kelas/program/:programId/silabus" element={<ProgramBuilderPage />} />
           <Route path="kelas/program/:programId/:section" element={<ProgramBuilderPage />} />
           <Route path="kelas/:classId" element={<TeacherClassDashboardPage />} />
           <Route path="silabus" element={<TeacherSyllabusPage />} />
@@ -446,7 +445,7 @@ export function AppRoutes() {
           <Route index element={<LearnerDashboardPage />} />
           <Route path="program-saya" element={<LearnerProgramLessonsPage />} />
           <Route path="program/:programId" element={<LearnerProgramDetailPage />} />
-          <Route path="program/:programId/silabus" element={<LearnerProgramDetailPage />} />
+          <Route path="program/:programId/:section" element={<LearnerProgramDetailPage />} />
           <Route path="lesson/:lessonId" element={<LearnerLessonPage />} />
           <Route path="lesson/:lessonId/quiz" element={<LearnerQuizPage />} />
           <Route path="transkrip/:enrollmentId" element={<LearnerTranscriptPage />} />
