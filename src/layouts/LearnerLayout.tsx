@@ -1,14 +1,18 @@
 import type { PropsWithChildren } from "react";
+import { useAuthSession } from "../app/providers/authSessionContext";
 import { getNavigationForRole } from "../lib/navigation";
 import { ShellLayout } from "./ShellLayout";
 
 export function LearnerLayout({ children }: PropsWithChildren) {
+  const { primaryRole } = useAuthSession();
+  const learnerRole = primaryRole === "guardian" ? "guardian" : "participant";
+
   return (
     <ShellLayout
       title="Portal Peserta"
       subtitle="Akses belajar yang sederhana, terarah, dan ramah mobile"
       variant="learner"
-      menuItems={getNavigationForRole("participant")}
+      menuItems={getNavigationForRole(learnerRole)}
     >
       {children}
     </ShellLayout>

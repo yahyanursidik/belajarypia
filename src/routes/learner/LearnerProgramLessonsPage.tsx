@@ -7,7 +7,7 @@ import { FullPageLoader } from "@/components/ui/full-page-loader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuthSession } from "../../app/providers/authSessionContext";
-import { BookOpen, LayoutGrid, List, Search } from "lucide-react";
+import { BookOpen, FileText, LayoutGrid, List, Search } from "lucide-react";
 import type { Enrollment, Participant } from "../../lib/enrollment";
 import { supabase } from "../../lib/supabase";
 
@@ -185,10 +185,14 @@ export function LearnerProgramLessonsPage() {
                     ID: {program.enrollment.enrollment_number}
                   </p>
                 </CardHeader>
-                <CardContent className="flex-1 flex flex-col justify-center p-6 pt-6">
-                  <Button size="lg" className="w-full mt-auto" onClick={() => navigate(`/learner/program/${program.id}`)}>
-                    <BookOpen className="h-5 w-5 mr-2" />
-                    Masuk ke Kelas
+                <CardContent className="flex flex-1 flex-col justify-center gap-2 p-5">
+                  <Button className="w-full" onClick={() => navigate(`/learner/program/${program.id}`)}>
+                    <BookOpen className="h-4 w-4" />
+                    Materi & Progres
+                  </Button>
+                  <Button variant="outline" className="w-full" onClick={() => navigate(`/learner/program/${program.id}/silabus`)}>
+                    <FileText className="h-4 w-4" />
+                    Lihat Silabus
                   </Button>
                 </CardContent>
               </Card>
@@ -205,12 +209,17 @@ export function LearnerProgramLessonsPage() {
                     {program.name}
                   </h3>
                 </div>
-                <Button size="sm" className="shrink-0 hidden sm:flex" onClick={() => navigate(`/learner/program/${program.id}`)}>
-                  <BookOpen className="h-4 w-4 mr-2" />
-                  Masuk
-                </Button>
+                <div className="hidden shrink-0 gap-2 sm:flex">
+                  <Button variant="outline" size="sm" onClick={() => navigate(`/learner/program/${program.id}/silabus`)}>
+                    <FileText className="h-4 w-4" /> Silabus
+                  </Button>
+                  <Button size="sm" onClick={() => navigate(`/learner/program/${program.id}`)}>
+                    <BookOpen className="h-4 w-4" /> Materi
+                  </Button>
+                </div>
                 <Button size="icon" className="shrink-0 sm:hidden h-9 w-9" onClick={() => navigate(`/learner/program/${program.id}`)}>
                   <BookOpen className="h-4 w-4" />
+                  <span className="sr-only">Buka materi program</span>
                 </Button>
               </Card>
             )

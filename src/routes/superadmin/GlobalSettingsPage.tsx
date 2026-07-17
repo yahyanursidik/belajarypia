@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   Building2,
@@ -24,7 +25,6 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
-  Settings,
   ShieldCheck,
   Upload,
 } from "lucide-react";
@@ -101,9 +101,19 @@ function payloadSignature(formData: Partial<SystemSettings>) {
 }
 
 export function GlobalSettingsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [formData, setFormData] = useState<Partial<SystemSettings>>(emptySettings);
-  const [activeTab, setActiveTab] = useState<SettingsTab>("overview");
+  const activeTabParam = searchParams.get("tab");
+  const activeTab = settingsTabs.some((tab) => tab.id === activeTabParam) ? activeTabParam as SettingsTab : "overview";
+  const changeTab = (tab: SettingsTab) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (tab === "overview") next.delete("tab");
+      else next.set("tab", tab);
+      return next;
+    }, { replace: true });
+  };
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCreatingSettings, setIsCreatingSettings] = useState(false);
@@ -121,6 +131,15 @@ export function GlobalSettingsPage() {
     if (!settings) return false;
     return draftPayload !== savedPayload;
   }, [draftPayload, savedPayload, settings]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [hasUnsavedChanges]);
 
   const completionItems = [
     { label: "Nama lembaga", completed: Boolean(formData.institution_name?.trim()), icon: Building2 },
@@ -232,7 +251,7 @@ export function GlobalSettingsPage() {
       const normalized = { ...emptySettings, ...(data as SystemSettings), portal_themes: DEFAULT_THEMES };
       setSettings(normalized);
       setFormData(normalized);
-      setActiveTab("identity");
+      changeTab("identity");
       showFeedback({ type: "success", message: "Konfigurasi awal berhasil dibuat. Lengkapi identitas lembaga berikutnya." });
     }
 
@@ -439,42 +458,38 @@ export function GlobalSettingsPage() {
   }
 
   return (
-    <div className="page-stack max-w-6xl">
-      <div className="page-hero">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-primary/80">System Settings</p>
-          <h1 className="mt-2 flex items-center gap-3 text-3xl font-bold">
-            <Settings className="h-8 w-8 text-primary" />
-            Pengaturan Global
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Kelola identitas lembaga, aset visual, tema portal, dan konsistensi pengalaman pengguna dari satu pusat
-            konfigurasi.
+    <div className="page-stack">
+      <section className="flex flex-col gap-4 border-b border-border pb-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-bold uppercase text-primary">Konfigurasi Sistem</p>
+          <h1 className="mt-1 text-2xl font-bold text-foreground">Pengaturan Global</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Kelola identitas lembaga, teks antarmuka, aset visual, dan tema seluruh portal LMS.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex items-center gap-3">
+          <span className={`inline-flex min-h-9 items-center gap-2 rounded-md border px-3 text-xs font-semibold ${
+            hasUnsavedChanges
+              ? "border-amber-200 bg-amber-50 text-amber-800"
+              : "border-emerald-200 bg-emerald-50 text-emerald-800"
+          }`}>
+            {hasUnsavedChanges ? <AlertCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+            {hasUnsavedChanges ? "Perubahan belum disimpan" : "Konfigurasi tersimpan"}
+          </span>
           <Button
             type="button"
             variant="outline"
+            size="sm"
             onClick={() => void loadSettings()}
-            disabled={isLoading || isSubmitting}
-            className="border-white/35 bg-white/15 !text-white hover:bg-white/25 hover:!text-white"
+            disabled={isLoading || isSubmitting || hasUnsavedChanges}
+            className="h-9 w-9 p-0"
+            aria-label="Muat ulang konfigurasi"
+            title={hasUnsavedChanges ? "Simpan atau batalkan perubahan sebelum memuat ulang" : "Muat ulang konfigurasi"}
           >
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Muat Ulang
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleResetDraft}
-            disabled={!hasUnsavedChanges || isSubmitting}
-            className="border-white/35 bg-white/15 !text-white hover:bg-white/25 hover:!text-white disabled:!text-white"
-          >
-            <RotateCcw className="mr-2 h-4 w-4" />
-            Reset Draft
+            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
           </Button>
         </div>
-      </div>
+      </section>
 
       {feedback && (
         <Alert
@@ -491,77 +506,65 @@ export function GlobalSettingsPage() {
         </Alert>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="space-y-3">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Menu Pengaturan</CardTitle>
-              <CardDescription>Pilih area konfigurasi.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {settingsTabs.map((tab) => {
-                const Icon = tab.icon;
-                const isActive = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`w-full rounded-lg border p-3 text-left transition ${
-                      isActive ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-background hover:bg-muted"
-                    }`}
-                  >
-                    <span className="flex items-center gap-2 text-sm font-semibold">
-                      <Icon className="h-4 w-4" />
-                      {tab.label}
-                    </span>
-                    <span className={`mt-1 block text-xs ${isActive ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
-                      {tab.description}
-                    </span>
-                  </button>
-                );
-              })}
-            </CardContent>
-          </Card>
+      <nav className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4" aria-label="Bagian pengaturan global">
+        {settingsTabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => changeTab(tab.id)}
+              aria-current={isActive ? "page" : undefined}
+              className={`flex min-h-16 items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors ${
+                isActive
+                  ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                  : "border-border bg-background text-foreground hover:border-primary/40 hover:bg-muted/60"
+              }`}
+            >
+              <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-md ${
+                isActive ? "bg-white/15" : "bg-primary/10 text-primary"
+              }`}>
+                <Icon className="h-4 w-4" />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold">{tab.label}</span>
+                <span className={`mt-0.5 block truncate text-xs ${isActive ? "text-primary-foreground/75" : "text-muted-foreground"}`}>
+                  {tab.description}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </nav>
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Kelengkapan</CardTitle>
-              <CardDescription>{completionCount} dari {completionItems.length} item terisi.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="h-2 rounded-full bg-muted">
-                <div className="h-2 rounded-full bg-primary transition-all" style={{ width: `${completionPercent}%` }} />
-              </div>
-              <div className="space-y-2">
-                {completionItems.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <div key={item.label} className="flex items-center justify-between gap-2 text-xs">
-                      <span className="flex items-center gap-2 text-muted-foreground">
-                        <Icon className="h-3.5 w-3.5" />
-                        {item.label}
-                      </span>
-                      {item.completed ? (
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                      ) : (
-                        <AlertCircle className="h-4 w-4 text-amber-600" />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </aside>
+      <section className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-3 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
+            {completionPercent === 100 ? <CheckCircle2 className="h-5 w-5" /> : <Info className="h-5 w-5" />}
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-foreground">Kelengkapan konfigurasi {completionPercent}%</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {completionCount} dari {completionItems.length} komponen utama telah diisi.
+            </p>
+          </div>
+        </div>
+        <div className="h-2 w-full overflow-hidden rounded-full bg-muted sm:w-56" aria-label={`Kelengkapan ${completionPercent}%`}>
+          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${completionPercent}%` }} />
+        </div>
+      </section>
 
-        <form onSubmit={handleSave} className="min-w-0 space-y-6">
+      <form onSubmit={handleSave} className="min-w-0 space-y-6">
           {activeTab === "overview" && (
             <div className="grid gap-6">
               <div className="grid gap-4 md:grid-cols-3">
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Identitas</CardTitle>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Building2 className="h-4 w-4 text-primary" />
+                      Identitas
+                    </CardTitle>
                     <CardDescription>Nama, profil, dan kontak.</CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -571,7 +574,10 @@ export function GlobalSettingsPage() {
                 </Card>
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Branding</CardTitle>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <ImageIcon className="h-4 w-4 text-primary" />
+                      Branding
+                    </CardTitle>
                     <CardDescription>Logo utama, login, favicon.</CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -581,7 +587,10 @@ export function GlobalSettingsPage() {
                 </Card>
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Tema</CardTitle>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Palette className="h-4 w-4 text-primary" />
+                      Tema
+                    </CardTitle>
                     <CardDescription>Warna untuk tiap portal.</CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -600,10 +609,10 @@ export function GlobalSettingsPage() {
                   <CardDescription>Tampilan ringkas yang akan terlihat di area publik dan login.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
-                    <div className="rounded-xl border bg-muted/20 p-5">
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+                    <div className="min-w-0 rounded-lg border bg-muted/20 p-4">
                       <div className="flex items-start gap-4">
-                        <div className="flex h-16 w-16 items-center justify-center rounded-xl border bg-background p-2">
+                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border bg-background p-2">
                           {formData.logo_url ? (
                             <img src={formData.logo_url} alt="Logo lembaga" className="max-h-full max-w-full object-contain" />
                           ) : (
@@ -611,37 +620,50 @@ export function GlobalSettingsPage() {
                           )}
                         </div>
                         <div className="min-w-0">
-                          <h2 className="text-xl font-bold">{formData.institution_name || emptySettings.institution_name}</h2>
-                          <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">
+                          <h2 className="break-words text-lg font-bold text-foreground">{formData.institution_name || emptySettings.institution_name}</h2>
+                          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
                             {formData.institution_profile || "Profil singkat lembaga belum diisi."}
                           </p>
                         </div>
                       </div>
-                      <div className="mt-5 grid gap-3 text-sm md:grid-cols-3">
-                        <span className="flex items-center gap-2 text-muted-foreground">
-                          <Mail className="h-4 w-4" />
-                          {formData.contact_email || "Email belum diisi"}
-                        </span>
-                        <span className="flex items-center gap-2 text-muted-foreground">
-                          <Phone className="h-4 w-4" />
-                          {formData.contact_phone || "Nomor belum diisi"}
-                        </span>
-                        <span className="flex items-center gap-2 text-muted-foreground">
-                          <MapPin className="h-4 w-4" />
-                          {formData.address || "Alamat belum diisi"}
-                        </span>
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                        {[
+                          { label: "Email", value: formData.contact_email || "Belum diisi", icon: Mail },
+                          { label: "Telepon / WhatsApp", value: formData.contact_phone || "Belum diisi", icon: Phone },
+                          { label: "Alamat", value: formData.address || "Belum diisi", icon: MapPin },
+                        ].map((contact) => {
+                          const ContactIcon = contact.icon;
+                          return (
+                            <div key={contact.label} className="flex min-w-0 items-start gap-2 rounded-md border border-border/70 bg-background px-3 py-2.5">
+                              <ContactIcon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                              <span className="min-w-0">
+                                <span className="block text-[10px] font-bold uppercase text-muted-foreground">{contact.label}</span>
+                                <span className="mt-0.5 block break-words text-xs leading-relaxed text-foreground">{contact.value}</span>
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
 
-                    <div className="rounded-xl border bg-background p-4">
-                      <p className="mb-3 text-sm font-semibold">Tema Aktif</p>
+                    <div className="rounded-lg border bg-background p-3">
+                      <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                        <Palette className="h-4 w-4 text-primary" />
+                        Tema Aktif
+                      </p>
                       <div className="space-y-2">
-                        {(Object.keys(portalLabels) as Array<keyof PortalThemeConfig>).map((portal) => (
-                          <div key={portal} className="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2 text-sm">
-                            <span>{portalLabels[portal].label}</span>
-                            <span className="font-medium">{getThemeName(mergedThemes[portal])}</span>
-                          </div>
-                        ))}
+                        {(Object.keys(portalLabels) as Array<keyof PortalThemeConfig>).map((portal) => {
+                          const theme = THEME_OPTIONS.find((option) => option.id === mergedThemes[portal]);
+                          return (
+                            <div key={portal} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md bg-muted/45 px-2.5 py-2 text-xs">
+                              <span className="truncate text-muted-foreground">{portalLabels[portal].label}</span>
+                              <span className="flex items-center gap-2 font-semibold text-foreground">
+                                <span className={`h-3 w-3 shrink-0 rounded-sm ${theme?.color ?? "bg-primary"}`} />
+                                <span className="max-w-24 truncate">{getThemeName(mergedThemes[portal])}</span>
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
@@ -752,7 +774,10 @@ export function GlobalSettingsPage() {
                 <CardContent className="space-y-4">
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold">Email Kontak</label>
+                      <label className="flex items-center gap-2 text-sm font-semibold">
+                        <Mail className="h-4 w-4 text-primary" />
+                        Email Kontak
+                      </label>
                       <Input
                         type="email"
                         value={formData.contact_email || ""}
@@ -761,7 +786,10 @@ export function GlobalSettingsPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold">Nomor Telepon / WhatsApp</label>
+                      <label className="flex items-center gap-2 text-sm font-semibold">
+                        <Phone className="h-4 w-4 text-primary" />
+                        Nomor Telepon / WhatsApp
+                      </label>
                       <Input
                         value={formData.contact_phone || ""}
                         onChange={(event) => setFormData((prev) => ({ ...prev, contact_phone: event.target.value }))}
@@ -770,7 +798,10 @@ export function GlobalSettingsPage() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold">Alamat Lengkap</label>
+                    <label className="flex items-center gap-2 text-sm font-semibold">
+                      <MapPin className="h-4 w-4 text-primary" />
+                      Alamat Lengkap
+                    </label>
                     <textarea
                       className="field-control min-h-[90px]"
                       value={formData.address || ""}
@@ -869,34 +900,49 @@ export function GlobalSettingsPage() {
             </div>
           )}
 
-          <div className="sticky bottom-6 z-40 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-background/95 p-3 shadow-xl backdrop-blur">
-            <p className="text-sm text-muted-foreground">
-              {hasUnsavedChanges ? "Ada perubahan yang belum disimpan." : "Semua perubahan sudah tersimpan."}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleResetDraft}
-                disabled={!hasUnsavedChanges || isSubmitting}
-                className="!text-foreground"
-              >
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Reset
-              </Button>
+          <div className="sticky bottom-3 z-40 flex flex-col gap-3 rounded-lg border border-border bg-background/95 p-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-2">
+              {hasUnsavedChanges ? (
+                <AlertCircle className="h-5 w-5 shrink-0 text-amber-600" />
+              ) : (
+                <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+              )}
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-foreground">
+                  {hasUnsavedChanges ? "Perubahan belum disimpan" : "Konfigurasi sudah tersimpan"}
+                </span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {hasUnsavedChanges ? "Simpan agar perubahan diterapkan ke seluruh portal." : "Ubah salah satu nilai untuk mengaktifkan tombol simpan."}
+                </span>
+              </span>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              {hasUnsavedChanges ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleResetDraft}
+                  disabled={isSubmitting}
+                  className="!text-foreground"
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Batalkan
+                </Button>
+              ) : null}
               <Button
                 disabled={isSubmitting || !hasUnsavedChanges}
                 type="submit"
-                size="lg"
-                className="bg-primary !text-white shadow-lg hover:bg-primary/90 disabled:!text-white"
+                className={hasUnsavedChanges
+                  ? "bg-primary !text-primary-foreground hover:bg-primary/90 disabled:!text-primary-foreground"
+                  : "border border-emerald-200 bg-emerald-50 !text-emerald-700 disabled:cursor-default disabled:opacity-100"
+                }
               >
-                <Save className="mr-2 h-5 w-5" />
-                {isSubmitting ? "Menyimpan..." : "Simpan Pengaturan"}
+                {hasUnsavedChanges ? <Save className="mr-2 h-4 w-4" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                {isSubmitting ? "Menyimpan..." : hasUnsavedChanges ? "Simpan Perubahan" : "Sudah Tersimpan"}
               </Button>
             </div>
           </div>
         </form>
-      </div>
     </div>
   );
 }

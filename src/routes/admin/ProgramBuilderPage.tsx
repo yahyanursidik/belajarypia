@@ -8,16 +8,15 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  ClipboardList,
   Edit2,
   ExternalLink,
   FileText,
+  Info,
   Layers,
   Library,
   PlayCircle,
   Plus,
   Presentation,
-  Settings,
   Trash2,
   Trophy,
   Upload,
@@ -47,6 +46,9 @@ import { inferFileCategory, requestSignedUploadUrl } from "../../lib/documents";
 import type { Program } from "../../lib/organization";
 import { supabase } from "../../lib/supabase";
 import { ProgramParticipants } from "./ProgramParticipants";
+import { ProgramDetailSection } from "./ProgramDetailSection";
+import { ProgramGraduationSection } from "./ProgramGraduationSection";
+import { ProgramSyllabusSection } from "./ProgramSyllabusSection";
 
 /* ───────────────── Empty Form Templates ───────────────── */
 
@@ -198,12 +200,7 @@ export function ProgramBuilderPage() {
   const [importPreview, setImportPreview] = useState<any[]>([]);
   const [selectedBankItems, setSelectedBankItems] = useState<Record<string, boolean>>({});
 
-  const [syllabusForm, setSyllabusForm] = useState("");
-  const [isSavingSyllabus, setIsSavingSyllabus] = useState(false);
-
   const [bankForm, setBankForm] = useState({ name: "", description: "" });
-  const [gradingRubricForm, setGradingRubricForm] = useState<any[]>([]);
-  const [isSavingRubric, setIsSavingRubric] = useState(false);
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
   const [materialLinks, setMaterialLinks] = useState<MaterialLinkDraft[]>([createMaterialLinkDraft()]);
   const [selectedUploadFiles, setSelectedUploadFiles] = useState<File[]>([]);
@@ -374,14 +371,6 @@ export function ProgramBuilderPage() {
 
     if (prog) {
       setProgram(prog as unknown as Program);
-      setSyllabusForm((prog as unknown as Program).syllabus || "");
-      setGradingRubricForm((prog as unknown as Program).grading_rubric || [
-        { min_score: 90, max_score: 100, label: "Mumtaz (Istimewa)" },
-        { min_score: 80, max_score: 89.9, label: "Jayyid Jiddan (Baik Sekali)" },
-        { min_score: 65, max_score: 79.9, label: "Jayyid (Baik)" },
-        { min_score: 40, max_score: 64.9, label: "Maqbul (Cukup)" },
-        { min_score: 0, max_score: 39.9, label: "Rasib (Gagal/Mengulang)" }
-      ]);
     }
     setBatches((batchRows ?? []) as AcademicBatch[]);
     setClasses((classRows ?? []) as AcademicClass[]);
@@ -868,40 +857,6 @@ export function ProgramBuilderPage() {
 
   /* ───────────────── Render ───────────────── */
 
-  const handleSaveSyllabus = async () => {
-    if (!program) return;
-    setIsSavingSyllabus(true);
-    const { error } = await supabase
-      .from("programs")
-      .update({ syllabus: syllabusForm })
-      .eq("id", program.id);
-      
-    if (error) {
-      setErrorMessage("Gagal menyimpan silabus");
-    } else {
-      setMessage("Silabus berhasil disimpan");
-      setProgram(prev => prev ? { ...prev, syllabus: syllabusForm } : prev);
-    }
-    setIsSavingSyllabus(false);
-  };
-
-  const handleSaveRubric = async () => {
-    if (!program) return;
-    setIsSavingRubric(true);
-    const { error } = await supabase
-      .from("programs")
-      .update({ grading_rubric: gradingRubricForm })
-      .eq("id", program.id);
-      
-    if (error) {
-      setErrorMessage("Gagal menyimpan rubrik kelulusan");
-    } else {
-      setMessage("Rubrik kelulusan berhasil disimpan");
-      setProgram(prev => prev ? { ...prev, grading_rubric: gradingRubricForm } : prev);
-    }
-    setIsSavingRubric(false);
-  };
-
   if (isLoading && !program) {
     return (
       <div className="page-stack flex items-center justify-center min-h-[40vh]">
@@ -930,15 +885,15 @@ export function ProgramBuilderPage() {
 
   const statusMeta = programStatusMeta[program.status] ?? programStatusMeta.draft;
   const programTabs: ProgramTabItem[] = [
-    { key: "info", label: "Detail Program", desc: "Profil, status, dan statistik", icon: Settings },
-    { key: "silabus", label: "Silabus", desc: "Narasi program untuk publik", icon: ClipboardList },
+    { key: "info", label: "Detail Program", desc: "Profil, publikasi, dan kesiapan", icon: Info },
+    { key: "silabus", label: "Silabus", desc: "Dokumen akademik dan capaian", icon: FileText },
     { key: "kurikulum", label: "Kurikulum", desc: "Tahapan, modul, dan materi", icon: Layers, count: programSummary.lessons },
     ...(program.curriculum_model === "angkatan"
       ? [{ key: "angkatan" as const, label: "Angkatan & Kelas", desc: "Batch, kelas, dan halaqah", icon: CalendarDays, count: programSummary.classes + programSummary.halaqahs }]
       : []),
     { key: "bank_soal", label: "Bank Soal", desc: "Repositori soal program", icon: Library, count: programSummary.questionBanks },
     { key: "peserta", label: "Peserta", desc: "Direktori peserta program", icon: Users },
-    { key: "kelulusan", label: "Kelulusan", desc: "Rubrik dan predikat akhir", icon: Trophy },
+    { key: "kelulusan", label: "Kelulusan", desc: "Kriteria, antrean, dan penetapan hasil", icon: Trophy },
   ];
   const activeProgramTab = programTabs.find((tab) => tab.key === activeTab) ?? programTabs[0];
   const sectionStats = [
@@ -1003,34 +958,6 @@ export function ProgramBuilderPage() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Workflow Kesiapan Program</CardTitle>
-          <p className="text-xs text-muted-foreground">Checklist minimum sebelum program dibuka untuk peserta.</p>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-5">
-          <ProgramChecklistItem done={Boolean(program.syllabus?.trim())} label="Silabus tersedia" />
-          <ProgramChecklistItem done={programSummary.modules > 0} label="Modul dibuat" />
-          <ProgramChecklistItem done={programSummary.lessons > 0} label="Materi tersedia" />
-          <ProgramChecklistItem done={program.curriculum_model !== "angkatan" || programSummary.classes > 0} label="Kelas siap" />
-          <ProgramChecklistItem done={program.grading_rubric ? program.grading_rubric.length > 0 : false} label="Rubrik kelulusan" />
-        </CardContent>
-      </Card>
-
-      <div className="hidden">
-        <Button variant="ghost" className="h-10 w-10 p-0 rounded-full shrink-0" onClick={() => navigate(-1)}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className="min-w-0">
-
-          <div className="flex items-center gap-2 mb-1">
-            <Badge className="shrink-0">{program.code}</Badge>
-            <Badge variant={program.status === "active" ? "default" : "secondary"} className="capitalize shrink-0">{program.status}</Badge>
-          </div>
-          <h2 className="text-2xl font-bold truncate">{program.name}</h2>
-        </div>
-      </div>
-
       <div className="grid gap-6 lg:grid-cols-[270px_minmax(0,1fr)] lg:items-start">
         <aside className="lg:sticky lg:top-24">
           <Card className="overflow-hidden">
@@ -1081,13 +1008,13 @@ export function ProgramBuilderPage() {
         <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-4 fade-in duration-300 max-w-sm">
           {message && (
             <div className="bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2 mb-2">
-              <span className="text-lg">✅</span>
+              <CheckCircle2 className="h-5 w-5 shrink-0" />
               <span className="text-sm font-medium">{message}</span>
             </div>
           )}
           {errorMessage && (
             <div className="bg-red-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2">
-              <span className="text-lg">❌</span>
+              <AlertCircle className="h-5 w-5 shrink-0" />
               <span className="text-sm font-medium">{errorMessage}</span>
             </div>
           )}
@@ -1096,59 +1023,12 @@ export function ProgramBuilderPage() {
 
       {/* ═══════════════ TAB: INFO ═══════════════ */}
       {activeTab === "info" && (
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card>
-            <CardHeader><CardTitle>Profil Program</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Nama Program</p>
-                <p className="text-base font-semibold">{program.name}</p>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Deskripsi</p>
-                <p className="text-base">{program.description || "Belum ada deskripsi"}</p>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Mode Belajar</p>
-                  <p className="text-base capitalize">{program.delivery_mode}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Sistem Pembelajaran</p>
-                  <p className="text-base font-semibold text-primary capitalize">{program.curriculum_model === "mandiri" ? "Mandiri (Evergreen)" : "Terjadwal (Angkatan)"}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>Ringkasan Statistik</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-4">
-                {program.curriculum_model === "angkatan" && (
-                  <>
-                    <div className="p-4 rounded-xl bg-muted/50 border">
-                      <p className="text-sm font-medium text-muted-foreground">Total Angkatan</p>
-                      <p className="text-3xl font-bold mt-1">{batches.length}</p>
-                    </div>
-                    <div className="p-4 rounded-xl bg-muted/50 border">
-                      <p className="text-sm font-medium text-muted-foreground">Total Kelas</p>
-                      <p className="text-3xl font-bold mt-1">{classes.length}</p>
-                    </div>
-                  </>
-                )}
-                <div className="p-4 rounded-xl bg-muted/50 border">
-                  <p className="text-sm font-medium text-muted-foreground">Mata Pelajaran</p>
-                  <p className="text-3xl font-bold mt-1">{modules.length}</p>
-                </div>
-                <div className="p-4 rounded-xl bg-muted/50 border">
-                  <p className="text-sm font-medium text-muted-foreground">Total Materi</p>
-                  <p className="text-3xl font-bold mt-1">{lessons.length}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <ProgramDetailSection
+          program={program}
+          summary={programSummary}
+          onNavigate={(target) => navigateToProgramTab(target)}
+          onProgramUpdated={setProgram}
+        />
       )}
 
       {/* ═══════════════ TAB: ANGKATAN ═══════════════ */}
@@ -2334,119 +2214,12 @@ export function ProgramBuilderPage() {
 
       {/* ═══════════════ TAB: SILABUS ═══════════════ */}
       {activeTab === "silabus" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Silabus Program</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Tuliskan silabus, materi pembelajaran, tata tertib, atau deskripsi panjang terkait program ini. 
-              Peserta dapat membaca informasi ini sebelum dan sesudah mereka mendaftar di Katalog Program.
-            </p>
-            <textarea
-              className="w-full min-h-[400px] p-4 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-primary font-mono resize-y"
-              placeholder="Tuliskan isi silabus di sini..."
-              value={syllabusForm}
-              onChange={(e) => setSyllabusForm(e.target.value)}
-            />
-            <div className="flex justify-end">
-              <Button onClick={handleSaveSyllabus} disabled={isSavingSyllabus}>
-                {isSavingSyllabus ? "Menyimpan..." : "Simpan Silabus"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <ProgramSyllabusSection program={program} onProgramUpdated={setProgram} />
       )}
 
       {/* ═══════════════ TAB: KELULUSAN ═══════════════ */}
       {activeTab === "kelulusan" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Rubrik Kelulusan & Predikat</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              Atur rentang nilai dan predikat kelulusan (contoh: Mumtaz, Jayyid) untuk laporan akademik akhir peserta.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="bg-muted/30 border rounded-lg p-4">
-              <div className="grid grid-cols-12 gap-4 font-semibold text-sm mb-3 px-2">
-                <div className="col-span-3">Minimal Nilai</div>
-                <div className="col-span-3">Maksimal Nilai</div>
-                <div className="col-span-5">Predikat / Label</div>
-                <div className="col-span-1"></div>
-              </div>
-              
-              <div className="space-y-3">
-                {gradingRubricForm.map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-4 items-center">
-                    <div className="col-span-3">
-                      <Input
-                        type="number"
-                        step="0.1"
-                        value={item.min_score}
-                        onChange={(e) => {
-                          const newForm = [...gradingRubricForm];
-                          newForm[idx].min_score = Number(e.target.value);
-                          setGradingRubricForm(newForm);
-                        }}
-                      />
-                    </div>
-                    <div className="col-span-3">
-                      <Input
-                        type="number"
-                        step="0.1"
-                        value={item.max_score}
-                        onChange={(e) => {
-                          const newForm = [...gradingRubricForm];
-                          newForm[idx].max_score = Number(e.target.value);
-                          setGradingRubricForm(newForm);
-                        }}
-                      />
-                    </div>
-                    <div className="col-span-5">
-                      <Input
-                        value={item.label}
-                        onChange={(e) => {
-                          const newForm = [...gradingRubricForm];
-                          newForm[idx].label = e.target.value;
-                          setGradingRubricForm(newForm);
-                        }}
-                      />
-                    </div>
-                    <div className="col-span-1 text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                        onClick={() => {
-                          const newForm = [...gradingRubricForm];
-                          newForm.splice(idx, 1);
-                          setGradingRubricForm(newForm);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <Button
-                variant="outline"
-                className="mt-4 w-full border-dashed"
-                onClick={() => setGradingRubricForm([...gradingRubricForm, { min_score: 0, max_score: 0, label: "" }])}
-              >
-                <Plus className="h-4 w-4 mr-2" /> Tambah Rentang Nilai
-              </Button>
-            </div>
-
-            <div className="flex justify-end pt-4">
-              <Button onClick={handleSaveRubric} disabled={isSavingRubric}>
-                {isSavingRubric ? "Menyimpan..." : "Simpan Rubrik"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <ProgramGraduationSection program={program} lessons={lessons} onProgramUpdated={setProgram} />
       )}
 
       {/* Modal Import Soal (Bulk Text) */}
@@ -2560,14 +2333,5 @@ function ProgramSectionHeader({ tab, stats }: { tab: ProgramTabItem; stats: Arra
         </div>
       </div>
     </section>
-  );
-}
-
-function ProgramChecklistItem({ done, label }: { done: boolean; label: string }) {
-  return (
-    <div className="flex min-h-12 items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
-      <span className="text-sm font-medium">{label}</span>
-      {done ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" /> : <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />}
-    </div>
   );
 }

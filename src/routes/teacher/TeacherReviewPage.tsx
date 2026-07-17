@@ -145,7 +145,6 @@ export function TeacherReviewPage() {
     const { data: programRows, error: programError } = await supabase
       .from("programs")
       .select("id, name, code")
-      .eq("teacher_user_id", user.id)
       .order("name");
 
     if (programError) {

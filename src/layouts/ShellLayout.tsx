@@ -1,4 +1,19 @@
-import { BookOpen, GraduationCap, Settings, User, Users, Bell, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import {
+  BookOpen,
+  ChevronDown,
+  ChevronRight,
+  GraduationCap,
+  LogOut,
+  Menu,
+  MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
+  Settings,
+  User,
+  Users,
+  X,
+} from "lucide-react";
 import type { ComponentType, PropsWithChildren } from "react";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -6,165 +21,397 @@ import { useAuthSession } from "../app/providers/authSessionContext";
 import { Button } from "../components/ui/button";
 import { FullPageLoader } from "../components/ui/full-page-loader";
 import { appName } from "../lib/constants";
+import type { AppNavItem } from "../lib/navigation";
 import { getThemeStyles } from "../lib/theme";
 import { useSystemSettings } from "../lib/useSystemSettings";
 import { cn } from "../lib/utils";
 
+type ShellVariant = "public" | "learner" | "teacher" | "admin" | "superadmin";
+
 type ShellLayoutProps = PropsWithChildren<{
   title: string;
   subtitle: string;
-  variant: "public" | "learner" | "teacher" | "admin" | "superadmin";
-  menuItems: Array<{
-    href: string;
-    label: string;
-    icon: ComponentType<{ className?: string }>;
-  }>;
+  variant: ShellVariant;
+  menuItems: AppNavItem[];
 }>;
 
-const iconByVariant = {
+type SidebarNavigationProps = {
+  collapsed?: boolean;
+  locationPath: string;
+  locationSearch: string;
+  menuItems: AppNavItem[];
+  onNavigate?: () => void;
+  storageKey: string;
+};
+
+const iconByVariant: Record<ShellVariant, ComponentType<{ className?: string }>> = {
   public: BookOpen,
   learner: GraduationCap,
   teacher: User,
   admin: Users,
   superadmin: Settings,
-} as const;
+};
+
+const homeByVariant: Record<ShellVariant, string> = {
+  public: "/",
+  learner: "/learner",
+  teacher: "/teacher",
+  admin: "/admin",
+  superadmin: "/system",
+};
 
 const ContentFallback = () => <FullPageLoader message="Memuat antarmuka..." />;
 
-export function ShellLayout({
-  children,
-  title,
-  subtitle,
-  variant,
+function readStoredList(key: string) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(key) ?? "[]");
+    return Array.isArray(stored) ? stored.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function isHrefActive(pathname: string, search: string, href: string, includeNested = true) {
+  const [targetPath, targetQuery = ""] = href.split("?");
+  const pathMatches = targetPath === "/"
+    ? pathname === targetPath
+    : pathname === targetPath || (includeNested && pathname.startsWith(`${targetPath}/`));
+
+  if (!pathMatches) return false;
+  if (!targetQuery) return true;
+
+  const currentParams = new URLSearchParams(search);
+  const targetParams = new URLSearchParams(targetQuery);
+  return Array.from(targetParams.entries()).every(([key, value]) => currentParams.get(key) === value);
+}
+
+function SidebarNavigation({
+  collapsed = false,
+  locationPath,
+  locationSearch,
   menuItems,
-}: ShellLayoutProps) {
+  onNavigate,
+  storageKey,
+}: SidebarNavigationProps) {
+  const [query, setQuery] = useState("");
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(
+    () => new Set(readStoredList(`${storageKey}-closed-groups`)),
+  );
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+
+  const activeItem = useMemo(
+    () => menuItems
+      .filter((item) => isHrefActive(locationPath, locationSearch, item.href))
+      .sort((first, second) => second.href.split("?")[0].length - first.href.split("?")[0].length)[0],
+    [locationPath, locationSearch, menuItems],
+  );
+
+  useEffect(() => {
+    localStorage.setItem(`${storageKey}-closed-groups`, JSON.stringify(Array.from(closedGroups)));
+  }, [closedGroups, storageKey]);
+
+  useEffect(() => {
+    if (!activeItem) return;
+    setClosedGroups((current) => {
+      if (!current.has(activeItem.group)) return current;
+      const next = new Set(current);
+      next.delete(activeItem.group);
+      return next;
+    });
+  }, [activeItem]);
+
+  const filteredItems = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return menuItems;
+
+    return menuItems.flatMap((item) => {
+      const itemText = [item.label, item.description, item.group, ...(item.keywords ?? [])]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      const matchingChildren = item.children?.filter((child) =>
+        [child.label, child.description].filter(Boolean).join(" ").toLowerCase().includes(normalizedQuery),
+      );
+
+      if (itemText.includes(normalizedQuery)) return [item];
+      if (matchingChildren?.length) return [{ ...item, children: matchingChildren }];
+      return [];
+    });
+  }, [menuItems, query]);
+
+  const groupedItems = useMemo(() => {
+    const groups = new Map<string, AppNavItem[]>();
+    filteredItems.forEach((item) => groups.set(item.group, [...(groups.get(item.group) ?? []), item]));
+    return Array.from(groups.entries());
+  }, [filteredItems]);
+
+  const toggleGroup = (group: string) => {
+    setClosedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+  };
+
+  const toggleItem = (href: string) => {
+    setExpandedItems((current) => {
+      const next = new Set(current);
+      if (next.has(href)) next.delete(href);
+      else next.add(href);
+      return next;
+    });
+  };
+
+  return (
+    <div className="app-shell__navigation-body">
+      {!collapsed && menuItems.length > 6 ? (
+        <label className="app-shell__menu-search">
+          <Search className="h-4 w-4" />
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Cari menu..."
+            aria-label="Cari menu navigasi"
+          />
+          {query ? (
+            <button type="button" onClick={() => setQuery("")} aria-label="Hapus pencarian">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </label>
+      ) : null}
+
+      <nav className="app-shell__menu" aria-label="Navigasi utama">
+        {groupedItems.map(([group, items]) => {
+          const hasActiveItem = items.some((item) => isHrefActive(locationPath, locationSearch, item.href));
+          const isGroupOpen = Boolean(query) || !closedGroups.has(group);
+
+          return (
+            <section key={group} className={cn("app-shell__menu-group", hasActiveItem && "has-active-item")}>
+              {!collapsed ? (
+                <button
+                  type="button"
+                  className="app-shell__menu-group-button"
+                  onClick={() => toggleGroup(group)}
+                  aria-expanded={isGroupOpen}
+                >
+                  <span>{group}</span>
+                  {isGroupOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                </button>
+              ) : null}
+
+              {(collapsed || isGroupOpen) ? (
+                <div className="app-shell__menu-group-items">
+                  {items.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = isHrefActive(locationPath, locationSearch, item.href);
+                    const hasChildren = Boolean(item.children?.length);
+                    const showChildren = !collapsed && hasChildren && (Boolean(query) || isActive || expandedItems.has(item.href));
+
+                    return (
+                      <div key={item.href} className="app-shell__menu-entry">
+                        <div className="app-shell__menu-row">
+                          <Link
+                            to={item.href}
+                            title={collapsed ? `${item.label}${item.description ? ` - ${item.description}` : ""}` : undefined}
+                            className={cn("app-shell__menu-item", isActive && "is-active")}
+                            onClick={onNavigate}
+                          >
+                            <Icon className="app-shell__menu-icon h-4 w-4" />
+                            <span className="app-shell__menu-copy">
+                              <span className="app-shell__menu-label">{item.label}</span>
+                              {item.description ? <span className="app-shell__menu-description">{item.description}</span> : null}
+                            </span>
+                          </Link>
+                          {!collapsed && hasChildren ? (
+                            <button
+                              type="button"
+                              className="app-shell__submenu-toggle"
+                              onClick={() => toggleItem(item.href)}
+                              aria-label={`${showChildren ? "Tutup" : "Buka"} submenu ${item.label}`}
+                              aria-expanded={showChildren}
+                            >
+                              {showChildren ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            </button>
+                          ) : null}
+                        </div>
+
+                        {showChildren ? (
+                          <div className="app-shell__submenu">
+                            {item.children?.map((child) => {
+                              const isChildActive = isHrefActive(locationPath, locationSearch, child.href, false);
+                              return (
+                                <Link
+                                  key={child.href}
+                                  to={child.href}
+                                  className={cn("app-shell__submenu-item", isChildActive && "is-active")}
+                                  onClick={onNavigate}
+                                >
+                                  <span className="app-shell__submenu-dot" />
+                                  <span className="min-w-0">
+                                    <span className="app-shell__submenu-label">{child.label}</span>
+                                    {child.description ? <span className="app-shell__submenu-description">{child.description}</span> : null}
+                                  </span>
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </section>
+          );
+        })}
+      </nav>
+
+      {!collapsed && query && filteredItems.length === 0 ? (
+        <div className="app-shell__menu-empty">
+          <Search className="h-5 w-5" />
+          <span>Menu tidak ditemukan</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function ShellLayout({ children, title, subtitle, variant, menuItems }: ShellLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, primaryRole, signOut } = useAuthSession();
   const { settings } = useSystemSettings();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("ypia-sidebar-collapsed") === "true");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem(`ypia-sidebar-collapsed-${variant}`) === "true",
+  );
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const BrandIcon = iconByVariant[variant];
   const displayName = profile?.full_name ?? profile?.email ?? "Pengguna";
-  const getMobileNavLabel = (label: string) =>
-    label
-      .replace("Program & Kelas", "Kelas")
-      .replace("Cek Pendaftaran", "Status")
-      .replace("Tugas & Review", "Review")
-      .replace("Program Saya", "Program")
-      .replace("Profil Saya", "Profil");
-  
-  // Get initials for avatar
+
   const initials = displayName
-    .split(' ')
-    .map(n => n[0])
+    .split(" ")
+    .map((name) => name[0])
     .slice(0, 2)
-    .join('')
+    .join("")
     .toUpperCase();
 
   const themeKey = settings?.portal_themes?.[variant === "superadmin" ? "admin" : variant];
   const themeStyles = getThemeStyles(themeKey);
   const sidebarTitle = settings?.app_sidebar_title || "YPIA";
   const sidebarSubtitle = settings?.app_sidebar_subtitle || "Portal Pembelajaran";
-  const activeMenuHref = useMemo(() => {
-    return menuItems
-      .filter((item) =>
-        item.href === "/"
-          ? location.pathname === item.href
-          : location.pathname === item.href || location.pathname.startsWith(`${item.href}/`),
-      )
-      .sort((first, second) => second.href.length - first.href.length)[0]?.href;
-  }, [location.pathname, menuItems]);
+  const mobilePrimaryItems = useMemo(() => {
+    const prioritizedItems = menuItems
+      .filter((item) => item.mobilePriority !== undefined)
+      .sort((first, second) => (first.mobilePriority ?? 99) - (second.mobilePriority ?? 99));
+    const candidates = prioritizedItems.length ? prioritizedItems : menuItems;
+    return candidates.length > 5 ? candidates.slice(0, 4) : candidates.slice(0, 5);
+  }, [menuItems]);
+  const hasMobileOverflow = menuItems.some((item) => !mobilePrimaryItems.includes(item));
+
+  const getMobileNavLabel = (label: string) => label
+    .replace("Program & Kelas", "Kelas")
+    .replace("Cek Pendaftaran", "Status")
+    .replace("Tugas & Review", "Review")
+    .replace("Program Saya", "Program")
+    .replace("Profil Saya", "Profil")
+    .replace("Keuangan & Akuntansi", "Keuangan");
 
   useEffect(() => {
     if (Object.keys(themeStyles).length === 0) return;
     const root = document.documentElement;
-    Object.entries(themeStyles).forEach(([key, value]) => {
-      root.style.setProperty(key, value as string);
-    });
-    
-    return () => {
-      Object.keys(themeStyles).forEach((key) => {
-        root.style.removeProperty(key);
-      });
-    };
+    Object.entries(themeStyles).forEach(([key, value]) => root.style.setProperty(key, value as string));
+    return () => Object.keys(themeStyles).forEach((key) => root.style.removeProperty(key));
   }, [themeStyles]);
 
   useEffect(() => {
-    localStorage.setItem("ypia-sidebar-collapsed", String(sidebarCollapsed));
-  }, [sidebarCollapsed]);
+    localStorage.setItem(`ypia-sidebar-collapsed-${variant}`, String(sidebarCollapsed));
+  }, [sidebarCollapsed, variant]);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileMenuOpen]);
 
   return (
     <div className={cn(`app-shell app-shell-${variant}`, sidebarCollapsed && "app-shell--sider-collapsed")}>
-      <aside className={cn("app-shell__sider print:hidden", (variant === "learner" || variant === "teacher") && "!hidden md:!flex")}>
+      <aside className="app-shell__sider print:hidden">
         <div className="app-shell__sidebar-top">
-        <Link to="/" className="app-shell__brand" aria-label={appName} title={sidebarTitle}>
-          <span className="app-shell__brand-icon">
-            <BrandIcon className="h-6 w-6 text-white" />
-          </span>
-          <span className="app-shell__brand-copy min-w-0">
-            <span className="app-shell__brand-title">{sidebarTitle}</span>
-            <span className="app-shell__brand-subtitle">{sidebarSubtitle}</span>
-          </span>
-        </Link>
-        <Button
-          type="button"
-          variant="ghost"
-          className="app-shell__collapse-button"
-          onClick={() => setSidebarCollapsed((current) => !current)}
-          aria-label={sidebarCollapsed ? "Perluas sidebar" : "Ciutkan sidebar"}
-          title={sidebarCollapsed ? "Perluas sidebar" : "Ciutkan sidebar"}
-        >
-          {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-        </Button>
+          <Link to={homeByVariant[variant]} className="app-shell__brand" aria-label={appName} title={sidebarTitle}>
+            <span className="app-shell__brand-icon"><BrandIcon className="h-6 w-6 text-white" /></span>
+            <span className="app-shell__brand-copy min-w-0">
+              <span className="app-shell__brand-title">{sidebarTitle}</span>
+              <span className="app-shell__brand-subtitle">{sidebarSubtitle}</span>
+            </span>
+          </Link>
+          <Button
+            type="button"
+            variant="ghost"
+            className="app-shell__collapse-button"
+            onClick={() => setSidebarCollapsed((current) => !current)}
+            aria-label={sidebarCollapsed ? "Perluas sidebar" : "Ciutkan sidebar"}
+            title={sidebarCollapsed ? "Perluas sidebar" : "Ciutkan sidebar"}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            {!sidebarCollapsed ? <span>Ciutkan sidebar</span> : null}
+          </Button>
         </div>
-        <nav className="app-shell__menu" aria-label="Navigasi utama">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = item.href === activeMenuHref;
 
-            return (
-              <Link
-                key={item.href}
-                to={item.href}
-                title={item.label}
-                className={cn("app-shell__menu-item", isActive && "is-active")}
-              >
-                <Icon className="h-4 w-4 opacity-80" />
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
+        <SidebarNavigation
+          collapsed={sidebarCollapsed}
+          locationPath={location.pathname}
+          locationSearch={location.search}
+          menuItems={menuItems}
+          storageKey={`ypia-nav-${variant}`}
+        />
       </aside>
+
       <div className="app-shell__main print:w-full print:m-0 print:p-0">
-        <header className={cn("app-shell__header print:hidden", (variant === "learner" || variant === "teacher") && "!hidden md:!flex")}>
-          <div>
-            <h1 className="app-shell__title">{title}</h1>
-            <p className="app-shell__subtitle">{subtitle}</p>
+        <header className="app-shell__header print:hidden">
+          <div className="app-shell__header-main">
+            <Button
+              type="button"
+              variant="outline"
+              className="app-shell__mobile-menu-button"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Buka menu navigasi"
+              title="Buka menu"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+            <div className="min-w-0">
+              <h1 className="app-shell__title">{title}</h1>
+              <p className="app-shell__subtitle">{subtitle}</p>
+            </div>
           </div>
+
           {primaryRole ? (
             <div className="app-shell__account">
-              <Button variant="ghost" className="h-10 w-10 rounded-full p-0 text-muted-foreground hover:text-foreground">
-                <Bell className="h-5 w-5" />
-              </Button>
-              <div className="h-8 w-[1px] bg-border mx-2"></div>
-              <Link 
-                to={variant === 'superadmin' ? '/system/profil' : variant === 'admin' ? '/admin/profil' : variant === 'teacher' ? '/teacher/profil' : '/learner/profil'}
-                className="flex items-center gap-3 hover:bg-slate-100/80 p-1 pr-3 -ml-1 rounded-full transition-all cursor-pointer"
-                title="Pengaturan Profil Saya"
+              <Link
+                to={variant === "superadmin" ? "/system/profil" : variant === "admin" ? "/admin/profil" : variant === "teacher" ? "/teacher/profil" : "/learner/profil"}
+                className="app-shell__profile-link"
+                title="Pengaturan profil saya"
               >
-                <div className="hidden md:block text-right">
-                  <p className="text-sm font-semibold">{displayName}</p>
-                  <p className="text-xs text-muted-foreground capitalize">{primaryRole.replace('_', ' ')}</p>
+                <div className="app-shell__profile-copy">
+                  <p>{displayName}</p>
+                  <span>{primaryRole.replaceAll("_", " ")}</span>
                 </div>
-                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold border border-primary/20 shadow-sm">
-                  {initials}
-                </div>
+                <div className="app-shell__avatar">{initials}</div>
               </Link>
               <Button
                 variant="outline"
                 size="sm"
-                className="ml-2 rounded-full border-border hover:bg-destructive hover:text-destructive-foreground hover:border-destructive transition-colors"
+                className="app-shell__logout-button"
                 onClick={async () => {
                   await signOut();
                   let loginPath = "/learner/login";
@@ -172,6 +419,7 @@ export function ShellLayout({
                   else if (variant === "teacher") loginPath = "/teacher/login";
                   navigate(loginPath, { replace: true });
                 }}
+                aria-label="Keluar"
                 title="Keluar"
               >
                 <LogOut className="h-4 w-4" />
@@ -179,55 +427,70 @@ export function ShellLayout({
             </div>
           ) : null}
         </header>
-        <main className="app-shell__content print:p-0 print:m-0 print:block">
-          <Suspense fallback={<ContentFallback />}>
-            {children}
-          </Suspense>
+
+        <main id="main-content" className="app-shell__content print:p-0 print:m-0 print:block">
+          <Suspense fallback={<ContentFallback />}>{children}</Suspense>
         </main>
-        
-        <footer className="mt-auto py-6 text-center text-sm text-slate-500 border-t border-slate-200 print:hidden w-full bg-slate-50/50">
+
+        <footer className="app-shell__footer print:hidden">
           <p>
-            Disusun dan dikembangkan oleh{' '}
-            <a href="https://yahyanursidik.my.id/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-semibold transition-colors">
-              Yahya Nursidik
-            </a>
+            Disusun dan dikembangkan oleh{" "}
+            <a href="https://yahyanursidik.my.id/" target="_blank" rel="noopener noreferrer">Yahya Nursidik</a>
           </p>
         </footer>
       </div>
-      
-      {/* Mobile Bottom Navigation (Learner & Teacher) */}
-      {(variant === 'learner' || variant === 'teacher') && (
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-50 flex items-center justify-around pb-safe h-16 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = item.href === activeMenuHref;
 
+      <div className={cn("app-shell__mobile-drawer", mobileMenuOpen && "is-open")} aria-hidden={!mobileMenuOpen}>
+        <button className="app-shell__mobile-backdrop" type="button" onClick={() => setMobileMenuOpen(false)} aria-label="Tutup menu" />
+        <aside className="app-shell__mobile-panel" role="dialog" aria-modal="true" aria-label="Menu navigasi">
+          <div className="app-shell__mobile-panel-header">
+            <Link to={homeByVariant[variant]} className="app-shell__mobile-brand" onClick={() => setMobileMenuOpen(false)}>
+              <span className="app-shell__brand-icon"><BrandIcon className="h-5 w-5 text-white" /></span>
+              <span className="min-w-0">
+                <strong>{sidebarTitle}</strong>
+                <small>{sidebarSubtitle}</small>
+              </span>
+            </Link>
+            <Button type="button" variant="ghost" className="app-shell__mobile-close" onClick={() => setMobileMenuOpen(false)} aria-label="Tutup menu">
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+          <SidebarNavigation
+            locationPath={location.pathname}
+            locationSearch={location.search}
+            menuItems={menuItems}
+            onNavigate={() => setMobileMenuOpen(false)}
+            storageKey={`ypia-nav-mobile-${variant}`}
+          />
+          {primaryRole ? (
+            <div className="app-shell__mobile-account">
+              <div className="app-shell__avatar">{initials}</div>
+              <span className="min-w-0"><strong>{displayName}</strong><small>{primaryRole.replaceAll("_", " ")}</small></span>
+            </div>
+          ) : null}
+        </aside>
+      </div>
+
+      {(variant === "learner" || variant === "teacher") ? (
+        <nav className="app-shell__bottom-nav" aria-label="Navigasi cepat">
+          {mobilePrimaryItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = isHrefActive(location.pathname, location.search, item.href);
             return (
-              <Link
-                key={item.href}
-                to={item.href}
-                className={cn(
-                  "flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors",
-                  isActive ? "text-primary" : "text-slate-400 hover:text-slate-800"
-                )}
-              >
-                <div className={cn(
-                  "p-1 rounded-full transition-all flex items-center justify-center", 
-                  isActive ? "bg-primary/10 text-primary" : "text-slate-400"
-                )}>
-                  <Icon className="h-5 w-5" />
-                </div>
-                <span className={cn(
-                  "text-[11px] leading-tight", 
-                  isActive ? "text-primary font-bold" : "text-slate-500 font-medium"
-                )}>
-                  {getMobileNavLabel(item.label)}
-                </span>
+              <Link key={item.href} to={item.href} className={cn("app-shell__bottom-item", isActive && "is-active")}>
+                <span className="app-shell__bottom-icon"><Icon className="h-5 w-5" /></span>
+                <span>{getMobileNavLabel(item.label)}</span>
               </Link>
             );
           })}
+          {hasMobileOverflow ? (
+            <button type="button" className="app-shell__bottom-item" onClick={() => setMobileMenuOpen(true)}>
+              <span className="app-shell__bottom-icon"><MoreHorizontal className="h-5 w-5" /></span>
+              <span>Lainnya</span>
+            </button>
+          ) : null}
         </nav>
-      )}
+      ) : null}
     </div>
   );
 }

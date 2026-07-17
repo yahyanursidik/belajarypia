@@ -65,14 +65,28 @@ export function TeacherDashboardPage() {
         let pendingApplicants = 0;
 
         if (assignedProgramIds.length > 0) {
-          const { data: formsData } = await supabase
+          const formsResult = await supabase
             .from("registration_forms")
             .select("id, program_id, title, description, status, registration_open_at, registration_close_at, group_settings")
             .in("program_id", assignedProgramIds)
             .eq("status", "active")
             .order("created_at", { ascending: false });
+          let formRows: unknown[] | null = formsResult.data;
 
-          formsByProgram = (formsData ?? []) as RegistrationForm[];
+          if (
+            formsResult.error?.message.includes("registration_open_at") ||
+            formsResult.error?.message.includes("registration_close_at")
+          ) {
+            const fallback = await supabase
+              .from("registration_forms")
+              .select("id, program_id, title, description, status, group_settings")
+              .in("program_id", assignedProgramIds)
+              .eq("status", "active")
+              .order("created_at", { ascending: false });
+            formRows = fallback.data;
+          }
+
+          formsByProgram = (formRows ?? []) as RegistrationForm[];
 
           const { data: applicantChoices } = await supabase
             .from("applicant_program_choices")
@@ -335,6 +349,17 @@ export function TeacherDashboardPage() {
                   <p className="text-xs text-slate-500">Kelola kurikulum & peserta</p>
                 </div>
                 <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-primary transition-colors" />
+              </Link>
+
+              <Link to="/teacher/silabus" className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-emerald-500/30 hover:bg-emerald-50 transition-all group">
+                <div className="p-2.5 rounded-lg bg-emerald-100 text-emerald-700 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                  <BookMarked className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-slate-900 group-hover:text-emerald-800 transition-colors">Silabus Pengajaran</p>
+                  <p className="text-xs text-slate-500">Tujuan, capaian, dan evaluasi</p>
+                </div>
+                <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-700 transition-colors" />
               </Link>
 
               <Link to="/teacher/konten" className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-sky-500/30 hover:bg-sky-50 transition-all group">

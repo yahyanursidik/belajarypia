@@ -126,6 +126,11 @@ const LearnerProgramDetailPage = lazy(() =>
     default: module.LearnerProgramDetailPage,
   })),
 );
+const LearnerProgramSyllabusPage = lazy(() =>
+  import("./learner/LearnerProgramSyllabusPage").then((module) => ({
+    default: module.LearnerProgramSyllabusPage,
+  })),
+);
 const LearnerLessonPage = lazy(() =>
   import("./learner/LearnerLessonPage").then((module) => ({
     default: module.LearnerLessonPage,
@@ -149,6 +154,11 @@ const LearnerHelpPage = lazy(() =>
 const LearnerFinancePage = lazy(() =>
   import("./learner/LearnerFinancePage").then((module) => ({
     default: module.LearnerFinancePage,
+  })),
+);
+const TeacherSyllabusPage = lazy(() =>
+  import("./teacher/TeacherSyllabusPage").then((module) => ({
+    default: module.TeacherSyllabusPage,
   })),
 );
 const AdmissionPortalPage = lazy(() =>
@@ -201,9 +211,19 @@ const SystemUsersPage = lazy(() =>
     default: module.SystemUsersPage,
   })),
 );
-const TeacherDashboardPage = lazy(() =>
-  import("./teacher/TeacherDashboardPage").then((module) => ({
-    default: module.TeacherDashboardPage,
+const TeacherPortalHomePage = lazy(() =>
+  import("./teacher/TeacherPortalHomePage").then((module) => ({
+    default: module.TeacherPortalHomePage,
+  })),
+);
+const MentorHalaqahPage = lazy(() =>
+  import("./teacher/MentorHalaqahPage").then((module) => ({
+    default: module.MentorHalaqahPage,
+  })),
+);
+const MentorQuranPage = lazy(() =>
+  import("./teacher/MentorQuranPage").then((module) => ({
+    default: module.MentorQuranPage,
   })),
 );
 const TeacherPlaceholderPage = lazy(() =>
@@ -316,7 +336,22 @@ export function AppRoutes() {
             }
           />
           <Route path="profil" element={<AdminProfilePage />} />
-          <Route path="pengumuman" element={<AdminAnnouncementsPage />} />
+          <Route
+            path="pengumuman"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminAnnouncementsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="konten"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "content_reviewer"]}>
+                <SystemContentReviewPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="program/:programId"
             element={
@@ -387,11 +422,15 @@ export function AppRoutes() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<TeacherDashboardPage />} />
+          <Route index element={<TeacherPortalHomePage />} />
           <Route path="kelas" element={<TeacherClassPage />} />
           <Route path="kelas/program/:programId" element={<ProgramBuilderPage />} />
+          <Route path="kelas/program/:programId/silabus" element={<TeacherSyllabusPage />} />
           <Route path="kelas/program/:programId/:section" element={<ProgramBuilderPage />} />
           <Route path="kelas/:classId" element={<TeacherClassDashboardPage />} />
+          <Route path="silabus" element={<TeacherSyllabusPage />} />
+          <Route path="halaqah" element={<ProtectedRoute allowedRoles={["mentor"]}><MentorHalaqahPage /></ProtectedRoute>} />
+          <Route path="quran" element={<ProtectedRoute allowedRoles={["mentor"]}><MentorQuranPage /></ProtectedRoute>} />
           <Route path="konten" element={<TeacherContentPage />} />
           <Route path="review" element={<TeacherReviewPage />} />
           <Route path="profil" element={<TeacherProfilePage />} />
@@ -412,6 +451,7 @@ export function AppRoutes() {
           <Route index element={<LearnerDashboardPage />} />
           <Route path="program-saya" element={<LearnerProgramLessonsPage />} />
           <Route path="program/:programId" element={<LearnerProgramDetailPage />} />
+          <Route path="program/:programId/silabus" element={<LearnerProgramSyllabusPage />} />
           <Route path="lesson/:lessonId" element={<LearnerLessonPage />} />
           <Route path="lesson/:lessonId/quiz" element={<LearnerQuizPage />} />
           <Route path="transkrip/:enrollmentId" element={<LearnerTranscriptPage />} />

@@ -29,6 +29,13 @@ export type GradingRubricItem = {
   label: string;
 };
 
+export type GraduationSettings = {
+  minimum_final_score: number;
+  minimum_completion_percent: number;
+  require_all_assessments_passed: boolean;
+  require_payment_clearance: boolean;
+};
+
 export type Organization = {
   id: string;
   name: string;
@@ -60,6 +67,7 @@ export type Program = {
   feature_flags: MvpFeatureFlags;
   teacher_user_id?: string | null;
   grading_rubric?: GradingRubricItem[] | null;
+  graduation_settings?: GraduationSettings | null;
   units?: Pick<Unit, "name" | "code"> | null;
 };
 

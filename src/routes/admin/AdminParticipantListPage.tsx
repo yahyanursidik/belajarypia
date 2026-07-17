@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ComponentType } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Plus, Search, User, Filter, MapPin, GraduationCap, Phone, Upload, Download, Users, UserCheck, PieChart, BadgeCheck, Settings, Key, X, Loader2, CheckCircle2, AlertCircle, FileText, AlertTriangle, FileUp, LayoutDashboard, ClipboardList, Database, RefreshCw, ArrowRight, Mail, Building2, Eye, ImageIcon, PenLine, RotateCcw, Save } from "lucide-react";
 import Papa from "papaparse";
 import { Button } from "../../components/ui/button";
@@ -55,10 +55,20 @@ function isTranscriptColumnError(message: string | null | undefined) {
 
 export function AdminParticipantListPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [participants, setParticipants] = useState<ParticipantRow[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<ParticipantTab>("overview");
+  const activeTabParam = searchParams.get("tab");
+  const activeTab = participantTabs.some((tab) => tab.key === activeTabParam) ? activeTabParam as ParticipantTab : "overview";
+  const changeTab = (tab: ParticipantTab) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (tab === "overview") next.delete("tab");
+      else next.set("tab", tab);
+      return next;
+    }, { replace: true });
+  };
   const [feedback, setFeedback] = useState<{ message: string; type: "success" | "error" } | null>(null);
   
   // Filters
@@ -627,7 +637,7 @@ export function AdminParticipantListPage() {
                 isActive ? "bg-primary text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
               }`}
               key={item.key}
-              onClick={() => setActiveTab(item.key)}
+              onClick={() => changeTab(item.key)}
               type="button"
             >
               <Icon className={`mt-0.5 h-5 w-5 ${isActive ? "text-white" : "text-primary"}`} />
@@ -984,7 +994,7 @@ export function AdminParticipantListPage() {
               </button>
               <button
                 className="rounded-xl border border-slate-200 bg-white p-5 text-left transition-colors hover:border-primary/30 hover:bg-primary/5"
-                onClick={() => setActiveTab("directory")}
+                onClick={() => changeTab("directory")}
                 type="button"
               >
                 <Key className="mb-4 h-7 w-7 text-primary" />

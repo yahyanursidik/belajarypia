@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ComponentType, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   BellRing,
@@ -103,11 +104,21 @@ function getErrorMessage(error: unknown) {
 
 export function AdminAnnouncementsPage() {
   const { profile } = useAuthSession();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [programs, setPrograms] = useState<ProgramOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<AnnouncementTab>("overview");
+  const activeTabParam = searchParams.get("tab");
+  const activeTab = announcementTabs.some((tab) => tab.key === activeTabParam) ? activeTabParam as AnnouncementTab : "overview";
+  const changeTab = (tab: AnnouncementTab) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (tab === "overview") next.delete("tab");
+      else next.set("tab", tab);
+      return next;
+    }, { replace: true });
+  };
   const [selectedAnnouncementId, setSelectedAnnouncementId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [form, setForm] = useState<AnnouncementForm>(emptyForm);
@@ -224,7 +235,7 @@ export function AdminAnnouncementsPage() {
         type: "success",
       });
       resetComposer();
-      setActiveTab("manage");
+      changeTab("manage");
       await loadData();
     } catch (error) {
       setFeedback({ message: `Gagal menyimpan pengumuman: ${getErrorMessage(error)}`, type: "error" });
@@ -270,7 +281,7 @@ export function AdminAnnouncementsPage() {
   const openCompose = (status: AnnouncementStatus = "published") => {
     setFeedback(null);
     setForm((current) => ({ ...current, status }));
-    setActiveTab("compose");
+    changeTab("compose");
   };
 
   const statusClass = (status: string) =>
@@ -340,7 +351,7 @@ export function AdminAnnouncementsPage() {
                 isActive ? "bg-primary text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
               }`}
               key={item.key}
-              onClick={() => setActiveTab(item.key)}
+              onClick={() => changeTab(item.key)}
               type="button"
             >
               <Icon className={`mt-0.5 h-5 w-5 ${isActive ? "text-white" : "text-primary"}`} />
@@ -430,7 +441,7 @@ export function AdminAnnouncementsPage() {
                       key={announcement.id}
                       onClick={() => {
                         setSelectedAnnouncementId(announcement.id);
-                        setActiveTab("manage");
+                        changeTab("manage");
                       }}
                       type="button"
                     >

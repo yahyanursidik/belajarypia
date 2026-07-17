@@ -105,7 +105,7 @@ a {
   border-right: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow-y: hidden;
   overflow-x: hidden;
   transition: padding 0.25s ease;
 }
@@ -173,6 +173,7 @@ a {
 .app-shell__sidebar-top {
   position: relative;
   z-index: 1;
+  flex: 0 0 auto;
 }
 
 .app-shell__brand-icon {
@@ -197,6 +198,10 @@ a {
 }
 
 .app-shell__collapse-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   width: 100%;
   height: 36px;
   margin: 0 0 14px;
@@ -204,6 +209,11 @@ a {
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.82);
+}
+
+.app-shell__collapse-button span {
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .app-shell__collapse-button:hover {
@@ -243,46 +253,168 @@ a {
   letter-spacing: 0.02em;
 }
 
+.app-shell__navigation-body {
+  position: relative;
+  z-index: 1;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+.app-shell__menu-search {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  margin-bottom: 14px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.65);
+  background: hsl(var(--primary) / 0.98);
+}
+
+.app-shell__menu-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: #ffffff;
+  background: transparent;
+  font-size: 13px;
+}
+
+.app-shell__menu-search input::placeholder {
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.app-shell__menu-search button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.72);
+  background: transparent;
+  cursor: pointer;
+}
+
+.app-shell__menu-search button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .app-shell__menu {
   display: grid;
-  gap: 4px;
+  gap: 12px;
   position: relative;
   z-index: 1;
 }
 
+.app-shell__menu-group {
+  display: grid;
+  gap: 3px;
+}
+
+.app-shell__menu-group-button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 3px 8px;
+  border: 0;
+  color: rgba(255, 255, 255, 0.44);
+  background: transparent;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.app-shell__menu-group.has-active-item .app-shell__menu-group-button {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.app-shell__menu-group-items,
+.app-shell__menu-entry {
+  display: grid;
+  gap: 3px;
+}
+
+.app-shell__menu-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+
 .app-shell__menu-item {
   display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
   align-items: center;
   gap: 12px;
-  border-radius: 10px;
-  padding: 11px 14px;
-  color: rgba(255, 255, 255, 0.6);
+  min-height: 46px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: rgba(255, 255, 255, 0.72);
   font-size: 13.5px;
   font-weight: 600;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 0.18s ease, color 0.18s ease;
   position: relative;
 }
 
-.app-shell__menu-item span {
+.app-shell__menu-icon {
+  flex: 0 0 auto;
+  opacity: 0.82;
+}
+
+.app-shell__menu-copy {
+  display: block;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1 1 auto;
   transition: opacity 0.16s ease, width 0.16s ease;
 }
 
+.app-shell__menu-label,
+.app-shell__menu-description {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-shell__menu-description {
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
 .app-shell__menu-item:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.09);
   color: #ffffff;
-  transform: translateX(4px);
 }
 
 .app-shell__menu-item.is-active {
-  background: linear-gradient(135deg, hsl(var(--primary) / 0.9), hsl(var(--primary)));
+  background: rgba(255, 255, 255, 0.14);
   color: #ffffff;
-  box-shadow:
-    0 4px 16px hsl(var(--primary) / 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.app-shell__menu-item.is-active .app-shell__menu-description {
+  color: rgba(255, 255, 255, 0.68);
 }
 
 /* Gold left-bar indicator for active item */
@@ -297,6 +429,84 @@ a {
   background: hsl(42 70% 55%);
 }
 
+.app-shell__submenu-toggle {
+  display: grid;
+  width: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: rgba(255, 255, 255, 0.52);
+  background: transparent;
+  cursor: pointer;
+}
+
+.app-shell__submenu-toggle:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.app-shell__submenu {
+  display: grid;
+  gap: 2px;
+  margin: 1px 0 5px 18px;
+  padding-left: 14px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.app-shell__submenu-item {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.app-shell__submenu-item:hover,
+.app-shell__submenu-item.is-active {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.app-shell__submenu-dot {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.65;
+}
+
+.app-shell__submenu-label,
+.app-shell__submenu-description {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-shell__submenu-description {
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 10px;
+}
+
+.app-shell__menu-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 10px;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 12px;
+  text-align: center;
+}
+
 .app-shell--sider-collapsed .app-shell__sider {
   padding: 20px 12px;
 }
@@ -309,7 +519,7 @@ a {
 }
 
 .app-shell--sider-collapsed .app-shell__brand-copy,
-.app-shell--sider-collapsed .app-shell__menu-item span {
+.app-shell--sider-collapsed .app-shell__menu-copy {
   width: 0;
   opacity: 0;
   pointer-events: none;
@@ -323,6 +533,11 @@ a {
 }
 
 .app-shell--sider-collapsed .app-shell__menu {
+  gap: 8px;
+}
+
+.app-shell--sider-collapsed .app-shell__menu-group,
+.app-shell--sider-collapsed .app-shell__menu-group-items {
   gap: 8px;
 }
 
@@ -340,6 +555,10 @@ a {
 .app-shell--sider-collapsed .app-shell__menu-item svg {
   width: 18px;
   height: 18px;
+}
+
+.app-shell--sider-collapsed .app-shell__navigation-body {
+  padding-right: 0;
 }
 
 /* ── Main area ──────────────────────────────────────────────────────── */
@@ -365,10 +584,89 @@ a {
   -webkit-backdrop-filter: blur(16px);
 }
 
+.app-shell__header-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-shell__mobile-menu-button {
+  display: none;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  padding: 0;
+}
+
 .app-shell__account {
   display: flex;
   align-items: center;
-  gap: 16px;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.app-shell__profile-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 5px 4px 12px;
+  border-radius: 24px;
+  transition: background-color 0.18s ease;
+}
+
+.app-shell__profile-link:hover {
+  background: hsl(var(--muted));
+}
+
+.app-shell__profile-copy {
+  min-width: 0;
+  text-align: right;
+}
+
+.app-shell__profile-copy p {
+  max-width: 210px;
+  margin: 0;
+  overflow: hidden;
+  color: hsl(var(--foreground));
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-shell__profile-copy span {
+  display: block;
+  color: hsl(var(--muted-foreground));
+  font-size: 10px;
+  text-transform: capitalize;
+}
+
+.app-shell__avatar {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid hsl(var(--primary) / 0.18);
+  border-radius: 50%;
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.09);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.app-shell__logout-button {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.app-shell__logout-button:hover {
+  border-color: hsl(var(--destructive));
+  color: hsl(var(--destructive-foreground));
+  background: hsl(var(--destructive));
 }
 
 .app-shell__title {
@@ -390,6 +688,31 @@ a {
   padding: 32px;
   flex-grow: 1;
   animation: fadeInUp 0.35s ease-out;
+}
+
+.app-shell__footer {
+  width: 100%;
+  margin-top: auto;
+  padding: 20px;
+  border-top: 1px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.35);
+  font-size: 12px;
+  text-align: center;
+}
+
+.app-shell__footer a {
+  color: hsl(var(--primary));
+  font-weight: 700;
+}
+
+.app-shell__footer a:hover {
+  text-decoration: underline;
+}
+
+.app-shell__mobile-drawer,
+.app-shell__bottom-nav {
+  display: none;
 }
 
 /* ── Page Stack & Containers ────────────────────────────────────────── */
@@ -618,54 +941,220 @@ a {
   }
 
   .app-shell__sider {
-    position: static;
-    height: auto;
-    padding: 16px;
-    border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    display: none;
   }
 
-  .app-shell--sider-collapsed .app-shell__sider {
-    padding: 16px;
+  .app-shell__mobile-menu-button {
+    display: inline-flex;
   }
 
-  .app-shell--sider-collapsed .app-shell__brand {
-    justify-content: flex-start;
-    min-height: 64px;
-    margin-bottom: 12px;
-    padding: 0 8px;
+  .app-shell__mobile-drawer {
+    position: fixed;
+    z-index: 80;
+    inset: 0;
+    display: block;
+    visibility: hidden;
+    pointer-events: none;
   }
 
-  .app-shell--sider-collapsed .app-shell__brand-copy,
-  .app-shell--sider-collapsed .app-shell__menu-item span {
-    width: auto;
-    opacity: 1;
+  .app-shell__mobile-drawer.is-open {
+    visibility: visible;
     pointer-events: auto;
-    transform: none;
   }
 
-  .app-shell--sider-collapsed .app-shell__menu-item {
-    justify-content: flex-start;
-    gap: 12px;
-    min-height: auto;
-    padding: 11px 14px;
+  .app-shell__mobile-backdrop {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    opacity: 0;
+    background: rgba(15, 23, 42, 0.48);
+    backdrop-filter: blur(2px);
+    transition: opacity 0.2s ease;
   }
 
-  .app-shell__collapse-button {
-    display: none;
+  .app-shell__mobile-drawer.is-open .app-shell__mobile-backdrop {
+    opacity: 1;
   }
 
-  .app-shell__sider::before,
-  .app-shell__sider::after {
-    display: none;
+  .app-shell__mobile-panel {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    width: min(88vw, 370px);
+    flex-direction: column;
+    padding: 18px 14px;
+    overflow: hidden;
+    color: #ffffff;
+    background: hsl(var(--primary));
+    box-shadow: 16px 0 40px rgba(15, 23, 42, 0.22);
+    transform: translateX(-102%);
+    transition: transform 0.22s ease;
   }
 
-  .app-shell__bismillah {
-    display: none;
+  .app-shell__mobile-drawer.is-open .app-shell__mobile-panel {
+    transform: translateX(0);
   }
 
-  .app-shell__menu {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  .app-shell__mobile-panel-header {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 2px 2px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .app-shell__mobile-brand {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .app-shell__mobile-brand .app-shell__brand-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+  }
+
+  .app-shell__mobile-brand strong,
+  .app-shell__mobile-brand small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-shell__mobile-brand strong {
+    font-size: 14px;
+  }
+
+  .app-shell__mobile-brand small {
+    margin-top: 2px;
+    color: rgba(255, 255, 255, 0.56);
+    font-size: 10px;
+  }
+
+  .app-shell__mobile-close {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 auto;
+    padding: 0;
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .app-shell__mobile-close:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .app-shell__mobile-panel .app-shell__navigation-body {
+    margin-top: 14px;
+  }
+
+  .app-shell__mobile-account {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 12px 8px 2px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .app-shell__mobile-account .app-shell__avatar {
+    border-color: rgba(255, 255, 255, 0.16);
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .app-shell__mobile-account strong,
+  .app-shell__mobile-account small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-shell__mobile-account strong {
+    font-size: 12px;
+  }
+
+  .app-shell__mobile-account small {
+    margin-top: 2px;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 10px;
+    text-transform: capitalize;
+  }
+
+  .app-shell__bottom-nav {
+    position: fixed;
+    z-index: 60;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    align-items: stretch;
+    min-height: 66px;
+    padding: 5px 6px max(5px, env(safe-area-inset-bottom));
+    border-top: 1px solid hsl(var(--border));
+    background: hsl(var(--background) / 0.98);
+    box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.07);
+    backdrop-filter: blur(14px);
+  }
+
+  .app-shell__bottom-item {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 3px 1px;
+    border: 0;
+    border-radius: 7px;
+    color: hsl(var(--muted-foreground));
+    background: transparent;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  .app-shell__bottom-item > span:last-child {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-shell__bottom-item.is-active {
+    color: hsl(var(--primary));
+    font-weight: 800;
+  }
+
+  .app-shell__bottom-icon {
+    display: grid;
+    width: 30px;
+    height: 28px;
+    place-items: center;
+    border-radius: 14px;
+  }
+
+  .app-shell__bottom-item.is-active .app-shell__bottom-icon {
+    background: hsl(var(--primary) / 0.1);
+  }
+
+  .app-shell-learner .app-shell__main,
+  .app-shell-teacher .app-shell__main {
+    padding-bottom: 72px;
   }
 
   .split-panel {
@@ -679,15 +1168,42 @@ a {
 
 @media (max-width: 767px) {
   .app-shell__header {
-    padding: 16px 20px;
+    min-height: 64px;
+    padding: 9px 14px;
   }
 
   .app-shell__content {
-    padding: 20px;
+    padding: 18px 14px 24px;
   }
-  
-  .app-shell-learner .app-shell__main {
-    padding-bottom: 76px; /* Space for bottom nav */
+
+  .app-shell__title {
+    font-size: 16px;
+  }
+
+  .app-shell__subtitle {
+    max-width: 48vw;
+    overflow: hidden;
+    font-size: 10.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-shell__profile-copy {
+    display: none;
+  }
+
+  .app-shell__profile-link {
+    padding: 0;
+  }
+
+  .app-shell__avatar,
+  .app-shell__logout-button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .app-shell__footer {
+    padding: 16px 12px;
   }
 
   .page-hero {
@@ -705,9 +1221,22 @@ a {
   }
 }
 
+@media (max-width: 520px) {
+  .app-shell__account .app-shell__profile-link {
+    display: none;
+  }
+
+  .app-shell__mobile-menu-button {
+    width: 38px;
+    height: 38px;
+  }
+}
+
 @media print {
   .app-shell__sider,
-  .app-shell__header {
+  .app-shell__header,
+  .app-shell__mobile-drawer,
+  .app-shell__bottom-nav {
     display: none !important;
   }
   

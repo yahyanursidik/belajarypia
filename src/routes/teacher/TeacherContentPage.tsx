@@ -88,7 +88,8 @@ function formatDate(value: string | null) {
 }
 
 export function TeacherContentPage() {
-  const { user } = useAuthSession();
+  const { user, primaryRole } = useAuthSession();
+  const isMentor = primaryRole === "mentor";
   const [programs, setPrograms] = useState<TeacherProgram[]>([]);
   const [lessons, setLessons] = useState<ContentRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -108,7 +109,6 @@ export function TeacherContentPage() {
     const { data: programRows, error: programError } = await supabase
       .from("programs")
       .select("id, name, code, status")
-      .eq("teacher_user_id", user.id)
       .order("name");
 
     if (programError) {
@@ -225,14 +225,14 @@ export function TeacherContentPage() {
   const draftCount = lessons.filter((lesson) => lesson.visibility_status === "draft").length;
   const assessmentCount = lessons.filter((lesson) => ["quiz", "exam", "assignment"].includes(lesson.lesson_type)).length;
 
-  if (isLoading) return <FullPageLoader message="Memuat konten pengajar..." />;
+  if (isLoading) return <FullPageLoader message={isMentor ? "Memuat konten pendampingan..." : "Memuat konten pengajar..."} />;
 
   return (
     <div className="page-stack pb-12">
       <section className="page-hero">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <Badge variant="secondary" className="mb-3 border-white/30 bg-white/20 text-white">KONTEN PENGAJAR</Badge>
+            <Badge variant="secondary" className="mb-3 border-white/30 bg-white/20 text-white">{isMentor ? "KONTEN PENDAMPINGAN" : "KONTEN PENGAJAR"}</Badge>
             <h1 className="text-3xl font-bold text-white">Materi, Kuis & Ujian</h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/80">
               Pantau kesiapan materi, dokumen, bank soal, jadwal rilis, dan status publikasi dari program yang Anda ampu.
@@ -263,7 +263,7 @@ export function TeacherContentPage() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: "Program Diampu", value: programs.length, desc: "Program dengan penugasan pengajar.", icon: BookOpen, tone: "bg-sky-50 text-sky-700 border-sky-200" },
+          { label: "Program Diampu", value: programs.length, desc: isMentor ? "Program dari halaqah yang dibina." : "Program dengan penugasan pengajar.", icon: BookOpen, tone: "bg-sky-50 text-sky-700 border-sky-200" },
           { label: "Materi Published", value: publishedCount, desc: "Materi yang sudah bisa diakses peserta.", icon: CheckCircle2, tone: "bg-emerald-50 text-emerald-700 border-emerald-200" },
           { label: "Draft", value: draftCount, desc: "Materi yang perlu dirapikan sebelum rilis.", icon: FileText, tone: "bg-amber-50 text-amber-700 border-amber-200" },
           { label: "Kuis/Ujian/Tugas", value: assessmentCount, desc: "Aktivitas evaluasi belajar.", icon: ClipboardList, tone: "bg-primary/10 text-primary border-primary/20" },

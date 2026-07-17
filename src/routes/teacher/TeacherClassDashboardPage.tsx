@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Users, Calendar, ClipboardCheck } from "lucide-react";
+import { ArrowLeft, BookOpen, Calendar, ClipboardCheck, FileText, Users } from "lucide-react";
 import { useAuthSession } from "../../app/providers/authSessionContext";
 import { supabase } from "../../lib/supabase";
 import { FullPageLoader } from "@/components/ui/full-page-loader";
@@ -13,7 +13,13 @@ export function TeacherClassDashboardPage() {
   const { user } = useAuthSession();
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [classData, setClassData] = useState<any>(null);
+  const [classData, setClassData] = useState<{
+    id: string;
+    name: string;
+    code: string;
+    capacity: number | null;
+    programs: { id: string; name: string } | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!user || !classId) return;
@@ -29,8 +35,14 @@ export function TeacherClassDashboardPage() {
           .single();
 
         if (error) throw error;
-        if (isMounted) setClassData(data);
-      } catch (_err: any) {
+        if (isMounted) setClassData(data as unknown as {
+          id: string;
+          name: string;
+          code: string;
+          capacity: number | null;
+          programs: { id: string; name: string } | null;
+        });
+      } catch (_err: unknown) {
         if (isMounted) setErrorMessage("Kelas tidak ditemukan atau Anda tidak memiliki akses ke kelas ini.");
       } finally {
         if (isMounted) setIsLoading(false);
@@ -67,7 +79,7 @@ export function TeacherClassDashboardPage() {
         <p className="text-muted-foreground mt-1">Bagian dari program: <span className="font-medium text-slate-700">{classData.programs?.name}</span></p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 mt-6">
         <Card className="bg-white border-slate-200">
           <CardContent className="p-6 flex flex-col items-center text-center space-y-2">
             <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-2">
@@ -83,6 +95,19 @@ export function TeacherClassDashboardPage() {
 
         <Card className="bg-white border-slate-200">
           <CardContent className="p-6 flex flex-col items-center text-center space-y-2">
+            <div className="h-12 w-12 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 mb-2">
+              <FileText className="h-6 w-6" />
+            </div>
+            <h3 className="font-semibold text-lg text-slate-900">Silabus Program</h3>
+            <p className="text-sm text-slate-500">Tinjau tujuan, capaian, metode, dan evaluasi pembelajaran.</p>
+            <Button asChild variant="outline" className="w-full mt-4">
+              <Link to={`/teacher/kelas/program/${classData.programs?.id}/silabus`}>Buka Silabus</Link>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white border-slate-200">
+          <CardContent className="p-6 flex flex-col items-center text-center space-y-2">
             <div className="h-12 w-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 mb-2">
               <ClipboardCheck className="h-6 w-6" />
             </div>
@@ -90,6 +115,19 @@ export function TeacherClassDashboardPage() {
             <p className="text-sm text-slate-500">Berikan nilai untuk tugas, kuis, atau setoran.</p>
             <Button asChild variant="outline" className="w-full mt-4">
               <Link to="/teacher/review">Buka Review</Link>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white border-slate-200">
+          <CardContent className="p-6 flex flex-col items-center text-center space-y-2">
+            <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 mb-2">
+              <BookOpen className="h-6 w-6" />
+            </div>
+            <h3 className="font-semibold text-lg text-slate-900">Konten Materi</h3>
+            <p className="text-sm text-slate-500">Pantau materi terbit, dokumen, kuis, dan ujian program.</p>
+            <Button asChild variant="outline" className="w-full mt-4">
+              <Link to="/teacher/konten">Kelola Konten</Link>
             </Button>
           </CardContent>
         </Card>

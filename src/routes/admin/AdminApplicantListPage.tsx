@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -107,6 +108,7 @@ function isMissingRegistrationWindowColumn(message: string | null | undefined) {
 }
 
 export function AdminApplicantListPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [rows, setRows] = useState<ApplicantListRow[]>([]);
   const [selectedApplicantId, setSelectedApplicantId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<ApplicantAnswer[]>([]);
@@ -124,7 +126,16 @@ export function AdminApplicantListPage() {
     halaqah_id: "",
   });
   
-  const [activeTab, setActiveTab] = useState<AdmissionTab>("overview");
+  const activeTabParam = searchParams.get("tab");
+  const activeTab = admissionTabs.some((tab) => tab.key === activeTabParam) ? activeTabParam as AdmissionTab : "overview";
+  const changeTab = (tab: AdmissionTab) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (tab === "overview") next.delete("tab");
+      else next.set("tab", tab);
+      return next;
+    }, { replace: true });
+  };
   const [programs, setPrograms] = useState<ProgramOption[]>([]);
   const [selectedProgramIdForSettings, setSelectedProgramIdForSettings] = useState<string | null>(null);
   const [programSearch, setProgramSearch] = useState("");
@@ -566,7 +577,7 @@ export function AdminApplicantListPage() {
               className={`flex items-start gap-3 rounded-lg p-4 text-left transition-colors ${
                 isActive ? "bg-primary text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
               }`}
-              onClick={() => setActiveTab(item.key)}
+              onClick={() => changeTab(item.key)}
               type="button"
             >
               <Icon className={`mt-0.5 h-5 w-5 ${isActive ? "text-white" : "text-primary"}`} />
@@ -666,7 +677,7 @@ export function AdminApplicantListPage() {
                         onClick={() => {
                           if (form.program_id) {
                             setSelectedProgramIdForSettings(form.program_id);
-                            setActiveTab("settings");
+                            changeTab("settings");
                           }
                         }}
                         type="button"
@@ -695,7 +706,7 @@ export function AdminApplicantListPage() {
                 <CardTitle>Pendaftar Terbaru</CardTitle>
                 <p className="text-sm text-muted-foreground">Klik untuk masuk ke mode review.</p>
               </div>
-              <Button variant="outline" size="sm" onClick={() => setActiveTab("review")}>
+              <Button variant="outline" size="sm" onClick={() => changeTab("review")}>
                 Buka Review
                 <ArrowRight className="h-4 w-4" />
               </Button>
@@ -707,7 +718,7 @@ export function AdminApplicantListPage() {
                     className="rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors hover:border-primary/30 hover:bg-primary/5"
                     key={row.id}
                     onClick={() => {
-                      setActiveTab("review");
+                      changeTab("review");
                       setSelectedApplicantId(row.applicant_id);
                       void loadAnswers(row.applicant_id);
                       void loadPlacementOptions(row.program_id);

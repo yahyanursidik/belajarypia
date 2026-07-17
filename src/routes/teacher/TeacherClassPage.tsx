@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { BookOpen, Users, ArrowRight, GraduationCap, Clock, CalendarDays, CalendarClock, Search } from "lucide-react";
+import { BookOpen, Users, ArrowRight, GraduationCap, Clock, CalendarDays, CalendarClock, FileText, Search } from "lucide-react";
 import { useAuthSession } from "../../app/providers/authSessionContext";
 import { supabase } from "../../lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,14 +63,28 @@ export function TeacherClassPage() {
           .select("id, name, code, capacity, programs(id, name)")
           .eq("teacher_user_id", user!.id)
       ]);
+      let programRows: unknown[] | null = progRes.data;
+      let programError = progRes.error;
 
-      if (progRes.error) throw progRes.error;
+      if (
+        progRes.error?.message.includes("registration_open_at") ||
+        progRes.error?.message.includes("registration_close_at")
+      ) {
+        const fallback = await supabase
+          .from("programs")
+          .select("id, name, code, description, curriculum_model, status, enrollments(id), registration_forms(id, program_id, title, description, status, group_settings)")
+          .eq("teacher_user_id", user!.id);
+        programRows = fallback.data;
+        programError = fallback.error;
+      }
+
+      if (programError) throw programError;
       if (classRes.error) throw classRes.error;
 
-      setPrograms(progRes.data as unknown as AssignedProgram[]);
+      setPrograms((programRows ?? []) as AssignedProgram[]);
       setClasses(classRes.data as unknown as AssignedClass[]);
-    } catch (err: any) {
-      setErrorMessage(err.message || "Gagal memuat data kelas.");
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : "Gagal memuat data kelas.");
     } finally {
       setIsLoading(false);
     }
@@ -250,11 +264,12 @@ export function TeacherClassPage() {
                               </div>
                             </div>
                           </CardContent>
-                          <div className="pt-0 pb-4 px-4 mt-auto">
-                            <Button variant="default" className="w-full rounded-xl shadow-sm hover:shadow-md transition-all p-0">
-                              <Link to={`/teacher/kelas/program/${prog.id}/detail-program`} className="flex items-center justify-center w-full h-full text-white hover:text-white">
-                                Kelola Program <ArrowRight className="ml-2 h-4 w-4" />
-                              </Link>
+                          <div className="mt-auto grid grid-cols-2 gap-2 px-4 pb-4 pt-0">
+                            <Button variant="outline" asChild>
+                              <Link to={`/teacher/kelas/program/${prog.id}/silabus`}><FileText className="h-4 w-4" /> Silabus</Link>
+                            </Button>
+                            <Button asChild>
+                              <Link to={`/teacher/kelas/program/${prog.id}/detail-program`}>Kelola <ArrowRight className="h-4 w-4" /></Link>
                             </Button>
                           </div>
                         </Card>
