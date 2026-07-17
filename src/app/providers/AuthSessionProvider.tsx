@@ -42,7 +42,10 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
       isLoading,
       refresh,
       signIn: async (email, password) => {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({
+          email: email.trim().toLowerCase(),
+          password,
+        });
 
         if (error) {
           throw error;

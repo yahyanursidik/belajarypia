@@ -73,9 +73,10 @@ function readStoredList(key: string) {
 
 function isHrefActive(pathname: string, search: string, href: string, includeNested = true) {
   const [targetPath, targetQuery = ""] = href.split("?");
+  const isPortalRoot = Object.values(homeByVariant).includes(targetPath);
   const pathMatches = targetPath === "/"
     ? pathname === targetPath
-    : pathname === targetPath || (includeNested && pathname.startsWith(`${targetPath}/`));
+    : pathname === targetPath || (includeNested && !isPortalRoot && pathname.startsWith(`${targetPath}/`));
 
   if (!pathMatches) return false;
   if (!targetQuery) return true;
@@ -83,6 +84,14 @@ function isHrefActive(pathname: string, search: string, href: string, includeNes
   const currentParams = new URLSearchParams(search);
   const targetParams = new URLSearchParams(targetQuery);
   return Array.from(targetParams.entries()).every(([key, value]) => currentParams.get(key) === value);
+}
+
+function isNavigationItemActive(pathname: string, search: string, item: AppNavItem) {
+  if (isHrefActive(pathname, search, item.href)) return true;
+
+  return item.activePathPrefixes?.some((prefix) =>
+    pathname === prefix || pathname.startsWith(`${prefix}/`),
+  ) ?? false;
 }
 
 function SidebarNavigation({
@@ -101,7 +110,7 @@ function SidebarNavigation({
 
   const activeItem = useMemo(
     () => menuItems
-      .filter((item) => isHrefActive(locationPath, locationSearch, item.href))
+      .filter((item) => isNavigationItemActive(locationPath, locationSearch, item))
       .sort((first, second) => second.href.split("?")[0].length - first.href.split("?")[0].length)[0],
     [locationPath, locationSearch, menuItems],
   );
@@ -185,7 +194,7 @@ function SidebarNavigation({
 
       <nav className="app-shell__menu" aria-label="Navigasi utama">
         {groupedItems.map(([group, items]) => {
-          const hasActiveItem = items.some((item) => isHrefActive(locationPath, locationSearch, item.href));
+          const hasActiveItem = items.some((item) => isNavigationItemActive(locationPath, locationSearch, item));
           const isGroupOpen = Boolean(query) || !closedGroups.has(group);
 
           return (
@@ -206,7 +215,7 @@ function SidebarNavigation({
                 <div className="app-shell__menu-group-items">
                   {items.map((item) => {
                     const Icon = item.icon;
-                    const isActive = isHrefActive(locationPath, locationSearch, item.href);
+                    const isActive = isNavigationItemActive(locationPath, locationSearch, item);
                     const hasChildren = Boolean(item.children?.length);
                     const showChildren = !collapsed && hasChildren && (Boolean(query) || isActive || expandedItems.has(item.href));
 
@@ -309,7 +318,14 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
     const candidates = prioritizedItems.length ? prioritizedItems : menuItems;
     return candidates.length > 5 ? candidates.slice(0, 4) : candidates.slice(0, 5);
   }, [menuItems]);
-  const hasMobileOverflow = menuItems.some((item) => !mobilePrimaryItems.includes(item));
+  const mobileOverflowItems = useMemo(
+    () => menuItems.filter((item) => !mobilePrimaryItems.includes(item)),
+    [menuItems, mobilePrimaryItems],
+  );
+  const hasMobileOverflow = mobileOverflowItems.length > 0;
+  const isMobileOverflowActive = mobileOverflowItems.some((item) =>
+    isNavigationItemActive(location.pathname, location.search, item),
+  );
 
   const getMobileNavLabel = (label: string) => label
     .replace("Program & Kelas", "Kelas")
@@ -346,34 +362,34 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
   return (
     <div className={cn(`app-shell app-shell-${variant}`, sidebarCollapsed && "app-shell--sider-collapsed")}>
       <aside className="app-shell__sider print:hidden">
-        <div className="app-shell__sidebar-top">
-          <Link to={homeByVariant[variant]} className="app-shell__brand" aria-label={appName} title={sidebarTitle}>
-            <span className="app-shell__brand-icon"><BrandIcon className="h-6 w-6 text-white" /></span>
-            <span className="app-shell__brand-copy min-w-0">
-              <span className="app-shell__brand-title">{sidebarTitle}</span>
-              <span className="app-shell__brand-subtitle">{sidebarSubtitle}</span>
-            </span>
-          </Link>
-          <Button
-            type="button"
-            variant="ghost"
-            className="app-shell__collapse-button"
-            onClick={() => setSidebarCollapsed((current) => !current)}
-            aria-label={sidebarCollapsed ? "Perluas sidebar" : "Ciutkan sidebar"}
-            title={sidebarCollapsed ? "Perluas sidebar" : "Ciutkan sidebar"}
-          >
-            {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-            {!sidebarCollapsed ? <span>Ciutkan sidebar</span> : null}
-          </Button>
-        </div>
+          <div className="app-shell__sidebar-top">
+            <Link to={homeByVariant[variant]} className="app-shell__brand" aria-label={appName} title={sidebarTitle}>
+              <span className="app-shell__brand-icon"><BrandIcon className="h-6 w-6 text-white" /></span>
+              <span className="app-shell__brand-copy min-w-0">
+                <span className="app-shell__brand-title">{sidebarTitle}</span>
+                <span className="app-shell__brand-subtitle">{sidebarSubtitle}</span>
+              </span>
+            </Link>
+            <Button
+              type="button"
+              variant="ghost"
+              className="app-shell__collapse-button"
+              onClick={() => setSidebarCollapsed((current) => !current)}
+              aria-label={sidebarCollapsed ? "Perluas sidebar" : "Ciutkan sidebar"}
+              title={sidebarCollapsed ? "Perluas sidebar" : "Ciutkan sidebar"}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+              {!sidebarCollapsed ? <span>Ciutkan sidebar</span> : null}
+            </Button>
+          </div>
 
-        <SidebarNavigation
-          collapsed={sidebarCollapsed}
-          locationPath={location.pathname}
-          locationSearch={location.search}
-          menuItems={menuItems}
-          storageKey={`ypia-nav-${variant}`}
-        />
+          <SidebarNavigation
+            collapsed={sidebarCollapsed}
+            locationPath={location.pathname}
+            locationSearch={location.search}
+            menuItems={menuItems}
+            storageKey={`ypia-nav-${variant}`}
+          />
       </aside>
 
       <div className="app-shell__main print:w-full print:m-0 print:p-0">
@@ -441,50 +457,60 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
       </div>
 
       <div className={cn("app-shell__mobile-drawer", mobileMenuOpen && "is-open")} aria-hidden={!mobileMenuOpen}>
-        <button className="app-shell__mobile-backdrop" type="button" onClick={() => setMobileMenuOpen(false)} aria-label="Tutup menu" />
-        <aside className="app-shell__mobile-panel" role="dialog" aria-modal="true" aria-label="Menu navigasi">
-          <div className="app-shell__mobile-panel-header">
-            <Link to={homeByVariant[variant]} className="app-shell__mobile-brand" onClick={() => setMobileMenuOpen(false)}>
-              <span className="app-shell__brand-icon"><BrandIcon className="h-5 w-5 text-white" /></span>
-              <span className="min-w-0">
-                <strong>{sidebarTitle}</strong>
-                <small>{sidebarSubtitle}</small>
-              </span>
-            </Link>
-            <Button type="button" variant="ghost" className="app-shell__mobile-close" onClick={() => setMobileMenuOpen(false)} aria-label="Tutup menu">
-              <X className="h-5 w-5" />
-            </Button>
-          </div>
-          <SidebarNavigation
-            locationPath={location.pathname}
-            locationSearch={location.search}
-            menuItems={menuItems}
-            onNavigate={() => setMobileMenuOpen(false)}
-            storageKey={`ypia-nav-mobile-${variant}`}
-          />
-          {primaryRole ? (
-            <div className="app-shell__mobile-account">
-              <div className="app-shell__avatar">{initials}</div>
-              <span className="min-w-0"><strong>{displayName}</strong><small>{primaryRole.replaceAll("_", " ")}</small></span>
+          <button className="app-shell__mobile-backdrop" type="button" onClick={() => setMobileMenuOpen(false)} aria-label="Tutup menu" />
+          <aside className="app-shell__mobile-panel" role="dialog" aria-modal="true" aria-label="Menu navigasi">
+            <div className="app-shell__mobile-panel-header">
+              <Link to={homeByVariant[variant]} className="app-shell__mobile-brand" onClick={() => setMobileMenuOpen(false)}>
+                <span className="app-shell__brand-icon"><BrandIcon className="h-5 w-5 text-white" /></span>
+                <span className="min-w-0">
+                  <strong>{sidebarTitle}</strong>
+                  <small>{sidebarSubtitle}</small>
+                </span>
+              </Link>
+              <Button type="button" variant="ghost" className="app-shell__mobile-close" onClick={() => setMobileMenuOpen(false)} aria-label="Tutup menu">
+                <X className="h-5 w-5" />
+              </Button>
             </div>
-          ) : null}
-        </aside>
+            <SidebarNavigation
+              locationPath={location.pathname}
+              locationSearch={location.search}
+              menuItems={menuItems}
+              onNavigate={() => setMobileMenuOpen(false)}
+              storageKey={`ypia-nav-mobile-${variant}`}
+            />
+            {primaryRole ? (
+              <div className="app-shell__mobile-account">
+                <div className="app-shell__avatar">{initials}</div>
+                <span className="min-w-0"><strong>{displayName}</strong><small>{primaryRole.replaceAll("_", " ")}</small></span>
+              </div>
+            ) : null}
+          </aside>
       </div>
 
       {(variant === "learner" || variant === "teacher") ? (
         <nav className="app-shell__bottom-nav" aria-label="Navigasi cepat">
           {mobilePrimaryItems.map((item) => {
             const Icon = item.icon;
-            const isActive = isHrefActive(location.pathname, location.search, item.href);
+            const isActive = isNavigationItemActive(location.pathname, location.search, item);
             return (
-              <Link key={item.href} to={item.href} className={cn("app-shell__bottom-item", isActive && "is-active")}>
+              <Link
+                key={item.href}
+                to={item.href}
+                className={cn("app-shell__bottom-item", isActive && "is-active")}
+                aria-current={isActive ? "page" : undefined}
+              >
                 <span className="app-shell__bottom-icon"><Icon className="h-5 w-5" /></span>
                 <span>{getMobileNavLabel(item.label)}</span>
               </Link>
             );
           })}
           {hasMobileOverflow ? (
-            <button type="button" className="app-shell__bottom-item" onClick={() => setMobileMenuOpen(true)}>
+            <button
+              type="button"
+              className={cn("app-shell__bottom-item", isMobileOverflowActive && "is-active")}
+              onClick={() => setMobileMenuOpen(true)}
+              aria-expanded={mobileMenuOpen}
+            >
               <span className="app-shell__bottom-icon"><MoreHorizontal className="h-5 w-5" /></span>
               <span>Lainnya</span>
             </button>

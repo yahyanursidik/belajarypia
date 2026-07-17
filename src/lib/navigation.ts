@@ -10,6 +10,7 @@ export type AppNavItem = {
   icon: ComponentType<{ className?: string }>;
   keywords?: string[];
   mobilePriority?: number;
+  activePathPrefixes?: string[];
   children?: AppNavChild[];
 };
 
@@ -182,8 +183,14 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
     case "participant":
       return [
         { href: "/learner", label: "Dashboard", description: "Agenda dan progres belajar", group: "Ikhtisar", icon: menuIcon.dashboard, mobilePriority: 1 },
-        { href: "/learner/program-saya", label: "Program Saya", description: "Materi, kuis, dan progres", group: "Pembelajaran", icon: menuIcon.book, mobilePriority: 2 },
-        { href: "/learner/cek-status", label: "Cek Pendaftaran", description: "Status admisi program", group: "Administrasi", icon: menuIcon.admission },
+        {
+          href: "/learner/program-saya", label: "Program Saya", description: "Materi, kuis, dan progres", group: "Pembelajaran", icon: menuIcon.book, mobilePriority: 2,
+          activePathPrefixes: ["/learner/program", "/learner/lesson", "/learner/transkrip"],
+        },
+        {
+          href: "/learner/cek-status", label: "Cek Pendaftaran", description: "Status admisi program", group: "Administrasi", icon: menuIcon.admission,
+          activePathPrefixes: ["/learner/pendaftaran"],
+        },
         { href: "/learner/keuangan", label: "Keuangan", description: "Pembayaran dan riwayat transaksi", group: "Administrasi", icon: menuIcon.finance, mobilePriority: 3 },
         { href: "/learner/profil", label: "Profil Saya", description: "Identitas dan keamanan akun", group: "Akun", icon: menuIcon.user, mobilePriority: 4 },
         { href: "/learner/bantuan", label: "Bantuan", description: "Panduan dan layanan peserta", group: "Layanan", icon: menuIcon.helpdesk },

@@ -710,9 +710,70 @@ a {
   text-decoration: underline;
 }
 
-.app-shell__mobile-drawer,
-.app-shell__bottom-nav {
+.app-shell__mobile-drawer {
   display: none;
+}
+
+.app-shell__bottom-nav {
+  position: fixed;
+  z-index: 60;
+  display: none;
+  align-items: stretch;
+  min-height: 66px;
+  padding: 5px 6px max(5px, env(safe-area-inset-bottom));
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background) / 0.98);
+  box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.07);
+  backdrop-filter: blur(14px);
+}
+
+.app-shell__bottom-item {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 3px 1px;
+  border: 0;
+  border-radius: 7px;
+  color: hsl(var(--muted-foreground));
+  background: transparent;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.app-shell__bottom-item > span:last-child {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-shell__bottom-item:hover,
+.app-shell__bottom-item:focus-visible,
+.app-shell__bottom-item.is-active {
+  color: hsl(var(--primary));
+}
+
+.app-shell__bottom-item.is-active {
+  font-weight: 800;
+}
+
+.app-shell__bottom-icon {
+  display: grid;
+  width: 30px;
+  height: 28px;
+  place-items: center;
+  border-radius: 14px;
+}
+
+.app-shell__bottom-item.is-active .app-shell__bottom-icon {
+  background: hsl(var(--primary) / 0.1);
 }
 
 /* ── Page Stack & Containers ────────────────────────────────────────── */
@@ -1099,13 +1160,19 @@ a {
     bottom: 0;
     left: 0;
     display: flex;
+    width: auto;
     align-items: stretch;
     min-height: 66px;
     padding: 5px 6px max(5px, env(safe-area-inset-bottom));
     border-top: 1px solid hsl(var(--border));
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 0;
     background: hsl(var(--background) / 0.98);
     box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.07);
     backdrop-filter: blur(14px);
+    transform: none;
   }
 
   .app-shell__bottom-item {

@@ -32,6 +32,46 @@ type LessonProgressRow = {
   score: number | null;
 };
 
+type SyllabusSection = {
+  id: string;
+  title: string;
+  content: string;
+};
+
+function slugifySyllabus(value: string, index: number) {
+  const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  return slug || `bagian-${index + 1}`;
+}
+
+function parseSyllabus(value: string | null | undefined): SyllabusSection[] {
+  const lines = (value ?? "").split(/\r?\n/);
+  const sections: SyllabusSection[] = [];
+  let title = "Gambaran Umum";
+  let body: string[] = [];
+
+  const pushSection = () => {
+    const content = body.join("\n").trim();
+    if (content || sections.length === 0) {
+      sections.push({ id: slugifySyllabus(title, sections.length), title, content });
+    }
+    body = [];
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const isHeading = trimmed.length >= 4 && trimmed.length <= 80 && /^[A-Z0-9][A-Z0-9\s/&().,-]+$/.test(trimmed);
+    if (isHeading) {
+      if (body.some((item) => item.trim()) || sections.length > 0) pushSection();
+      title = trimmed.replace(/\s+/g, " ");
+    } else {
+      body.push(line);
+    }
+  }
+  pushSection();
+
+  return sections.filter((section) => section.content || section.title !== "Gambaran Umum");
+}
+
 function lessonIcon(type: string, isCompleted: boolean) {
   if (isCompleted) return <CheckCircle2 className="h-4 w-4 text-emerald-600" />;
   if (type === "video") return <PlayCircle className="h-4 w-4 text-primary" />;
@@ -40,7 +80,7 @@ function lessonIcon(type: string, isCompleted: boolean) {
 }
 
 export function LearnerProgramDetailPage() {
-  const { programId } = useParams();
+  const { programId, section } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthSession();
   const [program, setProgram] = useState<Program | null>(null);
@@ -155,6 +195,8 @@ export function LearnerProgramDetailPage() {
   const completion = lessons.length ? Math.round((completedCount / lessons.length) * 100) : 0;
   const nextLesson = lessons.find((lesson) => progressByLesson.get(lesson.id)?.status !== "completed") ?? lessons[0];
   const duration = lessons.reduce((total, lesson) => total + (lesson.duration_minutes ?? 0), 0);
+  const isSyllabusTab = section === "silabus";
+  const syllabusSections = useMemo(() => parseSyllabus(program?.syllabus), [program?.syllabus]);
 
   const toggleModule = (id: string) => setExpandedModules((current) => ({ ...current, [id]: !current[id] }));
   const expandAll = () => setExpandedModules(Object.fromEntries(modules.map((module) => [module.id, true])));
@@ -203,6 +245,47 @@ export function LearnerProgramDetailPage() {
 
       <LearnerProgramNav programId={programId} enrollmentId={enrollment.id} />
 
+      {isSyllabusTab ? (
+        <section aria-labelledby="syllabus-heading" className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="space-y-4">
+            <div>
+              <h2 id="syllabus-heading" className="text-xl font-bold">Silabus Program</h2>
+              <p className="text-sm text-muted-foreground">Tujuan, cakupan materi, metode, dan evaluasi program ditampilkan tanpa meninggalkan halaman detail.</p>
+            </div>
+            {syllabusSections.length > 0 ? (
+              syllabusSections.map((item) => (
+                <Card key={item.id}>
+                  <CardContent className="p-5">
+                    <h3 className="font-semibold">{item.title}</h3>
+                    <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{item.content}</div>
+                  </CardContent>
+                </Card>
+              ))
+            ) : (
+              <Alert>
+                <FileText className="h-4 w-4" />
+                <AlertTitle>Silabus naratif belum diterbitkan</AlertTitle>
+                <AlertDescription>Struktur modul tetap dapat dipelajari pada tab Materi & Progres.</AlertDescription>
+              </Alert>
+            )}
+          </div>
+          <Card className="h-fit">
+            <CardContent className="space-y-3 p-5">
+              <p className="text-sm font-semibold">Ringkasan Belajar</p>
+              <div className="grid gap-2 text-sm">
+                <div className="flex justify-between"><span className="text-muted-foreground">Modul</span><strong>{modules.length}</strong></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Materi terbit</span><strong>{lessons.length}</strong></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Estimasi durasi</span><strong>{duration ? `${duration} menit` : "-"}</strong></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Progres</span><strong>{completion}%</strong></div>
+              </div>
+              <Button asChild variant="outline" className="w-full">
+                <Link to={`/learner/program/${programId}`}>Kembali ke Materi</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </section>
+      ) : (
+        <>
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg border bg-background p-4"><p className="text-xs font-semibold text-muted-foreground">Modul</p><p className="mt-1 text-2xl font-bold">{modules.length}</p></div>
         <div className="rounded-lg border bg-background p-4"><p className="text-xs font-semibold text-muted-foreground">Materi Terbit</p><p className="mt-1 text-2xl font-bold">{lessons.length}</p></div>
@@ -268,6 +351,8 @@ export function LearnerProgramDetailPage() {
         <p className="mb-4 text-sm text-muted-foreground">Status penerbitan dokumen kelulusan untuk program ini.</p>
         <SyahadahSection enrollmentId={enrollment.id} />
       </section>
+        </>
+      )}
     </div>
   );
 }

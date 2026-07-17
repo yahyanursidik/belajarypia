@@ -963,7 +963,7 @@ export function ProgramBuilderPage() {
           <Card className="overflow-hidden">
             <CardHeader className="border-b bg-muted/30 pb-3">
               <CardTitle className="text-base">Menu Program</CardTitle>
-              <p className="text-xs text-muted-foreground">Setiap submenu membuka halaman mandiri.</p>
+              <p className="text-xs text-muted-foreground">Pindah submenu tanpa meninggalkan detail program.</p>
             </CardHeader>
             <CardContent className="grid gap-1.5 p-2">
               {programTabs.map((tab) => {

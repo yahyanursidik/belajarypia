@@ -4,7 +4,10 @@ import { supabase } from "../../lib/supabase";
 
 export const authProvider: AuthProvider = {
   login: async ({ email, password }) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email: String(email ?? "").trim().toLowerCase(),
+      password,
+    });
 
     if (error) {
       return {

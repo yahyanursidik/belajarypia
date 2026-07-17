@@ -46,6 +46,30 @@ const portalConfig = {
   },
 };
 
+function getLoginErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.includes("tidak memiliki akses")) {
+    return error.message;
+  }
+
+  if (error && typeof error === "object") {
+    const code = "code" in error && typeof error.code === "string" ? error.code : "";
+
+    if (code === "invalid_credentials") {
+      return "Email atau kata sandi tidak sesuai. Periksa kembali data yang dimasukkan.";
+    }
+
+    if (code === "email_not_confirmed") {
+      return "Email akun belum dikonfirmasi. Silakan konfirmasi email atau hubungi administrator.";
+    }
+
+    if (code === "over_request_rate_limit") {
+      return "Terlalu banyak percobaan masuk. Tunggu beberapa saat lalu coba kembali.";
+    }
+  }
+
+  return "Login gagal. Silakan coba kembali atau hubungi administrator.";
+}
+
 export function LoginPage({ portal }: LoginPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -177,7 +201,8 @@ export function LoginPage({ portal }: LoginPageProps) {
               setIsSubmitting(true);
 
               try {
-                const nextState = await signIn(email, password);
+                const normalizedEmail = email.trim().toLowerCase();
+                const nextState = await signIn(normalizedEmail, password);
                 const userRoles = nextState.roles.map(r => r.code);
                 
                 // VALIDASI PORTAL: Cek apakah user punya role yang diizinkan untuk portal ini
@@ -192,14 +217,9 @@ export function LoginPage({ portal }: LoginPageProps) {
                 navigate(from?.from ?? getDashboardPathForRole(nextState.primaryRole), {
                   replace: true,
                 });
-              } catch (error: any) {
-                console.error("Login error object:", error);
-                const errorStr = error instanceof Error 
-                  ? `${error.name}: ${error.message} \n ${JSON.stringify(error)}`
-                  : JSON.stringify(error);
-                setErrorMessage(
-                  errorStr || "Login gagal. Periksa email dan kata sandi."
-                );
+              } catch (error: unknown) {
+                console.error("Login gagal:", error);
+                setErrorMessage(getLoginErrorMessage(error));
               } finally {
                 setIsSubmitting(false);
               }
@@ -213,10 +233,13 @@ export function LoginPage({ portal }: LoginPageProps) {
                 <Input
                   id="email"
                   autoComplete="email"
+                  autoCapitalize="none"
                   disabled={isSubmitting}
                   onChange={(event) => setEmail(event.target.value)}
+                  onBlur={() => setEmail((currentEmail) => currentEmail.trim().toLowerCase())}
                   placeholder="nama@email.com"
                   required
+                  spellCheck={false}
                   type="email"
                   value={email}
                   className="h-12 bg-muted/50 border-muted-foreground/20 focus:bg-background transition-colors"
@@ -234,7 +257,7 @@ export function LoginPage({ portal }: LoginPageProps) {
                     autoComplete="current-password"
                     disabled={isSubmitting}
                     onChange={(event) => setPassword(event.target.value)}
-                    placeholder="••••••••"
+                    placeholder="********"
                     required
                     type={showPassword ? "text" : "password"}
                     value={password}
