@@ -1,16 +1,24 @@
 import { useEffect, useState } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import {
+  BookOpenCheck,
+  BriefcaseBusiness,
+  Eye,
+  EyeOff,
+  GraduationCap,
+  HeartHandshake,
+  Loader2,
+  UserPlus,
+} from "lucide-react";
 import { useAuthSession } from "../../app/providers/authSessionContext";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getDashboardPathForRole, type RoleCode } from "../../lib/auth";
-import { appName } from "../../lib/constants";
-import { useSystemSettings } from "../../lib/useSystemSettings";
 import { getThemeStyles } from "../../lib/theme";
-import { GraduationCap, Loader2, Users, BookOpen, Eye, EyeOff } from "lucide-react";
+import { useSystemSettings } from "../../lib/useSystemSettings";
 
-export type PortalType = "admin" | "teacher" | "learner";
+export type PortalType = "admin" | "teacher" | "mentor" | "learner";
 
 type LoginPageProps = {
   portal: PortalType;
@@ -18,33 +26,37 @@ type LoginPageProps = {
 
 const portalConfig = {
   admin: {
-    title: "Portal Admin & Staf",
-    subtitle: "Sistem Manajemen Terpadu YPIA",
-    Icon: Users,
-    gradient: "from-[#0a1f1a] to-[#0d2a22]",
-    iconBg: "bg-white/10",
-    themeColor: "bg-[#0a1f1a]",
+    title: "Login Admin",
+    welcome: "Selamat datang di pusat operasional YPIA.",
+    Icon: BriefcaseBusiness,
     allowedRoles: ["super_admin", "admin", "finance", "helpdesk", "content_reviewer"] as RoleCode[],
   },
   teacher: {
-    title: "Portal Pengajar",
-    subtitle: "Manajemen Kelas dan Pembelajaran",
-    Icon: BookOpen,
-    gradient: "from-[#0d2a22] to-[#122e25]",
-    iconBg: "bg-white/10",
-    themeColor: "bg-[#0d2a22]",
-    allowedRoles: ["teacher", "mentor"] as RoleCode[],
+    title: "Login Pengajar",
+    welcome: "Selamat datang di ruang pengajaran.",
+    Icon: BookOpenCheck,
+    allowedRoles: ["teacher"] as RoleCode[],
+  },
+  mentor: {
+    title: "Login Musyrif",
+    welcome: "Selamat datang di ruang pendampingan.",
+    Icon: HeartHandshake,
+    allowedRoles: ["mentor"] as RoleCode[],
   },
   learner: {
-    title: "Portal Siswa",
-    subtitle: "Akses Program dan Materi Belajar",
+    title: "Login Peserta",
+    welcome: "Selamat datang kembali di ruang belajar.",
     Icon: GraduationCap,
-    gradient: "from-[#0a1f1a] to-[#143d31]",
-    iconBg: "bg-white/15",
-    themeColor: "bg-[#0a1f1a]",
     allowedRoles: ["participant", "guardian"] as RoleCode[],
   },
 };
+
+const portalNavigation = [
+  { portal: "admin", label: "Admin", href: "/admin/login", Icon: BriefcaseBusiness },
+  { portal: "teacher", label: "Pengajar", href: "/teacher/login", Icon: BookOpenCheck },
+  { portal: "mentor", label: "Musyrif", href: "/musyrif/login", Icon: HeartHandshake },
+  { portal: "learner", label: "Peserta", href: "/learner/login", Icon: GraduationCap },
+] as const;
 
 function getLoginErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.includes("tidak memiliki akses")) {
@@ -62,9 +74,21 @@ function getLoginErrorMessage(error: unknown) {
       return "Email akun belum dikonfirmasi. Silakan konfirmasi email atau hubungi administrator.";
     }
 
+    if (code === "user_already_exists") {
+      return "Email sudah terdaftar. Gunakan mode Masuk atau pilih akun Google yang sesuai.";
+    }
+
+    if (code === "weak_password") {
+      return "Kata sandi belum memenuhi ketentuan keamanan.";
+    }
+
     if (code === "over_request_rate_limit") {
       return "Terlalu banyak percobaan masuk. Tunggu beberapa saat lalu coba kembali.";
     }
+  }
+
+  if (error instanceof Error && error.message.toLowerCase().includes("already registered")) {
+    return "Email sudah terdaftar. Gunakan mode Masuk atau pilih akun Google yang sesuai.";
   }
 
   return "Login gagal. Silakan coba kembali atau hubungi administrator.";
@@ -73,19 +97,37 @@ function getLoginErrorMessage(error: unknown) {
 export function LoginPage({ portal }: LoginPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isLoading, session, primaryRole, signIn, signOut } = useAuthSession();
+  const {
+    isLoading,
+    session,
+    primaryRole,
+    signIn,
+    signInLearnerWithGoogle,
+    signOut,
+    signUpLearner,
+  } = useAuthSession();
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { settings } = useSystemSettings();
   const dashboardPath = getDashboardPathForRole(primaryRole);
-  
   const config = portalConfig[portal];
   const Icon = config.Icon;
-
-  const themeKey = settings?.portal_themes?.[portal];
+  const isLearnerPortal = portal === "learner";
+  const pageTitle = isLearnerPortal && authMode === "register" ? "Daftar Peserta" : config.title;
+  const welcomeMessage = isLearnerPortal && authMode === "register"
+    ? "Mulai perjalanan belajar bersama YPIA."
+    : config.welcome;
+  const isLearnerRegistrationInProgress =
+    isLearnerPortal && authMode === "register" && isSubmitting;
+  const loginLogo = settings?.login_logo_url || settings?.logo_url;
+  const themeKey = settings?.portal_themes?.[portal] ?? (portal === "mentor" ? "rose" : undefined);
   const themeStyles = getThemeStyles(themeKey);
 
   useEffect(() => {
@@ -94,7 +136,7 @@ export function LoginPage({ portal }: LoginPageProps) {
     Object.entries(themeStyles).forEach(([key, value]) => {
       root.style.setProperty(key, value as string);
     });
-    
+
     return () => {
       Object.keys(themeStyles).forEach((key) => {
         root.style.removeProperty(key);
@@ -103,202 +145,280 @@ export function LoginPage({ portal }: LoginPageProps) {
   }, [themeStyles]);
 
   useEffect(() => {
-    // If already logged in and it's valid for this portal, redirect to dashboard.
-    // If logged in but NOT valid for this portal, we might want to log them out or redirect them.
-    // For now, if they are logged in, we just push them to their valid dashboard.
-    if (!isLoading && session) {
+    if (!isLoading && session && !isLearnerRegistrationInProgress) {
       navigate(dashboardPath, { replace: true });
     }
-  }, [dashboardPath, isLoading, navigate, session]);
+  }, [dashboardPath, isLearnerRegistrationInProgress, isLoading, navigate, session]);
 
-  if (!isLoading && session) {
+  if (!isLoading && session && !isLearnerRegistrationInProgress) {
     return <Navigate to={dashboardPath} replace />;
   }
 
   return (
-    <div className="min-h-screen w-full flex flex-col lg:flex-row bg-background">
-      {/* Left Column: Brand & Visuals */}
-      <div className="hidden lg:flex flex-col flex-1 bg-primary text-primary-foreground p-12 lg:p-24 justify-between relative overflow-hidden">
-        {/* Abstract background shapes */}
-        <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
-          <div className="absolute top-[-10%] left-[-10%] w-96 h-96 rounded-full bg-white/5 blur-3xl" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-white/10 blur-3xl" />
-        </div>
-
-        {/* Geometric Islamic pattern overlay */}
-        <div className="absolute inset-0 pointer-events-none opacity-[0.03]" style={{
-          backgroundImage: `
-            repeating-linear-gradient(0deg, transparent, transparent 48px, rgba(255,255,255,0.5) 48px, rgba(255,255,255,0.5) 49px),
-            repeating-linear-gradient(90deg, transparent, transparent 48px, rgba(255,255,255,0.5) 48px, rgba(255,255,255,0.5) 49px),
-            repeating-linear-gradient(45deg, transparent, transparent 67px, rgba(255,255,255,0.3) 67px, rgba(255,255,255,0.3) 68px),
-            repeating-linear-gradient(-45deg, transparent, transparent 67px, rgba(255,255,255,0.3) 67px, rgba(255,255,255,0.3) 68px)
-          `
-        }} />
-
-        {/* Gold accent line at top */}
-        <div className="absolute top-0 left-0 right-0 h-1" style={{
-          background: 'linear-gradient(90deg, transparent, hsl(42 70% 55% / 0.7), transparent)'
-        }} />
-
-        <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-12">
-            <div className={`w-12 h-12 rounded-xl ${config.iconBg} flex items-center justify-center backdrop-blur-sm border border-white/20`}>
-              <Icon className="w-7 h-7 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-white">{config.title}</h1>
-              <p className="text-white/80 text-sm font-medium">{settings?.institution_name || appName}</p>
-            </div>
-          </div>
-
-          <div className="space-y-6 max-w-lg mt-16">
-            <h2 className="text-4xl font-bold leading-tight text-white">
-              {config.subtitle}
-            </h2>
-            <p className="text-lg text-white/80 leading-relaxed">
-              Silakan login untuk mengakses fitur dan layanan sesuai dengan peran Anda di {settings?.institution_profile || "Yayasan Pendidikan Ihsanul Adab (YPIA)"}.
-            </p>
-          </div>
-        </div>
-
-        <div className="relative z-10 mt-auto pt-12">
-          <p className="text-sm text-white/60">
-            &copy; {new Date().getFullYear()} {settings?.institution_profile || "Yayasan Pendidikan Ihsanul Adab (YPIA)"}.
-          </p>
-        </div>
+    <div className={`portal-login portal-login--${portal}`}>
+      <div className="portal-login__watermark" aria-hidden="true">
+        <Icon />
       </div>
 
-      {/* Right Column: Login Form */}
-      <div className="flex-1 flex flex-col justify-center items-center p-6 lg:p-12 relative">
-        <div className="w-full max-w-md space-y-8">
-          
-          <div className="text-center lg:text-left space-y-2 mb-8">
-            <div className="lg:hidden flex items-center justify-center gap-3 mb-6">
-              <div className={`w-10 h-10 rounded-lg ${config.themeColor} flex items-center justify-center`}>
-                <Icon className="w-6 h-6 text-white" />
-              </div>
-              <span className="text-xl font-bold text-foreground">{config.title}</span>
-            </div>
-            
-            <h2 className="text-3xl font-bold tracking-tight text-foreground">Selamat Datang</h2>
-            <p className="text-muted-foreground">
-              Masukkan kredensial Anda untuk mengakses {config.title.toLowerCase()}.
-            </p>
+      <div className="portal-login__shell">
+        <nav className="portal-login__navigation" aria-label="Pilih portal login">
+          {portalNavigation.map((item) => {
+            const NavigationIcon = item.Icon;
+            const isActive = item.portal === portal;
+
+            return (
+              <Link
+                key={item.portal}
+                to={item.href}
+                className={isActive ? "is-active" : undefined}
+                aria-current={isActive ? "page" : undefined}
+              >
+                <NavigationIcon className="h-4 w-4" />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        <main className="portal-login__card" aria-label={pageTitle}>
+          <div className="portal-login__institution">
+            {loginLogo ? (
+              <img src={loginLogo} alt="" />
+            ) : (
+              <span className="portal-login__institution-mark">Y</span>
+            )}
+            <span>{settings?.institution_name || "YPIA"}</span>
           </div>
 
-          {errorMessage && (
-            <Alert className="border-red-500/50 text-red-600 bg-red-50 animate-in fade-in slide-in-from-top-2">
-              <AlertTitle>Gagal Masuk</AlertTitle>
-              <AlertDescription className="text-red-600/80">{errorMessage}</AlertDescription>
+          <header className="portal-login__header">
+            <div className="portal-login__icon" aria-hidden="true">
+              {authMode === "register" && isLearnerPortal
+                ? <UserPlus className="h-6 w-6" />
+                : <Icon className="h-6 w-6" />}
+            </div>
+            <div className="min-w-0">
+              <span className="portal-login__eyebrow">Ahlan wa Sahlan</span>
+              <h1>{pageTitle}</h1>
+              <p>{welcomeMessage}</p>
+            </div>
+          </header>
+
+          {isLearnerPortal ? (
+            <div className="portal-login__mode" aria-label="Pilih masuk atau daftar">
+              <button
+                type="button"
+                className={authMode === "login" ? "is-active" : undefined}
+                onClick={() => {
+                  setAuthMode("login");
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+              >
+                Masuk
+              </button>
+              <button
+                type="button"
+                className={authMode === "register" ? "is-active" : undefined}
+                onClick={() => {
+                  setAuthMode("register");
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+              >
+                Daftar
+              </button>
+            </div>
+          ) : null}
+
+          {errorMessage ? (
+            <Alert className="border-red-200 bg-red-50 text-red-700">
+              <AlertTitle>{authMode === "register" && isLearnerPortal ? "Pendaftaran gagal" : "Gagal Masuk"}</AlertTitle>
+              <AlertDescription className="text-red-700/80">{errorMessage}</AlertDescription>
             </Alert>
-          )}
+          ) : null}
+
+          {successMessage ? (
+            <Alert className="border-emerald-200 bg-emerald-50 text-emerald-800">
+              <AlertTitle>Pendaftaran berhasil</AlertTitle>
+              <AlertDescription className="text-emerald-800/80">{successMessage}</AlertDescription>
+            </Alert>
+          ) : null}
 
           <form
-            className="space-y-6"
+            className="portal-login__form"
             onSubmit={async (event) => {
-              event.preventDefault();
-              setErrorMessage(null);
-              setIsSubmitting(true);
+            event.preventDefault();
+            setErrorMessage(null);
+            setSuccessMessage(null);
+            setIsSubmitting(true);
 
-              try {
-                const normalizedEmail = email.trim().toLowerCase();
-                const nextState = await signIn(normalizedEmail, password);
-                const userRoles = nextState.roles.map(r => r.code);
-                
-                // VALIDASI PORTAL: Cek apakah user punya role yang diizinkan untuk portal ini
-                const hasAccessToPortal = config.allowedRoles.some(role => userRoles.includes(role));
-                
-                if (!hasAccessToPortal) {
-                  await signOut();
-                  throw new Error(`Akun Anda tidak memiliki akses ke ${config.title}. Silakan gunakan portal yang sesuai dengan peran Anda.`);
+            try {
+              const normalizedEmail = email.trim().toLowerCase();
+
+              if (isLearnerPortal && authMode === "register") {
+                if (password.length < 8) {
+                  throw new Error("Kata sandi minimal 8 karakter.");
                 }
 
-                const from = location.state as { from?: string } | null;
-                navigate(from?.from ?? getDashboardPathForRole(nextState.primaryRole), {
-                  replace: true,
-                });
-              } catch (error: unknown) {
-                console.error("Login gagal:", error);
-                setErrorMessage(getLoginErrorMessage(error));
-              } finally {
-                setIsSubmitting(false);
+                if (password !== passwordConfirmation) {
+                  throw new Error("Konfirmasi kata sandi belum sama.");
+                }
+
+                const result = await signUpLearner(fullName, normalizedEmail, password);
+                if (result.requiresEmailConfirmation) {
+                  setSuccessMessage(
+                    "Periksa inbox email Anda dan buka tautan konfirmasi untuk melanjutkan ke dashboard peserta. Periksa folder spam jika belum terlihat.",
+                  );
+                  return;
+                }
+
+                navigate("/learner", { replace: true });
+                return;
               }
+
+              const nextState = await signIn(normalizedEmail, password);
+              const userRoles = nextState.roles.map((role) => role.code);
+              const hasAccessToPortal = config.allowedRoles.some((role) => userRoles.includes(role));
+
+              if (!hasAccessToPortal) {
+                await signOut();
+                throw new Error(`Akun Anda tidak memiliki akses ke ${config.title}. Gunakan halaman login sesuai peran akun.`);
+              }
+
+              const from = location.state as { from?: string } | null;
+              navigate(from?.from ?? getDashboardPathForRole(nextState.primaryRole), {
+                replace: true,
+              });
+            } catch (error: unknown) {
+              console.error("Login gagal:", error);
+              setErrorMessage(
+                error instanceof Error && (
+                  error.message.includes("minimal 8 karakter") ||
+                  error.message.includes("Konfirmasi kata sandi")
+                )
+                  ? error.message
+                  : getLoginErrorMessage(error),
+              );
+            } finally {
+              setIsSubmitting(false);
+            }
             }}
           >
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70" htmlFor="email">
-                  Email
-                </label>
-                <Input
-                  id="email"
-                  autoComplete="email"
-                  autoCapitalize="none"
-                  disabled={isSubmitting}
-                  onChange={(event) => setEmail(event.target.value)}
-                  onBlur={() => setEmail((currentEmail) => currentEmail.trim().toLowerCase())}
-                  placeholder="nama@email.com"
-                  required
-                  spellCheck={false}
-                  type="email"
-                  value={email}
-                  className="h-12 bg-muted/50 border-muted-foreground/20 focus:bg-background transition-colors"
-                />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70" htmlFor="password">
-                    Kata Sandi
-                  </label>
-                </div>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    autoComplete="current-password"
-                    disabled={isSubmitting}
-                    onChange={(event) => setPassword(event.target.value)}
-                    placeholder="********"
-                    required
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    className="h-12 bg-muted/50 border-muted-foreground/20 focus:bg-background transition-colors pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
-                    aria-label={showPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-5 w-5" />
-                    ) : (
-                      <Eye className="h-5 w-5" />
-                    )}
-                  </button>
-                </div>
-              </div>
+          {isLearnerPortal && authMode === "register" ? (
+            <div className="space-y-2">
+              <label htmlFor="learner-full-name">Nama Lengkap</label>
+              <Input
+                id="learner-full-name"
+                autoComplete="name"
+                disabled={isSubmitting}
+                onChange={(event) => setFullName(event.target.value)}
+                placeholder="Nama lengkap"
+                required
+                type="text"
+                value={fullName}
+                className="h-12 bg-background"
+              />
             </div>
+          ) : null}
 
-            <Button 
-              disabled={isSubmitting} 
-              type="submit" 
-              className="w-full h-12 text-base font-medium transition-all"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Memverifikasi...
-                </>
-              ) : (
-                "Masuk"
-              )}
-            </Button>
-            
-            <div className="text-center text-sm text-muted-foreground mt-4">
-              <p>Pastikan Anda berada di portal yang tepat.</p>
+          <div className="space-y-2">
+            <label htmlFor={`${portal}-email`}>Email</label>
+            <Input
+              id={`${portal}-email`}
+              autoComplete="email"
+              autoCapitalize="none"
+              disabled={isSubmitting}
+              onChange={(event) => setEmail(event.target.value)}
+              onBlur={() => setEmail((currentEmail) => currentEmail.trim().toLowerCase())}
+              placeholder="nama@email.com"
+              required
+              spellCheck={false}
+              type="email"
+              value={email}
+              className="h-12 bg-background"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor={`${portal}-password`}>Kata Sandi</label>
+            <div className="relative">
+              <Input
+                id={`${portal}-password`}
+                autoComplete={authMode === "register" && isLearnerPortal ? "new-password" : "current-password"}
+                disabled={isSubmitting}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="********"
+                required
+                type={showPassword ? "text" : "password"}
+                value={password}
+                className="h-12 bg-background pr-11"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((current) => !current)}
+                className="portal-login__password-toggle"
+                aria-label={showPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
+              >
+                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
             </div>
+          </div>
+
+          {isLearnerPortal && authMode === "register" ? (
+            <div className="space-y-2">
+              <label htmlFor="learner-password-confirmation">Ulangi Kata Sandi</label>
+              <Input
+                id="learner-password-confirmation"
+                autoComplete="new-password"
+                disabled={isSubmitting}
+                onChange={(event) => setPasswordConfirmation(event.target.value)}
+                placeholder="********"
+                required
+                type={showPassword ? "text" : "password"}
+                value={passwordConfirmation}
+                className="h-12 bg-background"
+              />
+            </div>
+          ) : null}
+
+          <Button disabled={isSubmitting} type="submit" className="portal-login__submit h-12 w-full">
+            {isSubmitting ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Memverifikasi...
+              </>
+            ) : (
+              authMode === "register" && isLearnerPortal ? "Daftar dan Masuk" : "Masuk"
+            )}
+          </Button>
+
+          {isLearnerPortal ? (
+            <>
+              <div className="portal-login__separator"><span>atau</span></div>
+              <Button
+                type="button"
+                variant="outline"
+                className="portal-login__google h-12 w-full"
+                disabled={isSubmitting}
+                onClick={async () => {
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                  setIsSubmitting(true);
+                  try {
+                    await signInLearnerWithGoogle();
+                  } catch (error: unknown) {
+                    setErrorMessage(getLoginErrorMessage(error));
+                    setIsSubmitting(false);
+                  }
+                }}
+              >
+                <span className="portal-login__google-mark" aria-hidden="true">G</span>
+                {authMode === "register" ? "Daftar dengan Google" : "Masuk dengan Google"}
+              </Button>
+            </>
+          ) : null}
           </form>
-        </div>
+        </main>
       </div>
     </div>
   );

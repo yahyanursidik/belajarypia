@@ -40,7 +40,13 @@ type SettingsTab = "overview" | "identity" | "branding" | "themes";
 type AssetField = "logo_url" | "login_logo_url" | "favicon_url";
 type Feedback = { type: "success" | "error" | "info"; message: string } | null;
 
-const DEFAULT_THEMES: PortalThemeConfig = { admin: "indigo", learner: "emerald", teacher: "rose", public: "amber" };
+const DEFAULT_THEMES: PortalThemeConfig = {
+  admin: "slate",
+  learner: "emerald",
+  teacher: "indigo",
+  mentor: "rose",
+  public: "amber",
+};
 const MAX_ASSET_SIZE = 2 * 1024 * 1024;
 
 const settingsTabs: Array<{
@@ -58,7 +64,8 @@ const settingsTabs: Array<{
 const portalLabels: Record<keyof PortalThemeConfig, { label: string; description: string }> = {
   admin: { label: "Pusat Kendali", description: "Super admin dan admin lembaga" },
   learner: { label: "Portal Peserta", description: "Peserta belajar dan wali" },
-  teacher: { label: "Portal Pengajar", description: "Guru, mentor, dan penguji" },
+  teacher: { label: "Portal Pengajar", description: "Guru, ustadz, trainer, dan penguji" },
+  mentor: { label: "Portal Musyrif", description: "Pendamping halaqah dan peserta binaan" },
   public: { label: "Portal Publik", description: "Landing, login, dan pendaftaran" },
 };
 

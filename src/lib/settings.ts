@@ -39,7 +39,7 @@ export const emptySettings: SystemSettings = {
   contact_email: null,
   contact_phone: null,
   address: null,
-  portal_themes: { admin: "indigo", learner: "emerald", teacher: "rose", public: "amber" },
+  portal_themes: { admin: "slate", learner: "emerald", teacher: "indigo", mentor: "rose", public: "amber" },
   transcript_header_text: null,
   transcript_place_date_text: "Jakarta, ",
   transcript_official_name: null,

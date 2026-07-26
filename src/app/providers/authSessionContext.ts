@@ -6,6 +6,15 @@ export type AuthSessionContextValue = AuthState & {
   isLoading: boolean;
   refresh: () => Promise<AuthState>;
   signIn: (email: string, password: string) => Promise<AuthState>;
+  signInLearnerWithGoogle: () => Promise<void>;
+  signUpLearner: (
+    fullName: string,
+    email: string,
+    password: string,
+  ) => Promise<{
+    authState: AuthState | null;
+    requiresEmailConfirmation: boolean;
+  }>;
   signOut: () => Promise<void>;
 };
 

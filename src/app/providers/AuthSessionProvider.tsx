@@ -53,6 +53,54 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
 
         return refresh();
       },
+      signInLearnerWithGoogle: async () => {
+        const redirectTo = `${window.location.origin}/learner/auth/callback`;
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo,
+          },
+        });
+
+        if (error) {
+          throw error;
+        }
+      },
+      signUpLearner: async (fullName, email, password) => {
+        const redirectTo = `${window.location.origin}/learner/auth/callback`;
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim().toLowerCase(),
+          password,
+          options: {
+            emailRedirectTo: redirectTo,
+            data: {
+              full_name: fullName.trim(),
+              signup_portal: "learner",
+            },
+          },
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        if (!data.session) {
+          return {
+            authState: null,
+            requiresEmailConfirmation: true,
+          };
+        }
+
+        const { error: identityError } = await supabase.rpc("ensure_learner_identity");
+        if (identityError) {
+          throw identityError;
+        }
+
+        return {
+          authState: await refresh(),
+          requiresEmailConfirmation: false,
+        };
+      },
       signOut: async () => {
         await supabase.auth.signOut();
         setAuthState(emptyAuthState);

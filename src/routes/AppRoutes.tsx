@@ -23,6 +23,11 @@ const TeacherLayout = lazy(() =>
 const LoginPage = lazy(() =>
   import("./auth/LoginPage").then((module) => ({ default: module.LoginPage })),
 );
+const LearnerAuthCallbackPage = lazy(() =>
+  import("./auth/LearnerAuthCallbackPage").then((module) => ({
+    default: module.LearnerAuthCallbackPage,
+  })),
+);
 const NoRolePage = lazy(() =>
   import("./auth/NoRolePage").then((module) => ({ default: module.NoRolePage })),
 );
@@ -263,7 +268,10 @@ export function AppRoutes() {
         <Route path="/" element={<Navigate to="/admin/login" replace />} />
         <Route path="/admin/login" element={<LoginPage portal="admin" />} />
         <Route path="/teacher/login" element={<LoginPage portal="teacher" />} />
+        <Route path="/musyrif/login" element={<LoginPage portal="mentor" />} />
+        <Route path="/mentor/login" element={<Navigate to="/musyrif/login" replace />} />
         <Route path="/learner/login" element={<LoginPage portal="learner" />} />
+        <Route path="/learner/auth/callback" element={<LearnerAuthCallbackPage />} />
         <Route path="/auth/login" element={<Navigate to="/learner/login" replace />} />
         <Route
           path="/auth/no-role"

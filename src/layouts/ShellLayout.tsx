@@ -1,8 +1,11 @@
 import {
   BookOpen,
+  BriefcaseBusiness,
   ChevronDown,
   ChevronRight,
+  Compass,
   GraduationCap,
+  HeartHandshake,
   LogOut,
   Menu,
   MoreHorizontal,
@@ -10,8 +13,6 @@ import {
   PanelLeftOpen,
   Search,
   Settings,
-  User,
-  Users,
   X,
 } from "lucide-react";
 import type { ComponentType, PropsWithChildren } from "react";
@@ -26,7 +27,7 @@ import { getThemeStyles } from "../lib/theme";
 import { useSystemSettings } from "../lib/useSystemSettings";
 import { cn } from "../lib/utils";
 
-type ShellVariant = "public" | "learner" | "teacher" | "admin" | "superadmin";
+type ShellVariant = "public" | "learner" | "teacher" | "mentor" | "admin" | "superadmin";
 
 type ShellLayoutProps = PropsWithChildren<{
   title: string;
@@ -47,8 +48,9 @@ type SidebarNavigationProps = {
 const iconByVariant: Record<ShellVariant, ComponentType<{ className?: string }>> = {
   public: BookOpen,
   learner: GraduationCap,
-  teacher: User,
-  admin: Users,
+  teacher: Compass,
+  mentor: HeartHandshake,
+  admin: BriefcaseBusiness,
   superadmin: Settings,
 };
 
@@ -56,8 +58,21 @@ const homeByVariant: Record<ShellVariant, string> = {
   public: "/",
   learner: "/learner",
   teacher: "/teacher",
+  mentor: "/teacher",
   admin: "/admin",
   superadmin: "/system",
+};
+
+const portalIdentityByVariant: Record<ShellVariant, {
+  eyebrow: string;
+  shortLabel: string;
+}> = {
+  public: { eyebrow: "Informasi YPIA", shortLabel: "Portal Publik" },
+  learner: { eyebrow: "Ruang Tumbuh", shortLabel: "Portal Peserta" },
+  teacher: { eyebrow: "Ruang Mengajar", shortLabel: "Portal Pengajar" },
+  mentor: { eyebrow: "Ruang Pendampingan", shortLabel: "Portal Musyrif" },
+  admin: { eyebrow: "Pusat Operasional", shortLabel: "Portal Admin" },
+  superadmin: { eyebrow: "Tata Kelola Global", shortLabel: "Super Admin" },
 };
 
 const ContentFallback = () => <FullPageLoader message="Memuat antarmuka..." />;
@@ -298,6 +313,7 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
   );
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const BrandIcon = iconByVariant[variant];
+  const portalIdentity = portalIdentityByVariant[variant];
   const displayName = profile?.full_name ?? profile?.email ?? "Pengguna";
 
   const initials = displayName
@@ -307,7 +323,10 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
     .join("")
     .toUpperCase();
 
-  const themeKey = settings?.portal_themes?.[variant === "superadmin" ? "admin" : variant];
+  const themePortal = variant === "superadmin" ? "admin" : variant;
+  const themeKey = themePortal === "mentor"
+    ? settings?.portal_themes?.mentor ?? "rose"
+    : settings?.portal_themes?.[themePortal];
   const themeStyles = getThemeStyles(themeKey);
   const sidebarTitle = settings?.app_sidebar_title || "YPIA";
   const sidebarSubtitle = settings?.app_sidebar_subtitle || "Portal Pembelajaran";
@@ -405,7 +424,11 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
             >
               <Menu className="h-5 w-5" />
             </Button>
+            <div className="app-shell__portal-mark" aria-hidden="true">
+              <BrandIcon className="h-5 w-5" />
+            </div>
             <div className="min-w-0">
+              <span className="app-shell__eyebrow">{portalIdentity.eyebrow}</span>
               <h1 className="app-shell__title">{title}</h1>
               <p className="app-shell__subtitle">{subtitle}</p>
             </div>
@@ -413,8 +436,9 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
 
           {primaryRole ? (
             <div className="app-shell__account">
+              <span className="app-shell__portal-chip">{portalIdentity.shortLabel}</span>
               <Link
-                to={variant === "superadmin" ? "/system/profil" : variant === "admin" ? "/admin/profil" : variant === "teacher" ? "/teacher/profil" : "/learner/profil"}
+                to={variant === "superadmin" ? "/system/profil" : variant === "admin" ? "/admin/profil" : variant === "teacher" || variant === "mentor" ? "/teacher/profil" : "/learner/profil"}
                 className="app-shell__profile-link"
                 title="Pengaturan profil saya"
               >
@@ -433,6 +457,7 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
                   let loginPath = "/learner/login";
                   if (variant === "admin" || variant === "superadmin") loginPath = "/admin/login";
                   else if (variant === "teacher") loginPath = "/teacher/login";
+                  else if (variant === "mentor") loginPath = "/musyrif/login";
                   navigate(loginPath, { replace: true });
                 }}
                 aria-label="Keluar"
@@ -487,7 +512,7 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
           </aside>
       </div>
 
-      {(variant === "learner" || variant === "teacher") ? (
+      {(variant === "learner" || variant === "teacher" || variant === "mentor") ? (
         <nav className="app-shell__bottom-nav" aria-label="Navigasi cepat">
           {mobilePrimaryItems.map((item) => {
             const Icon = item.icon;

@@ -6,6 +6,7 @@ export type PortalThemeConfig = {
   admin: ThemeKey;
   learner: ThemeKey;
   teacher: ThemeKey;
+  mentor: ThemeKey;
   public: ThemeKey;
 };
 
