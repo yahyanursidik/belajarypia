@@ -11,6 +11,7 @@ export type AuthSessionContextValue = AuthState & {
     fullName: string,
     email: string,
     password: string,
+    captchaToken?: string,
   ) => Promise<{
     authState: AuthState | null;
     requiresEmailConfirmation: boolean;

@@ -1453,6 +1453,67 @@ a {
   background: var(--login-accent-soft);
 }
 
+.turnstile-panel {
+  display: grid;
+  min-width: 0;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--muted) / 0.38);
+}
+
+.turnstile-panel__heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: hsl(var(--foreground));
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.turnstile-panel__heading svg {
+  color: var(--login-accent);
+}
+
+.turnstile-panel__widget {
+  display: flex;
+  width: 100%;
+  min-height: 65px;
+  align-items: center;
+  overflow: hidden;
+}
+
+.turnstile-panel__widget iframe {
+  max-width: 100%;
+}
+
+.turnstile-panel p {
+  margin: 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.turnstile-panel--verified {
+  border-color: color-mix(in srgb, #16845b 35%, hsl(var(--border)));
+  background: color-mix(in srgb, #16845b 6%, hsl(var(--card)));
+}
+
+.turnstile-panel--verified p {
+  color: #126647;
+}
+
+.turnstile-panel--error,
+.turnstile-panel--expired {
+  border-color: color-mix(in srgb, #c2413b 30%, hsl(var(--border)));
+}
+
+.turnstile-panel--error p,
+.turnstile-panel--expired p {
+  color: #9f332e;
+}
+
 @keyframes login-navigation-enter {
   from {
     opacity: 0;

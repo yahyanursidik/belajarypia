@@ -66,12 +66,13 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
           throw error;
         }
       },
-      signUpLearner: async (fullName, email, password) => {
+      signUpLearner: async (fullName, email, password, captchaToken) => {
         const redirectTo = `${window.location.origin}/learner/auth/callback`;
         const { data, error } = await supabase.auth.signUp({
           email: email.trim().toLowerCase(),
           password,
           options: {
+            captchaToken,
             emailRedirectTo: redirectTo,
             data: {
               full_name: fullName.trim(),

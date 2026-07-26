@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import {
   BookOpenCheck,
@@ -14,6 +14,10 @@ import { useAuthSession } from "../../app/providers/authSessionContext";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  TurnstileWidget,
+  type TurnstileWidgetHandle,
+} from "@/components/auth/TurnstileWidget";
 import { getDashboardPathForRole, type RoleCode } from "../../lib/auth";
 import { getThemeStyles } from "../../lib/theme";
 import { useSystemSettings } from "../../lib/useSystemSettings";
@@ -58,9 +62,15 @@ const portalNavigation = [
   { portal: "learner", label: "Peserta", href: "/learner/login", Icon: GraduationCap },
 ] as const;
 
+const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? "";
+
 function getLoginErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.includes("tidak memiliki akses")) {
     return error.message;
+  }
+
+  if (error instanceof Error && /captcha|turnstile/i.test(error.message)) {
+    return "Verifikasi keamanan gagal atau kedaluwarsa. Silakan ulangi verifikasi.";
   }
 
   if (error && typeof error === "object") {
@@ -85,6 +95,10 @@ function getLoginErrorMessage(error: unknown) {
     if (code === "over_request_rate_limit") {
       return "Terlalu banyak percobaan masuk. Tunggu beberapa saat lalu coba kembali.";
     }
+
+    if (code === "captcha_failed") {
+      return "Verifikasi keamanan gagal atau kedaluwarsa. Silakan ulangi verifikasi.";
+    }
   }
 
   if (error instanceof Error && error.message.toLowerCase().includes("already registered")) {
@@ -97,6 +111,7 @@ function getLoginErrorMessage(error: unknown) {
 export function LoginPage({ portal }: LoginPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null);
   const {
     isLoading,
     session,
@@ -111,6 +126,7 @@ export function LoginPage({ portal }: LoginPageProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -210,6 +226,8 @@ export function LoginPage({ portal }: LoginPageProps) {
                 className={authMode === "login" ? "is-active" : undefined}
                 onClick={() => {
                   setAuthMode("login");
+                  setCaptchaToken(null);
+                  turnstileRef.current?.reset();
                   setErrorMessage(null);
                   setSuccessMessage(null);
                 }}
@@ -221,6 +239,7 @@ export function LoginPage({ portal }: LoginPageProps) {
                 className={authMode === "register" ? "is-active" : undefined}
                 onClick={() => {
                   setAuthMode("register");
+                  setCaptchaToken(null);
                   setErrorMessage(null);
                   setSuccessMessage(null);
                 }}
@@ -246,6 +265,11 @@ export function LoginPage({ portal }: LoginPageProps) {
 
           <form
             className="portal-login__form"
+            data-turnstile-status={
+              isLearnerPortal && authMode === "register"
+                ? turnstileSiteKey ? "enabled" : "missing-site-key"
+                : "not-required"
+            }
             onSubmit={async (event) => {
             event.preventDefault();
             setErrorMessage(null);
@@ -264,7 +288,29 @@ export function LoginPage({ portal }: LoginPageProps) {
                   throw new Error("Konfirmasi kata sandi belum sama.");
                 }
 
-                const result = await signUpLearner(fullName, normalizedEmail, password);
+                if (!turnstileSiteKey) {
+                  throw new Error("Turnstile belum dikonfigurasi. Pendaftaran sementara dinonaktifkan.");
+                }
+
+                if (!captchaToken) {
+                  throw new Error("Selesaikan verifikasi keamanan sebelum mendaftar.");
+                }
+
+                let result: Awaited<ReturnType<typeof signUpLearner>>;
+                try {
+                  result = await signUpLearner(
+                    fullName,
+                    normalizedEmail,
+                    password,
+                    captchaToken ?? undefined,
+                  );
+                } finally {
+                  if (turnstileSiteKey) {
+                    setCaptchaToken(null);
+                    turnstileRef.current?.reset();
+                  }
+                }
+
                 if (result.requiresEmailConfirmation) {
                   setSuccessMessage(
                     "Periksa inbox email Anda dan buka tautan konfirmasi untuk melanjutkan ke dashboard peserta. Periksa folder spam jika belum terlihat.",
@@ -294,7 +340,8 @@ export function LoginPage({ portal }: LoginPageProps) {
               setErrorMessage(
                 error instanceof Error && (
                   error.message.includes("minimal 8 karakter") ||
-                  error.message.includes("Konfirmasi kata sandi")
+                  error.message.includes("Konfirmasi kata sandi") ||
+                  error.message.includes("verifikasi keamanan")
                 )
                   ? error.message
                   : getLoginErrorMessage(error),
@@ -379,6 +426,22 @@ export function LoginPage({ portal }: LoginPageProps) {
                 className="h-12 bg-background"
               />
             </div>
+          ) : null}
+
+          {isLearnerPortal && authMode === "register" ? (
+            turnstileSiteKey ? (
+              <TurnstileWidget
+                key={turnstileSiteKey}
+                ref={turnstileRef}
+                siteKey={turnstileSiteKey}
+                onTokenChange={setCaptchaToken}
+              />
+            ) : (
+              <div className="turnstile-panel turnstile-panel--error" role="alert">
+                <strong>Verifikasi keamanan belum aktif.</strong>
+                <p>Pendaftaran dinonaktifkan sampai site key Turnstile tersedia.</p>
+              </div>
+            )
           ) : null}
 
           <Button disabled={isSubmitting} type="submit" className="portal-login__submit h-12 w-full">
