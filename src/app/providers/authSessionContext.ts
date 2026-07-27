@@ -5,7 +5,7 @@ import { getDashboardPathForRole } from "../../lib/auth";
 export type AuthSessionContextValue = AuthState & {
   isLoading: boolean;
   refresh: () => Promise<AuthState>;
-  signIn: (email: string, password: string) => Promise<AuthState>;
+  signIn: (email: string, password: string, captchaToken?: string) => Promise<AuthState>;
   signInLearnerWithGoogle: () => Promise<void>;
   signUpLearner: (
     fullName: string,

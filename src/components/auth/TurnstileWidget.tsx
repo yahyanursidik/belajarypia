@@ -37,6 +37,7 @@ export type TurnstileWidgetHandle = {
 };
 
 type TurnstileWidgetProps = {
+  action: string;
   onTokenChange: (token: string | null) => void;
   siteKey: string;
 };
@@ -89,7 +90,7 @@ function loadTurnstile() {
 }
 
 export const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
-  function TurnstileWidget({ onTokenChange, siteKey }, ref) {
+  function TurnstileWidget({ action, onTokenChange, siteKey }, ref) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const widgetIdRef = useRef<string | null>(null);
     const apiRef = useRef<TurnstileApi | null>(null);
@@ -129,7 +130,7 @@ export const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidget
 
           apiRef.current = api;
           widgetIdRef.current = api.render(containerRef.current, {
-            action: "learner_signup",
+            action,
             appearance: "always",
             callback: (token) => {
               setErrorCode(null);
@@ -172,11 +173,11 @@ export const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidget
         widgetIdRef.current = null;
         apiRef.current = null;
       };
-    }, [siteKey]);
+    }, [action, siteKey]);
 
     const statusText = {
       loading: "Memuat verifikasi keamanan...",
-      ready: "Selesaikan verifikasi sebelum mendaftar.",
+      ready: "Selesaikan verifikasi sebelum melanjutkan.",
       verified: "Verifikasi keamanan berhasil.",
       expired: "Verifikasi kedaluwarsa. Silakan ulangi.",
       error: `Verifikasi keamanan gagal dimuat. Periksa koneksi lalu muat ulang halaman.${errorCode ? ` Kode: ${errorCode}.` : ""}`,

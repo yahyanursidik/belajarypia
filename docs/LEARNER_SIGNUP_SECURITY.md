@@ -1,13 +1,15 @@
-# Keamanan Pendaftaran Mandiri Peserta
+# Keamanan Auth dan Pendaftaran Mandiri Peserta
 
-Pendaftaran mandiri menggunakan Cloudflare Turnstile yang diverifikasi oleh Supabase Auth. CAPTCHA matematika atau pencocokan teks buatan sendiri tidak dipakai sebagai kontrol utama karena dapat dilewati dengan memanggil endpoint signup secara langsung.
+Seluruh login password dan pendaftaran mandiri menggunakan Cloudflare Turnstile yang diverifikasi oleh Supabase Auth. CAPTCHA matematika atau pencocokan teks buatan sendiri tidak dipakai sebagai kontrol utama karena dapat dilewati dengan memanggil endpoint Auth secara langsung.
 
 ## Alur perlindungan
 
 1. Widget Turnstile menghasilkan token sekali pakai di browser.
-2. Frontend mengirim token melalui parameter `captchaToken` pada `supabase.auth.signUp`.
+2. Frontend mengirim token melalui parameter `captchaToken` pada `supabase.auth.signInWithPassword` atau `supabase.auth.signUp`.
 3. Supabase Auth memverifikasi token menggunakan secret key yang tersimpan di Supabase.
-4. Signup ditolak bila token hilang, tidak valid, sudah digunakan, atau kedaluwarsa.
+4. Login atau signup ditolak bila token hilang, tidak valid, sudah digunakan, atau kedaluwarsa.
+
+Karena toggle CAPTCHA Supabase Auth berlaku pada endpoint Auth yang dilindungi, widget harus tersedia pada login Admin, Pengajar, Musyrif, Peserta, serta pendaftaran Peserta. Google OAuth tetap mengikuti perlindungan dan verifikasi dari Google.
 
 Secret key Turnstile tidak boleh berada di Vite env, source code, migration, atau repository.
 

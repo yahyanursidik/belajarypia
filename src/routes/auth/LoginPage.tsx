@@ -136,6 +136,8 @@ export function LoginPage({ portal }: LoginPageProps) {
   const config = portalConfig[portal];
   const Icon = config.Icon;
   const isLearnerPortal = portal === "learner";
+  const isLearnerRegistration = isLearnerPortal && authMode === "register";
+  const turnstileAction = isLearnerRegistration ? "learner_signup" : `${portal}_login`;
   const pageTitle = isLearnerPortal && authMode === "register" ? "Daftar Peserta" : config.title;
   const welcomeMessage = isLearnerPortal && authMode === "register"
     ? "Mulai perjalanan belajar bersama YPIA."
@@ -265,11 +267,7 @@ export function LoginPage({ portal }: LoginPageProps) {
 
           <form
             className="portal-login__form"
-            data-turnstile-status={
-              isLearnerPortal && authMode === "register"
-                ? turnstileSiteKey ? "enabled" : "missing-site-key"
-                : "not-required"
-            }
+            data-turnstile-status={turnstileSiteKey ? "enabled" : "missing-site-key"}
             onSubmit={async (event) => {
             event.preventDefault();
             setErrorMessage(null);
@@ -279,6 +277,18 @@ export function LoginPage({ portal }: LoginPageProps) {
             try {
               const normalizedEmail = email.trim().toLowerCase();
 
+              if (!turnstileSiteKey) {
+                throw new Error("Turnstile belum dikonfigurasi. Autentikasi sementara dinonaktifkan.");
+              }
+
+              if (!captchaToken) {
+                throw new Error(
+                  isLearnerRegistration
+                    ? "Selesaikan verifikasi keamanan sebelum mendaftar."
+                    : "Selesaikan verifikasi keamanan sebelum masuk.",
+                );
+              }
+
               if (isLearnerPortal && authMode === "register") {
                 if (password.length < 8) {
                   throw new Error("Kata sandi minimal 8 karakter.");
@@ -286,14 +296,6 @@ export function LoginPage({ portal }: LoginPageProps) {
 
                 if (password !== passwordConfirmation) {
                   throw new Error("Konfirmasi kata sandi belum sama.");
-                }
-
-                if (!turnstileSiteKey) {
-                  throw new Error("Turnstile belum dikonfigurasi. Pendaftaran sementara dinonaktifkan.");
-                }
-
-                if (!captchaToken) {
-                  throw new Error("Selesaikan verifikasi keamanan sebelum mendaftar.");
                 }
 
                 let result: Awaited<ReturnType<typeof signUpLearner>>;
@@ -322,7 +324,14 @@ export function LoginPage({ portal }: LoginPageProps) {
                 return;
               }
 
-              const nextState = await signIn(normalizedEmail, password);
+              let nextState: Awaited<ReturnType<typeof signIn>>;
+              try {
+                nextState = await signIn(normalizedEmail, password, captchaToken);
+              } finally {
+                setCaptchaToken(null);
+                turnstileRef.current?.reset();
+              }
+
               const userRoles = nextState.roles.map((role) => role.code);
               const hasAccessToPortal = config.allowedRoles.some((role) => userRoles.includes(role));
 
@@ -428,23 +437,26 @@ export function LoginPage({ portal }: LoginPageProps) {
             </div>
           ) : null}
 
-          {isLearnerPortal && authMode === "register" ? (
-            turnstileSiteKey ? (
-              <TurnstileWidget
-                key={turnstileSiteKey}
-                ref={turnstileRef}
-                siteKey={turnstileSiteKey}
-                onTokenChange={setCaptchaToken}
-              />
-            ) : (
-              <div className="turnstile-panel turnstile-panel--error" role="alert">
-                <strong>Verifikasi keamanan belum aktif.</strong>
-                <p>Pendaftaran dinonaktifkan sampai site key Turnstile tersedia.</p>
-              </div>
-            )
-          ) : null}
+          {turnstileSiteKey ? (
+            <TurnstileWidget
+              key={`${turnstileSiteKey}-${turnstileAction}`}
+              ref={turnstileRef}
+              action={turnstileAction}
+              siteKey={turnstileSiteKey}
+              onTokenChange={setCaptchaToken}
+            />
+          ) : (
+            <div className="turnstile-panel turnstile-panel--error" role="alert">
+              <strong>Verifikasi keamanan belum aktif.</strong>
+              <p>Login dan pendaftaran dinonaktifkan sampai site key Turnstile tersedia.</p>
+            </div>
+          )}
 
-          <Button disabled={isSubmitting} type="submit" className="portal-login__submit h-12 w-full">
+          <Button
+            disabled={isSubmitting || !turnstileSiteKey || !captchaToken}
+            type="submit"
+            className="portal-login__submit h-12 w-full"
+          >
             {isSubmitting ? (
               <>
                 <Loader2 className="h-5 w-5 animate-spin" />

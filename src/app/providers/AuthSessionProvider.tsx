@@ -41,10 +41,13 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
       ...authState,
       isLoading,
       refresh,
-      signIn: async (email, password) => {
+      signIn: async (email, password, captchaToken) => {
         const { error } = await supabase.auth.signInWithPassword({
           email: email.trim().toLowerCase(),
           password,
+          options: {
+            captchaToken,
+          },
         });
 
         if (error) {
