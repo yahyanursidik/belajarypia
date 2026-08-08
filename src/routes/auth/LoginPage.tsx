@@ -7,6 +7,7 @@ import {
   EyeOff,
   GraduationCap,
   HeartHandshake,
+  KeyRound,
   Loader2,
   UserPlus,
 } from "lucide-react";
@@ -19,6 +20,7 @@ import {
   type TurnstileWidgetHandle,
 } from "@/components/auth/TurnstileWidget";
 import { getDashboardPathForRole, type RoleCode } from "../../lib/auth";
+import { getAuthRedirectUrl } from "../../lib/authRedirects";
 import { getThemeStyles } from "../../lib/theme";
 import { useSystemSettings } from "../../lib/useSystemSettings";
 
@@ -116,12 +118,13 @@ export function LoginPage({ portal }: LoginPageProps) {
     isLoading,
     session,
     primaryRole,
+    requestPasswordReset,
     signIn,
     signInLearnerWithGoogle,
     signOut,
     signUpLearner,
   } = useAuthSession();
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authMode, setAuthMode] = useState<"login" | "register" | "forgot">("login");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -137,11 +140,22 @@ export function LoginPage({ portal }: LoginPageProps) {
   const Icon = config.Icon;
   const isLearnerPortal = portal === "learner";
   const isLearnerRegistration = isLearnerPortal && authMode === "register";
-  const turnstileAction = isLearnerRegistration ? "learner_signup" : `${portal}_login`;
-  const pageTitle = isLearnerPortal && authMode === "register" ? "Daftar Peserta" : config.title;
-  const welcomeMessage = isLearnerPortal && authMode === "register"
+  const isPasswordRecovery = authMode === "forgot";
+  const turnstileAction = isLearnerRegistration
+    ? "learner_signup"
+    : isPasswordRecovery
+      ? `${portal}_password_reset`
+      : `${portal}_login`;
+  const pageTitle = isLearnerRegistration
+    ? "Daftar Peserta"
+    : isPasswordRecovery
+      ? "Lupa Kata Sandi"
+      : config.title;
+  const welcomeMessage = isLearnerRegistration
     ? "Mulai perjalanan belajar bersama YPIA."
-    : config.welcome;
+    : isPasswordRecovery
+      ? "Masukkan email akun untuk menerima tautan reset sandi."
+      : config.welcome;
   const isLearnerRegistrationInProgress =
     isLearnerPortal && authMode === "register" && isSubmitting;
   const loginLogo = settings?.login_logo_url || settings?.logo_url;
@@ -210,9 +224,13 @@ export function LoginPage({ portal }: LoginPageProps) {
 
           <header className="portal-login__header">
             <div className="portal-login__icon" aria-hidden="true">
-              {authMode === "register" && isLearnerPortal
-                ? <UserPlus className="h-6 w-6" />
-                : <Icon className="h-6 w-6" />}
+              {authMode === "register" && isLearnerPortal ? (
+                <UserPlus className="h-6 w-6" />
+              ) : isPasswordRecovery ? (
+                <KeyRound className="h-6 w-6" />
+              ) : (
+                <Icon className="h-6 w-6" />
+              )}
             </div>
             <div className="min-w-0">
               <span className="portal-login__eyebrow">Ahlan wa Sahlan</span>
@@ -242,6 +260,7 @@ export function LoginPage({ portal }: LoginPageProps) {
                 onClick={() => {
                   setAuthMode("register");
                   setCaptchaToken(null);
+                  turnstileRef.current?.reset();
                   setErrorMessage(null);
                   setSuccessMessage(null);
                 }}
@@ -260,7 +279,7 @@ export function LoginPage({ portal }: LoginPageProps) {
 
           {successMessage ? (
             <Alert className="border-emerald-200 bg-emerald-50 text-emerald-800">
-              <AlertTitle>Pendaftaran berhasil</AlertTitle>
+              <AlertTitle>{isPasswordRecovery ? "Email reset dikirim" : "Pendaftaran berhasil"}</AlertTitle>
               <AlertDescription className="text-emerald-800/80">{successMessage}</AlertDescription>
             </Alert>
           ) : null}
@@ -285,8 +304,29 @@ export function LoginPage({ portal }: LoginPageProps) {
                 throw new Error(
                   isLearnerRegistration
                     ? "Selesaikan verifikasi keamanan sebelum mendaftar."
-                    : "Selesaikan verifikasi keamanan sebelum masuk.",
+                    : isPasswordRecovery
+                      ? "Selesaikan verifikasi keamanan sebelum meminta reset sandi."
+                      : "Selesaikan verifikasi keamanan sebelum masuk.",
                 );
+              }
+
+              if (isPasswordRecovery) {
+                try {
+                  await requestPasswordReset(
+                    normalizedEmail,
+                    getAuthRedirectUrl(`/auth/update-password?portal=${portal}`),
+                    captchaToken,
+                  );
+                } finally {
+                  setCaptchaToken(null);
+                  turnstileRef.current?.reset();
+                }
+
+                setSuccessMessage(
+                  "Tautan reset kata sandi sudah dikirim jika email tersebut terdaftar. Periksa inbox dan folder spam.",
+                );
+                setPassword("");
+                return;
               }
 
               if (isLearnerPortal && authMode === "register") {
@@ -395,30 +435,32 @@ export function LoginPage({ portal }: LoginPageProps) {
             />
           </div>
 
-          <div className="space-y-2">
-            <label htmlFor={`${portal}-password`}>Kata Sandi</label>
-            <div className="relative">
-              <Input
-                id={`${portal}-password`}
-                autoComplete={authMode === "register" && isLearnerPortal ? "new-password" : "current-password"}
-                disabled={isSubmitting}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="********"
-                required
-                type={showPassword ? "text" : "password"}
-                value={password}
-                className="h-12 bg-background pr-11"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((current) => !current)}
-                className="portal-login__password-toggle"
-                aria-label={showPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
-              >
-                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-              </button>
+          {!isPasswordRecovery ? (
+            <div className="space-y-2">
+              <label htmlFor={`${portal}-password`}>Kata Sandi</label>
+              <div className="relative">
+                <Input
+                  id={`${portal}-password`}
+                  autoComplete={authMode === "register" && isLearnerPortal ? "new-password" : "current-password"}
+                  disabled={isSubmitting}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="********"
+                  required
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  className="h-12 bg-background pr-11"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((current) => !current)}
+                  className="portal-login__password-toggle"
+                  aria-label={showPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
             </div>
-          </div>
+          ) : null}
 
           {isLearnerPortal && authMode === "register" ? (
             <div className="space-y-2">
@@ -463,11 +505,48 @@ export function LoginPage({ portal }: LoginPageProps) {
                 Memverifikasi...
               </>
             ) : (
-              authMode === "register" && isLearnerPortal ? "Daftar dan Masuk" : "Masuk"
+              isLearnerRegistration
+                ? "Daftar dan Masuk"
+                : isPasswordRecovery
+                  ? "Kirim Tautan Reset"
+                  : "Masuk"
             )}
           </Button>
 
-          {isLearnerPortal ? (
+          {authMode === "login" ? (
+            <button
+              type="button"
+              className="portal-login__link-action"
+              onClick={() => {
+                setAuthMode("forgot");
+                setCaptchaToken(null);
+                turnstileRef.current?.reset();
+                setErrorMessage(null);
+                setSuccessMessage(null);
+              }}
+            >
+              <KeyRound className="h-4 w-4" />
+              <span>Lupa kata sandi?</span>
+            </button>
+          ) : null}
+
+          {isPasswordRecovery ? (
+            <button
+              type="button"
+              className="portal-login__link-action"
+              onClick={() => {
+                setAuthMode("login");
+                setCaptchaToken(null);
+                turnstileRef.current?.reset();
+                setErrorMessage(null);
+                setSuccessMessage(null);
+              }}
+            >
+              Kembali ke login
+            </button>
+          ) : null}
+
+          {isLearnerPortal && !isPasswordRecovery ? (
             <>
               <div className="portal-login__separator"><span>atau</span></div>
               <Button

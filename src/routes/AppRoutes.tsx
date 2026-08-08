@@ -28,6 +28,11 @@ const LearnerAuthCallbackPage = lazy(() =>
     default: module.LearnerAuthCallbackPage,
   })),
 );
+const UpdatePasswordPage = lazy(() =>
+  import("./auth/UpdatePasswordPage").then((module) => ({
+    default: module.UpdatePasswordPage,
+  })),
+);
 const NoRolePage = lazy(() =>
   import("./auth/NoRolePage").then((module) => ({ default: module.NoRolePage })),
 );
@@ -272,6 +277,7 @@ export function AppRoutes() {
         <Route path="/mentor/login" element={<Navigate to="/musyrif/login" replace />} />
         <Route path="/learner/login" element={<LoginPage portal="learner" />} />
         <Route path="/learner/auth/callback" element={<LearnerAuthCallbackPage />} />
+        <Route path="/auth/update-password" element={<UpdatePasswordPage />} />
         <Route path="/auth/login" element={<Navigate to="/learner/login" replace />} />
         <Route
           path="/auth/no-role"

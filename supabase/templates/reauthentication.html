@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light">
     <meta name="supported-color-schemes" content="light">
-    <title>Konfirmasi pendaftaran akun</title>
+    <title>Kode verifikasi keamanan</title>
   </head>
   <body style="margin:0; padding:0; background-color:#f3f7f5; color:#15332b; font-family:Arial, Helvetica, sans-serif;">
     <div style="display:none; max-height:0; overflow:hidden; opacity:0;">
-      Satu langkah lagi untuk mengaktifkan akun peserta Anda.
+      Kode verifikasi keamanan akun LMS Anda.
     </div>
 
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:#f3f7f5;">
@@ -20,9 +20,7 @@
               <td style="padding:0 0 16px;">
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0">
                   <tr>
-                    <td align="center" width="44" height="44" style="width:44px; height:44px; border-radius:8px; background-color:#17735d; color:#ffffff; font-size:22px; font-weight:700;">
-                      Y
-                    </td>
+                    <td align="center" width="44" height="44" style="width:44px; height:44px; border-radius:8px; background-color:#17735d; color:#ffffff; font-size:22px; font-weight:700;">Y</td>
                     <td style="padding-left:12px;">
                       <div style="font-size:16px; line-height:22px; font-weight:700; color:#15332b;">LMS Ihsanul Adab</div>
                       <div style="font-size:12px; line-height:18px; color:#627970;">Portal pembelajaran YPIA</div>
@@ -40,48 +38,25 @@
                   </tr>
                   <tr>
                     <td style="padding:38px 40px 12px;">
-                      <div style="margin:0 0 10px; color:#17735d; font-size:13px; line-height:18px; font-weight:700; text-transform:uppercase;">
-                        Ahlan wa Sahlan
-                      </div>
-                      <h1 style="margin:0; color:#102a24; font-size:28px; line-height:36px; font-weight:700;">
-                        Konfirmasi akun peserta
-                      </h1>
+                      <div style="margin:0 0 10px; color:#17735d; font-size:13px; line-height:18px; font-weight:700; text-transform:uppercase;">Ahlan wa Sahlan</div>
+                      <h1 style="margin:0; color:#102a24; font-size:28px; line-height:36px; font-weight:700;">Verifikasi keamanan</h1>
                     </td>
                   </tr>
                   <tr>
                     <td style="padding:8px 40px 0;">
-                      <p style="margin:0 0 16px; color:#425e55; font-size:16px; line-height:26px;">
-                        Terima kasih telah mendaftar. Klik tombol berikut untuk memverifikasi alamat email dan melanjutkan ke dashboard peserta.
+                      <p style="margin:0 0 18px; color:#425e55; font-size:16px; line-height:26px;">
+                        Gunakan kode berikut untuk memverifikasi identitas Anda sebelum melanjutkan operasi sensitif di LMS.
                       </p>
                     </td>
                   </tr>
                   <tr>
-                    <td style="padding:10px 40px 26px;">
-                      <table role="presentation" cellspacing="0" cellpadding="0" border="0">
-                        <tr>
-                          <td align="center" style="border-radius:8px; background-color:#17735d;">
-                            <a href="{{ .ConfirmationURL }}" style="display:inline-block; padding:14px 24px; color:#ffffff; font-size:15px; line-height:20px; font-weight:700; text-decoration:none;">
-                              Konfirmasi email saya
-                            </a>
-                          </td>
-                        </tr>
-                      </table>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding:0 40px 34px;">
+                    <td style="padding:0 40px 30px;">
                       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:#f5f8f7; border-radius:8px;">
                         <tr>
-                          <td style="padding:16px 18px;">
-                            <p style="margin:0 0 6px; color:#425e55; font-size:13px; line-height:20px; font-weight:700;">
-                              Tombol tidak dapat dibuka?
-                            </p>
-                            <p style="margin:0 0 8px; color:#627970; font-size:12px; line-height:18px;">
-                              Salin tautan berikut ke browser:
-                            </p>
-                            <p style="margin:0; word-break:break-all; color:#17735d; font-size:12px; line-height:18px;">
-                              <a href="{{ .ConfirmationURL }}" style="color:#17735d; text-decoration:underline;">{{ .ConfirmationURL }}</a>
-                            </p>
+                          <td align="center" style="padding:26px 18px;">
+                            <p style="margin:0 0 8px; color:#425e55; font-size:13px; line-height:20px; font-weight:700;">Kode verifikasi</p>
+                            <p style="margin:0; color:#102a24; font-size:34px; line-height:42px; font-weight:700; letter-spacing:5px;">{{ .Token }}</p>
+                            <p style="margin:10px 0 0; color:#627970; font-size:12px; line-height:18px;">Kode ini berlaku singkat dan hanya untuk akun Anda.</p>
                           </td>
                         </tr>
                       </table>
@@ -90,7 +65,7 @@
                   <tr>
                     <td style="border-top:1px solid #e3ebe8; padding:22px 40px 28px;">
                       <p style="margin:0 0 6px; color:#627970; font-size:12px; line-height:19px;">
-                        Abaikan email ini apabila Anda tidak merasa membuat akun. Jangan meneruskan tautan konfirmasi kepada siapa pun.
+                        Abaikan email ini apabila Anda tidak sedang melakukan verifikasi. Jangan bagikan kode ini kepada siapa pun.
                       </p>
                       <p style="margin:0; color:#425e55; font-size:12px; line-height:19px;">
                         Salam hangat,<br>

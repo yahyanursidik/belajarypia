@@ -7,61 +7,86 @@ Dokumen ini menjelaskan konfigurasi email konfirmasi pendaftaran LMS Ihsanul Ada
 - **Daftar dengan Google**: verifikasi identitas dilakukan oleh Google. Supabase tidak mengirim email konfirmasi pendaftaran.
 - **Daftar dengan email dan kata sandi**: Supabase mengirim tautan konfirmasi apabila `Confirm email` aktif.
 
-## Template konfirmasi
+## Template email
 
 Sumber template tersimpan di:
 
-`supabase/templates/confirmation.html`
+- `supabase/templates/confirmation.html` untuk **Confirm signup**.
+- `supabase/templates/invite.html` untuk **Invite user**.
+- `supabase/templates/magic_link.html` untuk **Magic link or OTP**.
+- `supabase/templates/email_change.html` untuk **Change email address**.
+- `supabase/templates/recovery.html` untuk **Reset password / Recovery**.
+- `supabase/templates/reauthentication.html` untuk **Reauthentication**.
+
+## Subject yang dipakai
+
+| Menu Supabase | Subject | File template |
+| --- | --- | --- |
+| Confirm sign up | `Konfirmasi pendaftaran akun Belajar YPIA` | `supabase/templates/confirmation.html` |
+| Invite user | `Undangan akun LMS Ihsanul Adab` | `supabase/templates/invite.html` |
+| Magic link or OTP | `Tautan masuk akun Belajar YPIA` | `supabase/templates/magic_link.html` |
+| Change email address | `Konfirmasi perubahan email akun Belajar YPIA` | `supabase/templates/email_change.html` |
+| Reset password | `Reset kata sandi akun Belajar YPIA` | `supabase/templates/recovery.html` |
+| Reauthentication | `{{ .Token }} adalah kode verifikasi LMS Anda` | `supabase/templates/reauthentication.html` |
 
 Untuk memasangnya pada project Supabase hosted:
 
 1. Buka **Supabase Dashboard > Authentication > Email Templates**.
-2. Pilih **Confirm signup**.
-3. Isi subject dengan `Konfirmasi pendaftaran akun Belajar YPIA`.
-4. Salin isi `supabase/templates/confirmation.html` ke body template.
-5. Simpan perubahan.
+2. Buka satu menu template.
+3. Isi subject sesuai tabel di atas.
+4. Salin seluruh isi file HTML terkait ke body template.
+5. Simpan, lalu ulangi untuk template lain.
 
-Template menggunakan `{{ .ConfirmationURL }}` yang disediakan Supabase. Jangan menggantinya dengan URL statis.
+Template menggunakan variabel resmi Supabase seperti `{{ .ConfirmationURL }}`, `{{ .Token }}`, `{{ .Email }}`, dan `{{ .NewEmail }}`. Jangan mengganti `{{ .ConfirmationURL }}` dengan URL statis.
 
-## Custom SMTP Google Workspace
+## Custom SMTP Kerjamail
 
 Konfigurasi ini dilakukan di **Supabase Dashboard > Project Settings > Authentication > SMTP Settings**:
 
 | Field | Value |
 | --- | --- |
 | Enable Custom SMTP | Aktif |
-| Sender email | `salam@ihsanuladab.or.id` |
+| Sender email | `ahlan@yahyanursidik.my.id` |
 | Sender name | `LMS Ihsanul Adab` |
-| Host | `smtp.gmail.com` |
+| Host | `mx.kerjamail.co` |
 | Port | `587` |
-| Username | `salam@ihsanuladab.or.id` |
-| Password | App Password Google, bukan kata sandi akun |
+| Username | `ahlan@yahyanursidik.my.id` |
+| Password | Kata sandi mailbox, disimpan hanya di Supabase Dashboard |
 
-Sebelum mengisi password:
+Gunakan port `587` terlebih dahulu karena konfigurasi pada gambar memakai SMTP STARTTLS. Jika pengiriman gagal karena TLS/handshake dari provider, coba port `465` untuk SMTPS/SSL.
 
-1. Cara paling sederhana adalah memakai `salam@ihsanuladab.or.id` sebagai mailbox Google Workspace aktif.
-2. Jika alamat tersebut hanya alias, aktifkan **Send mail as** pada mailbox pemilik alias dan gunakan mailbox pemilik sebagai username SMTP.
-3. Aktifkan verifikasi dua langkah pada akun yang dipakai sebagai username SMTP.
-4. Buat **App Password** khusus bernama `Supabase Auth`.
-5. Masukkan App Password 16 karakter ke field password SMTP.
-6. Jangan menyimpan App Password di `.env`, frontend, migration, atau repository.
+Checklist keamanan:
 
-Apabila menu App Password tidak tersedia, administrator Google Workspace perlu mengizinkannya. Untuk volume produksi yang lebih besar, gunakan provider transactional email dan verifikasi domain `ihsanuladab.or.id`; alamat From tetap dapat memakai `salam@ihsanuladab.or.id`.
+1. Jangan menyimpan password SMTP di `.env`, frontend, migration, atau repository.
+2. Setelah konfigurasi berhasil, ganti password mailbox karena pernah dibagikan di chat.
+3. Pastikan SPF, DKIM, dan DMARC domain `yahyanursidik.my.id` aktif di DNS agar email tidak mudah masuk spam.
+4. Untuk production volume besar, pertimbangkan provider transactional email khusus seperti Resend, Postmark, SendGrid, atau AWS SES.
 
 ## URL dan pengujian
 
 Di **Authentication > URL Configuration**:
 
-- Site URL production harus memakai domain aplikasi production.
+- Site URL production: `https://hub.ihsanuladab.or.id/learner`.
 - Tambahkan `http://127.0.0.1:5173/learner/auth/callback` untuk development.
-- Tambahkan URL callback production, misalnya `https://domain-aplikasi/learner/auth/callback`.
+- Tambahkan `http://127.0.0.1:5173/auth/update-password` untuk reset password development.
+- Tambahkan URL callback production: `https://hub.ihsanuladab.or.id/learner/auth/callback`.
+- Tambahkan URL reset password production: `https://hub.ihsanuladab.or.id/auth/update-password`.
+
+Di environment production hosting, set:
+
+```text
+VITE_AUTH_REDIRECT_ORIGIN=https://hub.ihsanuladab.or.id
+```
+
+Variable ini memastikan email konfirmasi akun, Google OAuth callback, dan lupa password tidak mengambil origin lokal seperti `http://127.0.0.1:5173`.
 
 Setelah SMTP dan template disimpan:
 
 1. Daftar dengan satu alamat email uji baru.
-2. Pastikan pengirim tampil sebagai `LMS Ihsanul Adab <salam@ihsanuladab.or.id>`.
+2. Pastikan pengirim tampil sebagai `LMS Ihsanul Adab <ahlan@yahyanursidik.my.id>`.
 3. Uji tombol konfirmasi dan tautan cadangan.
-4. Periksa **Authentication > Logs** bila email tidak diterima.
-5. Periksa folder spam dan status SPF, DKIM, serta DMARC domain.
+4. Dari halaman login portal, klik **Lupa kata sandi?** dan pastikan email reset masuk.
+5. Periksa **Authentication > Logs** bila email tidak diterima.
+6. Periksa folder spam dan status SPF, DKIM, serta DMARC domain.
 
 Jangan menonaktifkan email confirmation hanya untuk melewati masalah pengiriman email.

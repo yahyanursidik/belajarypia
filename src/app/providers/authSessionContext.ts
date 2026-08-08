@@ -6,6 +6,8 @@ export type AuthSessionContextValue = AuthState & {
   isLoading: boolean;
   refresh: () => Promise<AuthState>;
   signIn: (email: string, password: string, captchaToken?: string) => Promise<AuthState>;
+  requestPasswordReset: (email: string, redirectTo: string, captchaToken?: string) => Promise<void>;
+  updatePassword: (password: string) => Promise<AuthState>;
   signInLearnerWithGoogle: () => Promise<void>;
   signUpLearner: (
     fullName: string,

@@ -1175,6 +1175,11 @@ a {
   gap: 14px;
 }
 
+.portal-login__shell--single {
+  max-width: 468px;
+  margin: 0 auto;
+}
+
 .portal-login__navigation {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1422,6 +1427,36 @@ a {
   background: color-mix(in srgb, var(--login-accent) 88%, #000000);
   box-shadow: 0 8px 18px color-mix(in srgb, var(--login-accent) 24%, transparent);
   transform: translateY(-1px);
+}
+
+.portal-login__link-action {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  justify-self: center;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--login-accent);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+  text-decoration: none;
+  transition: background-color 0.18s ease, transform 0.18s ease;
+}
+
+.portal-login__link-action:hover {
+  color: var(--login-accent);
+  background: var(--login-accent-soft);
+  transform: translateY(-1px);
+}
+
+.portal-login__link-action--standalone {
+  margin: 18px auto 0;
 }
 
 .portal-login__separator {
@@ -2365,13 +2400,15 @@ a {
 
   .portal-login__navigation a,
   .portal-login__navigation a svg,
-  .portal-login__submit {
+  .portal-login__submit,
+  .portal-login__link-action {
     transition: none;
   }
 
   .portal-login__navigation a:hover,
   .portal-login__navigation a:hover svg,
-  .portal-login__submit:hover {
+  .portal-login__submit:hover,
+  .portal-login__link-action:hover {
     transform: none;
   }
 }

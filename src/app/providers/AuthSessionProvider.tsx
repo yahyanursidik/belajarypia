@@ -6,6 +6,7 @@ import {
   setCurrentAuthState,
   type AuthState,
 } from "../../lib/auth";
+import { getAuthRedirectUrl } from "../../lib/authRedirects";
 import { supabase } from "../../lib/supabase";
 import { AuthSessionContext, type AuthSessionContextValue } from "./authSessionContext";
 
@@ -56,8 +57,29 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
 
         return refresh();
       },
+      requestPasswordReset: async (email, redirectTo, captchaToken) => {
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+          redirectTo,
+          captchaToken,
+        });
+
+        if (error) {
+          throw error;
+        }
+      },
+      updatePassword: async (password) => {
+        const { error } = await supabase.auth.updateUser({
+          password,
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        return refresh();
+      },
       signInLearnerWithGoogle: async () => {
-        const redirectTo = `${window.location.origin}/learner/auth/callback`;
+        const redirectTo = getAuthRedirectUrl("/learner/auth/callback");
         const { error } = await supabase.auth.signInWithOAuth({
           provider: "google",
           options: {
@@ -70,7 +92,7 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
         }
       },
       signUpLearner: async (fullName, email, password, captchaToken) => {
-        const redirectTo = `${window.location.origin}/learner/auth/callback`;
+        const redirectTo = getAuthRedirectUrl("/learner/auth/callback");
         const { data, error } = await supabase.auth.signUp({
           email: email.trim().toLowerCase(),
           password,
