@@ -132,7 +132,15 @@ function getAuthErrorMessage(error: unknown, context: "login" | "register" | "fo
       return "Akun Auth belum bisa dibuat karena trigger database gagal. Periksa migration profil/role di Supabase.";
     }
 
-    if (message && context !== "login") {
+    if (/captcha|turnstile/i.test(message)) {
+      return "Verifikasi keamanan gagal. Pastikan domain aplikasi sudah terdaftar di Cloudflare Turnstile dan ulangi verifikasi.";
+    }
+
+    if (/Email not confirmed/i.test(message)) {
+      return "Email akun belum dikonfirmasi. Jika konfirmasi email sudah dimatikan, cek kembali status user di Supabase Auth.";
+    }
+
+    if (message) {
       return `${fallbackMessage} Detail: ${message}`;
     }
   }
