@@ -1383,6 +1383,67 @@ a {
   animation: login-alert-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.portal-login__completion {
+  display: grid;
+  gap: 18px;
+  margin-top: 16px;
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, var(--login-accent) 24%, hsl(var(--border)));
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--login-accent) 9%, transparent), transparent 54%),
+    hsl(var(--card));
+  animation: login-content-enter 0.42s ease-out both;
+}
+
+.portal-login__completion-icon {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--login-accent);
+  background: var(--login-accent-soft);
+}
+
+.portal-login__completion h2 {
+  margin: 0;
+  color: hsl(var(--foreground));
+  font-size: 22px;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.portal-login__completion p {
+  margin: 8px 0 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.portal-login__completion-email {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--background) / 0.72);
+}
+
+.portal-login__completion-email span {
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.portal-login__completion-email strong {
+  overflow-wrap: anywhere;
+  color: hsl(var(--foreground));
+  font-size: 14px;
+}
+
 .portal-login__form label {
   color: hsl(var(--foreground));
   font-size: 13px;

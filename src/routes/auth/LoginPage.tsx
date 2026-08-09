@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import {
+  ArrowRight,
   BookOpenCheck,
   BriefcaseBusiness,
   Eye,
@@ -9,6 +10,7 @@ import {
   HeartHandshake,
   KeyRound,
   Loader2,
+  MailCheck,
   UserPlus,
 } from "lucide-react";
 import { useAuthSession } from "../../app/providers/authSessionContext";
@@ -66,7 +68,7 @@ const portalNavigation = [
 
 const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? "";
 
-function getLoginErrorMessage(error: unknown) {
+function getAuthErrorMessage(error: unknown, context: "login" | "register" | "forgot" = "login") {
   if (error instanceof Error && error.message.includes("tidak memiliki akses")) {
     return error.message;
   }
@@ -75,8 +77,16 @@ function getLoginErrorMessage(error: unknown) {
     return "Verifikasi keamanan gagal atau kedaluwarsa. Silakan ulangi verifikasi.";
   }
 
+  const fallbackMessage =
+    context === "register"
+      ? "Pendaftaran belum berhasil. Silakan coba kembali atau hubungi administrator."
+      : context === "forgot"
+        ? "Permintaan reset sandi belum berhasil. Silakan coba kembali atau hubungi administrator."
+        : "Login gagal. Silakan coba kembali atau hubungi administrator.";
+
   if (error && typeof error === "object") {
     const code = "code" in error && typeof error.code === "string" ? error.code : "";
+    const message = "message" in error && typeof error.message === "string" ? error.message : "";
 
     if (code === "invalid_credentials") {
       return "Email atau kata sandi tidak sesuai. Periksa kembali data yang dimasukkan.";
@@ -101,13 +111,37 @@ function getLoginErrorMessage(error: unknown) {
     if (code === "captcha_failed") {
       return "Verifikasi keamanan gagal atau kedaluwarsa. Silakan ulangi verifikasi.";
     }
+
+    if (/ensure_learner_identity|function .* does not exist|schema cache/i.test(message)) {
+      return "Pendaftaran berhasil membuat akun Auth, tetapi profil peserta belum bisa disiapkan. Jalankan migration learner self-signup lalu coba login kembali.";
+    }
+
+    if (/Role participant belum tersedia/i.test(message)) {
+      return "Pendaftaran berhasil membuat akun Auth, tetapi role peserta belum tersedia di database. Hubungi administrator.";
+    }
+
+    if (/Akun staf tidak dapat didaftarkan/i.test(message)) {
+      return "Email ini sudah terdaftar sebagai akun staf. Gunakan portal login sesuai peran akun.";
+    }
+
+    if (/already registered|already exists|duplicate key/i.test(message)) {
+      return "Email sudah terdaftar. Gunakan mode Masuk atau pilih akun Google yang sesuai.";
+    }
+
+    if (/Database error saving new user/i.test(message)) {
+      return "Akun Auth belum bisa dibuat karena trigger database gagal. Periksa migration profil/role di Supabase.";
+    }
+
+    if (message && context !== "login") {
+      return `${fallbackMessage} Detail: ${message}`;
+    }
   }
 
   if (error instanceof Error && error.message.toLowerCase().includes("already registered")) {
     return "Email sudah terdaftar. Gunakan mode Masuk atau pilih akun Google yang sesuai.";
   }
 
-  return "Login gagal. Silakan coba kembali atau hubungi administrator.";
+  return fallbackMessage;
 }
 
 export function LoginPage({ portal }: LoginPageProps) {
@@ -141,17 +175,26 @@ export function LoginPage({ portal }: LoginPageProps) {
   const isLearnerPortal = portal === "learner";
   const isLearnerRegistration = isLearnerPortal && authMode === "register";
   const isPasswordRecovery = authMode === "forgot";
+  const hasCompletionState = Boolean(successMessage);
   const turnstileAction = isLearnerRegistration
     ? "learner_signup"
     : isPasswordRecovery
       ? `${portal}_password_reset`
       : `${portal}_login`;
-  const pageTitle = isLearnerRegistration
+  const pageTitle = hasCompletionState
+    ? isPasswordRecovery
+      ? "Email Reset Dikirim"
+      : "Pendaftaran Berhasil"
+    : isLearnerRegistration
     ? "Daftar Peserta"
     : isPasswordRecovery
       ? "Lupa Kata Sandi"
       : config.title;
-  const welcomeMessage = isLearnerRegistration
+  const welcomeMessage = hasCompletionState
+    ? isPasswordRecovery
+      ? "Periksa inbox email Anda untuk melanjutkan reset sandi."
+      : "Periksa inbox email Anda untuk aktivasi akun."
+    : isLearnerRegistration
     ? "Mulai perjalanan belajar bersama YPIA."
     : isPasswordRecovery
       ? "Masukkan email akun untuk menerima tautan reset sandi."
@@ -224,7 +267,9 @@ export function LoginPage({ portal }: LoginPageProps) {
 
           <header className="portal-login__header">
             <div className="portal-login__icon" aria-hidden="true">
-              {authMode === "register" && isLearnerPortal ? (
+              {hasCompletionState ? (
+                <MailCheck className="h-6 w-6" />
+              ) : authMode === "register" && isLearnerPortal ? (
                 <UserPlus className="h-6 w-6" />
               ) : isPasswordRecovery ? (
                 <KeyRound className="h-6 w-6" />
@@ -239,7 +284,7 @@ export function LoginPage({ portal }: LoginPageProps) {
             </div>
           </header>
 
-          {isLearnerPortal ? (
+          {isLearnerPortal && !hasCompletionState ? (
             <div className="portal-login__mode" aria-label="Pilih masuk atau daftar">
               <button
                 type="button"
@@ -278,11 +323,38 @@ export function LoginPage({ portal }: LoginPageProps) {
           ) : null}
 
           {successMessage ? (
-            <Alert className="border-emerald-200 bg-emerald-50 text-emerald-800">
-              <AlertTitle>{isPasswordRecovery ? "Email reset dikirim" : "Pendaftaran berhasil"}</AlertTitle>
-              <AlertDescription className="text-emerald-800/80">{successMessage}</AlertDescription>
-            </Alert>
-          ) : null}
+            <section className="portal-login__completion" aria-live="polite">
+              <div className="portal-login__completion-icon" aria-hidden="true">
+                <MailCheck className="h-7 w-7" />
+              </div>
+              <div>
+                <h2>{isPasswordRecovery ? "Email reset dikirim" : "Pendaftaran berhasil"}</h2>
+                <p>{successMessage}</p>
+              </div>
+              {email ? (
+                <div className="portal-login__completion-email">
+                  <span>Email tujuan</span>
+                  <strong>{email.trim().toLowerCase()}</strong>
+                </div>
+              ) : null}
+              <Button
+                type="button"
+                className="portal-login__submit h-12 w-full"
+                onClick={() => {
+                  setAuthMode("login");
+                  setCaptchaToken(null);
+                  turnstileRef.current?.reset();
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                  setPassword("");
+                  setPasswordConfirmation("");
+                }}
+              >
+                <span>{isLearnerPortal ? "Kembali ke login peserta" : "Kembali ke login"}</span>
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </section>
+          ) : (
 
           <form
             className="portal-login__form"
@@ -393,7 +465,10 @@ export function LoginPage({ portal }: LoginPageProps) {
                   error.message.includes("verifikasi keamanan")
                 )
                   ? error.message
-                  : getLoginErrorMessage(error),
+                  : getAuthErrorMessage(
+                    error,
+                    isLearnerRegistration ? "register" : isPasswordRecovery ? "forgot" : "login",
+                  ),
               );
             } finally {
               setIsSubmitting(false);
@@ -561,7 +636,7 @@ export function LoginPage({ portal }: LoginPageProps) {
                   try {
                     await signInLearnerWithGoogle();
                   } catch (error: unknown) {
-                    setErrorMessage(getLoginErrorMessage(error));
+                    setErrorMessage(getAuthErrorMessage(error, authMode === "register" ? "register" : "login"));
                     setIsSubmitting(false);
                   }
                 }}
@@ -572,6 +647,7 @@ export function LoginPage({ portal }: LoginPageProps) {
             </>
           ) : null}
           </form>
+          )}
         </main>
       </div>
     </div>

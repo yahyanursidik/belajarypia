@@ -119,6 +119,9 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
 
         const { error: identityError } = await supabase.rpc("ensure_learner_identity");
         if (identityError) {
+          await supabase.auth.signOut();
+          setAuthState(emptyAuthState);
+          setCurrentAuthState(emptyAuthState);
           throw identityError;
         }
 
