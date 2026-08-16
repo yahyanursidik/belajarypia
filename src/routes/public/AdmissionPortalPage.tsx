@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { BookOpen, Upload, Send, CheckCircle2, AlertCircle, ChevronLeft, Trash2, Loader2, FileText, Check } from "lucide-react";
 import { Button } from "../../components/ui/button";
@@ -12,6 +12,58 @@ import {
 } from "../../lib/admission";
 import { supabase } from "../../lib/supabase";
 import { useAuthSession } from "../../app/providers/authSessionContext";
+import {
+  TurnstileWidget,
+  type TurnstileWidgetHandle,
+} from "../../components/auth/TurnstileWidget";
+
+const allowedAdmissionExtensions = ["pdf", "docx", "xlsx", "pptx", "jpg", "jpeg", "png", "webp"];
+const allowedAdmissionAccept = ".pdf,.docx,.xlsx,.pptx,.jpg,.jpeg,.png,.webp";
+const maxAdmissionFileSize = 10 * 1024 * 1024;
+const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? "";
+
+function getFileValidationError(file: File) {
+  if (file.size > maxAdmissionFileSize) {
+    return "Ukuran file maksimal adalah 10MB.";
+  }
+
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (!allowedAdmissionExtensions.includes(extension)) {
+    return "Format file tidak didukung. Gunakan PDF, DOCX, XLSX, PPTX, JPG, PNG, atau WebP.";
+  }
+
+  return null;
+}
+
+function normalizeWhatsappNumber(value: string) {
+  const normalized = value.replace(/[^0-9+]/g, "");
+  const withoutPlus = normalized.startsWith("+") ? normalized.slice(1) : normalized;
+
+  if (withoutPlus.startsWith("0")) {
+    return `+62${withoutPlus.slice(1)}`;
+  }
+
+  if (withoutPlus.startsWith("62")) {
+    return `+${withoutPlus}`;
+  }
+
+  return normalized;
+}
+
+async function getAdmissionErrorMessage(error: unknown) {
+  if (error && typeof error === "object" && "context" in error && error.context instanceof Response) {
+    try {
+      const payload = (await error.context.clone().json()) as { error?: string };
+      if (payload.error) {
+        return payload.error;
+      }
+    } catch {
+      // Use the generic message below when the function returned a non-JSON response.
+    }
+  }
+
+  return error instanceof Error ? error.message : "Terjadi kesalahan saat memproses pendaftaran.";
+}
 
 function FormSkeleton() {
   return (
@@ -46,6 +98,7 @@ export function AdmissionPortalPage() {
   const { programId } = useParams();
   const navigate = useNavigate();
   const { session } = useAuthSession();
+  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null);
 
   const [program, setProgram] = useState<any>(null);
   const [formConfig, setFormConfig] = useState<any>(null);
@@ -57,6 +110,7 @@ export function AdmissionPortalPage() {
   const [submittedApplicantId, setSubmittedApplicantId] = useState<string | null>(null);
   const [isOpeningGroup, setIsOpeningGroup] = useState(false);
   const [groupLinkError, setGroupLinkError] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
   // Verification states
   const [alreadyEnrolled, setAlreadyEnrolled] = useState(false);
@@ -74,7 +128,7 @@ export function AdmissionPortalPage() {
     email: "",
     phone: "",
     city: "",
-    gender: "Laki-laki",
+    gender: "",
     birth_date: ""
   });
 
@@ -92,17 +146,19 @@ export function AdmissionPortalPage() {
     setErrorMsg(null);
 
     // Fetch program
-    const { data: pData } = await supabase.from("programs").select("*").eq("id", programId).single();
+    const { data: pData, error: programError } = await supabase.from("programs").select("*").eq("id", programId).single();
     if (pData) setProgram(pData);
 
     // Fetch active form
-    const { data: fData } = await supabase.from("registration_forms")
+    const { data: formRows, error: formError } = await supabase.from("registration_forms")
       .select("*")
-      .eq("program_id", programId)
       .eq("status", "active")
+      .or(`program_id.eq.${programId},program_id.is.null`)
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(2);
+
+    const fData = formRows?.find((form) => form.program_id === programId)
+      ?? formRows?.find((form) => form.program_id === null);
 
     if (fData) {
       setFormConfig(fData);
@@ -111,6 +167,12 @@ export function AdmissionPortalPage() {
         .eq("form_id", fData.id)
         .order("order_no");
       if (fieldsData) setFields(fieldsData);
+    }
+
+    if (programError || !pData) {
+      setErrorMsg("Program tidak dapat dimuat. Silakan kembali ke katalog dan coba lagi.");
+    } else if (formError) {
+      setErrorMsg("Formulir pendaftaran tidak dapat dimuat. Silakan muat ulang halaman.");
     }
 
     // Fetch user details if session exists
@@ -182,10 +244,9 @@ export function AdmissionPortalPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check size limit: 10MB
-    const maxSize = 10 * 1024 * 1024;
-    if (file.size > maxSize) {
-      setFileErrors(prev => ({ ...prev, [fieldKey]: "Ukuran file maksimal adalah 10MB" }));
+    const validationError = getFileValidationError(file);
+    if (validationError) {
+      setFileErrors(prev => ({ ...prev, [fieldKey]: validationError }));
       return;
     }
 
@@ -212,9 +273,9 @@ export function AdmissionPortalPage() {
     const file = e.dataTransfer.files?.[0];
     if (!file) return;
 
-    const maxSize = 10 * 1024 * 1024;
-    if (file.size > maxSize) {
-      setFileErrors(prev => ({ ...prev, [fieldKey]: "Ukuran file maksimal adalah 10MB" }));
+    const validationError = getFileValidationError(file);
+    if (validationError) {
+      setFileErrors(prev => ({ ...prev, [fieldKey]: validationError }));
       return;
     }
 
@@ -255,10 +316,25 @@ export function AdmissionPortalPage() {
       return;
     }
 
+    if (!turnstileSiteKey) {
+      setErrorMsg("Verifikasi keamanan belum dikonfigurasi. Hubungi administrator.");
+      return;
+    }
+
+    if (!captchaToken) {
+      setErrorMsg("Selesaikan verifikasi keamanan sebelum mengirimkan formulir.");
+      return;
+    }
+
     setIsSubmitting(true);
     setErrorMsg(null);
 
     try {
+      const normalizedPhone = normalizeWhatsappNumber(standardData.phone);
+      if (!standardData.full_name.trim() || !standardData.email.trim() || !normalizedPhone) {
+        throw new Error("Nama lengkap, email, dan nomor WhatsApp wajib diisi.");
+      }
+
       // 1. Upload files first
       const uploadedPaths: Record<string, string> = {};
       
@@ -282,50 +358,50 @@ export function AdmissionPortalPage() {
         }
       }
 
-      // 2. Create Applicant
-      const { data: applicant, error: appError } = await supabase.from("applicants").insert([{
-        full_name: standardData.full_name,
-        email: standardData.email,
-        phone: standardData.phone,
-        city: standardData.city,
-        gender: standardData.gender || null,
-        birth_date: standardData.birth_date || null,
-        status: "submitted"
-      }]).select().single();
-
-      if (appError) throw appError;
-      setSubmittedApplicantId(applicant.id);
-
-      // 3. Create Program Choice
-      const { error: choiceError } = await supabase.from("applicant_program_choices").insert([{
-        applicant_id: applicant.id,
-        program_id: programId
-      }]);
-      if (choiceError) throw choiceError;
-
-      // 4. Submit Custom Answers
-      if (fields.length > 0) {
-        const answersToInsert = fields.map(f => {
+      const answersToSubmit = fields.map(f => {
           let val = customAnswers[f.field_key];
           if (f.field_type === 'file') {
             val = uploadedPaths[f.field_key] || "";
           }
           return {
-            applicant_id: applicant.id,
             form_field_key: f.field_key,
             value_text: typeof val === 'string' ? val : null,
             value_json: typeof val === 'object' && f.field_type !== 'file' ? val : null
           };
         });
-        const { error: ansError } = await supabase.from("applicant_answers").insert(answersToInsert);
-        if (ansError) throw ansError;
-      }
+
+      // The Edge Function verifies Turnstile first, then calls the transactional database RPC.
+      const { data: submission, error: submissionError } = await supabase.functions.invoke(
+        "submit-admission",
+        {
+          body: {
+            captcha_token: captchaToken,
+          p_program_id: programId,
+          p_full_name: standardData.full_name.trim(),
+          p_email: standardData.email.trim(),
+          p_phone: normalizedPhone,
+          p_city: standardData.city.trim() || null,
+          p_gender: standardData.gender || null,
+          p_birth_date: standardData.birth_date || null,
+          p_answers: answersToSubmit,
+        },
+        },
+      );
+
+      const applicantId = submission?.applicant_id as string | undefined;
+
+      if (submissionError || !applicantId) throw submissionError ?? new Error("Pendaftaran tidak dapat disimpan.");
+
+      setSubmittedApplicantId(applicantId);
+      setStandardData(current => ({ ...current, phone: normalizedPhone }));
 
       setIsSuccess(true);
-    } catch (err: any) {
-      setErrorMsg(err.message || "Terjadi kesalahan saat memproses pendaftaran.");
+    } catch (err: unknown) {
+      setErrorMsg(await getAdmissionErrorMessage(err));
     } finally {
       setIsSubmitting(false);
+      setCaptchaToken(null);
+      turnstileRef.current?.reset();
     }
   };
 
@@ -587,40 +663,34 @@ export function AdmissionPortalPage() {
                         </div>
                       </div>
                       <p className="text-[11px] text-primary mt-3 font-medium">
-                        * Data profil di atas dapat diperbarui melalui halaman Profil Saya di Dashboard.
+                        * Periksa dan ubah data bila perlu. Nama dan nomor WhatsApp diperbarui ke profil saat pendaftaran dikirim.
                       </p>
                     </div>
                   )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                    {(!session || !standardData.full_name) && (
-                      <div className="sm:col-span-2">
-                        <label className="block text-sm font-semibold text-slate-700 mb-1.5">Nama Lengkap Sesuai KTP <span className="text-rose-500">*</span></label>
-                        <Input required placeholder="Misal: Ahmad Fulan" value={standardData.full_name} onChange={e => setStandardData({...standardData, full_name: e.target.value})} />
-                      </div>
-                    )}
-                    {(!session || !standardData.email) && (
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-1.5">Email Aktif <span className="text-rose-500">*</span></label>
-                        <Input required type="email" placeholder="email@contoh.com" value={standardData.email} onChange={e => setStandardData({...standardData, email: e.target.value})} />
-                      </div>
-                    )}
-                    {(!session || !standardData.phone) && (
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-1.5">No. WhatsApp <span className="text-rose-500">*</span></label>
-                        <Input required type="tel" placeholder="0812xxxxxx" value={standardData.phone} onChange={e => setStandardData({...standardData, phone: e.target.value})} />
-                      </div>
-                    )}
-                    {(!session || !standardData.gender) && (
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-1.5">Jenis Kelamin <span className="text-rose-500">*</span></label>
-                        <select required className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={standardData.gender} onChange={e => setStandardData({...standardData, gender: e.target.value})}>
-                          <option value="" disabled>Pilih Jenis Kelamin</option>
-                          <option value="Laki-laki">Laki-laki</option>
-                          <option value="Perempuan">Perempuan</option>
-                        </select>
-                      </div>
-                    )}
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">Nama Lengkap Sesuai KTP <span className="text-rose-500">*</span></label>
+                      <Input required autoComplete="name" placeholder="Misal: Ahmad Fulan" value={standardData.full_name} onChange={e => setStandardData({...standardData, full_name: e.target.value})} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">Email Aktif <span className="text-rose-500">*</span></label>
+                      <Input required type="email" autoComplete="email" readOnly={Boolean(session)} aria-describedby={session ? "account-email-note" : undefined} className={session ? "bg-slate-50 text-slate-600" : undefined} placeholder="email@contoh.com" value={standardData.email} onChange={e => setStandardData({...standardData, email: e.target.value})} />
+                      {session && <p id="account-email-note" className="mt-1.5 text-xs text-slate-500">Email mengikuti akun yang sedang masuk.</p>}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">No. WhatsApp <span className="text-rose-500">*</span></label>
+                      <Input required type="tel" inputMode="tel" autoComplete="tel" maxLength={18} placeholder="0812xxxxxx" value={standardData.phone} onBlur={e => setStandardData({...standardData, phone: normalizeWhatsappNumber(e.target.value)})} onChange={e => setStandardData({...standardData, phone: e.target.value})} />
+                      <p className="mt-1.5 text-xs text-slate-500">Bisa diubah. Nomor disimpan saat tombol Kirim Pendaftaran ditekan.</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">Jenis Kelamin <span className="text-rose-500">*</span></label>
+                      <select required className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={standardData.gender} onChange={e => setStandardData({...standardData, gender: e.target.value})}>
+                        <option value="" disabled>Pilih Jenis Kelamin</option>
+                        <option value="Laki-laki">Laki-laki</option>
+                        <option value="Perempuan">Perempuan</option>
+                      </select>
+                    </div>
                     <div>
                       <label className="block text-sm font-semibold text-slate-700 mb-1.5">Tanggal Lahir</label>
                       <Input type="date" value={standardData.birth_date} onChange={e => setStandardData({...standardData, birth_date: e.target.value})} />
@@ -643,9 +713,11 @@ export function AdmissionPortalPage() {
                             {field.label} {field.is_required && <span className="text-rose-500">*</span>}
                           </label>
                           
-                          {field.field_type === 'text' && (
+                          {['text', 'email', 'phone'].includes(field.field_type) && (
                             <Input 
                               required={field.is_required} 
+                              type={field.field_type === 'email' ? 'email' : field.field_type === 'phone' ? 'tel' : 'text'}
+                              inputMode={field.field_type === 'phone' ? 'tel' : undefined}
                               value={customAnswers[field.field_key] || ""} 
                               onChange={e => setCustomAnswers({...customAnswers, [field.field_key]: e.target.value})} 
                             />
@@ -690,6 +762,7 @@ export function AdmissionPortalPage() {
                               >
                                 <input 
                                   type="file" 
+                                  accept={allowedAdmissionAccept}
                                   required={field.is_required && !customAnswers[field.field_key]}
                                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                   onChange={e => handleFileChange(e, field.field_key)}
@@ -714,7 +787,7 @@ export function AdmissionPortalPage() {
                                         <Upload className="h-5 w-5" />
                                       </div>
                                       <span className="text-sm font-medium text-slate-700">Pilih File atau Tarik ke Sini</span>
-                                      <span className="text-xs text-slate-400">Ukuran maksimal file: 10MB</span>
+                                      <span className="text-xs text-slate-400">PDF, Office, JPG, PNG, atau WebP. Maksimal 10MB.</span>
                                     </>
                                   )}
                                 </div>
@@ -749,7 +822,21 @@ export function AdmissionPortalPage() {
                 )}
 
                 <div className="pt-6 border-t">
-                  <Button type="submit" disabled={isSubmitting} className="w-full h-12 text-base font-bold shadow-lg bg-primary hover:bg-primary/90 text-white font-bold transition-colors">
+                  {turnstileSiteKey ? (
+                    <div className="mb-5">
+                      <TurnstileWidget
+                        ref={turnstileRef}
+                        action="program_admission"
+                        siteKey={turnstileSiteKey}
+                        onTokenChange={setCaptchaToken}
+                      />
+                    </div>
+                  ) : (
+                    <div className="mb-5 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                      Verifikasi keamanan belum aktif. Pendaftaran sementara tidak dapat dikirim.
+                    </div>
+                  )}
+                  <Button type="submit" disabled={isSubmitting || !turnstileSiteKey || !captchaToken} className="w-full h-12 text-base font-bold shadow-lg bg-primary hover:bg-primary/90 text-white font-bold transition-colors">
                     {isSubmitting ? (
                       <span className="flex items-center justify-center gap-2">
                         <Loader2 className="h-5 w-5 animate-spin" />
