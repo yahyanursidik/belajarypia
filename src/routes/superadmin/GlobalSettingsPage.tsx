@@ -259,6 +259,7 @@ export function GlobalSettingsPage() {
       setSettings(normalized);
       setFormData(normalized);
       changeTab("identity");
+      window.dispatchEvent(new Event("ypia-system-settings-updated"));
       showFeedback({ type: "success", message: "Konfigurasi awal berhasil dibuat. Lengkapi identitas lembaga berikutnya." });
     }
 
@@ -312,6 +313,7 @@ export function GlobalSettingsPage() {
 
       setSettings(normalized);
       setFormData(normalized);
+      window.dispatchEvent(new Event("ypia-system-settings-updated"));
 
       if (savedSignature !== requestedSignature) {
         showFeedback({

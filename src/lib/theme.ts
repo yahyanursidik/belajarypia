@@ -18,6 +18,8 @@ export const THEMES: Record<ThemeKey, Record<string, string>> = {
     "--ring": "160 55% 32%",
     "--accent": "155 22% 90%",
     "--accent-foreground": "160 35% 18%",
+    "--portal-sidebar": "160 55% 24%",
+    "--portal-accent": "47 90% 65%",
   },
   indigo: {
     "--primary": "239 60% 35%",
@@ -25,6 +27,8 @@ export const THEMES: Record<ThemeKey, Record<string, string>> = {
     "--ring": "239 60% 35%",
     "--accent": "240 4.8% 95.9%",
     "--accent-foreground": "240 5.9% 10%",
+    "--portal-sidebar": "239 60% 28%",
+    "--portal-accent": "42 82% 57%",
   },
   rose: {
     "--primary": "346 60% 40%",
@@ -32,6 +36,8 @@ export const THEMES: Record<ThemeKey, Record<string, string>> = {
     "--ring": "346 60% 40%",
     "--accent": "340 4.8% 95.9%",
     "--accent-foreground": "340 5.9% 10%",
+    "--portal-sidebar": "346 60% 31%",
+    "--portal-accent": "45 92% 64%",
   },
   amber: {
     "--primary": "35 70% 35%",
@@ -39,6 +45,8 @@ export const THEMES: Record<ThemeKey, Record<string, string>> = {
     "--ring": "35 70% 35%",
     "--accent": "40 4.8% 95.9%",
     "--accent-foreground": "40 5.9% 10%",
+    "--portal-sidebar": "35 70% 25%",
+    "--portal-accent": "48 96% 70%",
   },
   slate: {
     "--primary": "215 20% 30%",
@@ -46,6 +54,8 @@ export const THEMES: Record<ThemeKey, Record<string, string>> = {
     "--ring": "215 20% 30%",
     "--accent": "210 40% 96.1%",
     "--accent-foreground": "222.2 47.4% 11.2%",
+    "--portal-sidebar": "215 20% 23%",
+    "--portal-accent": "188 54% 56%",
   }
 };
 

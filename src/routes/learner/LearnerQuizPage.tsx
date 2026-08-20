@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -7,8 +7,15 @@ import { Badge } from "@/components/ui/badge";
 
 import { useAuthSession } from "../../app/providers/authSessionContext";
 import { supabase } from "../../lib/supabase";
-import { ArrowLeft, Clock, CheckCircle2, AlertTriangle, BookOpen, Trophy, XCircle, ChevronRight, LayoutGrid, AlertCircle } from "lucide-react";
+import { ArrowLeft, Clock, CheckCircle2, AlertTriangle, BookOpen, Trophy, XCircle, ChevronRight, LayoutGrid, AlertCircle, Download, FileText, LoaderCircle, Trash2, Upload } from "lucide-react";
 import type { Lesson, QuizQuestion } from "../../lib/academic";
+import {
+  deleteQuizAnswerFile,
+  QUIZ_ANSWER_MAX_FILES_PER_QUESTION,
+  requestQuizAnswerDownloadUrl,
+  type QuizAttemptAnswerFile,
+  uploadQuizAnswerFile,
+} from "../../lib/quizAnswerFiles";
 
 export function LearnerQuizPage() {
   const { lessonId } = useParams();
@@ -30,11 +37,31 @@ export function LearnerQuizPage() {
   const [awaitingReview, setAwaitingReview] = useState(false);
   const [graderFeedback, setGraderFeedback] = useState<string | null>(null);
   const [answerReviews, setAnswerReviews] = useState<Record<string, { points: number; feedback: string | null }>>({});
+  const [answerFiles, setAnswerFiles] = useState<Record<string, QuizAttemptAnswerFile[]>>({});
+  const [uploadingQuestionId, setUploadingQuestionId] = useState<string | null>(null);
+  const [openingFileId, setOpeningFileId] = useState<string | null>(null);
   
   // Ref for scrolling to questions
   const questionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const initializedLessonIdRef = useRef<string | null>(null);
   const submitQuizRef = useRef<() => void>(() => undefined);
+
+  const loadAnswerFiles = useCallback(async (attemptId: string) => {
+    const { data, error } = await supabase
+      .from("quiz_attempt_answer_files")
+      .select("id, quiz_attempt_id, question_id, display_name, mime_type, file_size_bytes, created_at")
+      .eq("quiz_attempt_id", attemptId)
+      .order("created_at");
+    if (error) throw error;
+
+    const grouped = (data ?? []).reduce<Record<string, QuizAttemptAnswerFile[]>>((current, file) => {
+      const questionFiles = current[file.question_id] ?? [];
+      questionFiles.push(file as QuizAttemptAnswerFile);
+      current[file.question_id] = questionFiles;
+      return current;
+    }, {});
+    setAnswerFiles(grouped);
+  }, []);
 
   useEffect(() => {
     async function loadQuiz() {
@@ -130,6 +157,7 @@ export function LearnerQuizPage() {
               loadedQuestions = loadedQuestions.filter(question => answeredIds.has(question.id));
             }
           }
+          await loadAnswerFiles(lastAttemptId);
           
           setQuestions(loadedQuestions.sort((a, b) => a.order_no - b.order_no) as any);
           setIsFinished(true);
@@ -157,6 +185,7 @@ export function LearnerQuizPage() {
         }
         
         setQuizAttemptId(currentAttemptId);
+        await loadAnswerFiles(currentAttemptId);
 
         // Randomize questions deterministically based on Attempt ID so refreshes yield the exact same 30 questions
         const hashString = (str: string) => {
@@ -202,7 +231,7 @@ export function LearnerQuizPage() {
     }
 
     void loadQuiz();
-  }, [user?.id, lessonId, searchParams]);
+  }, [user?.id, lessonId, searchParams, loadAnswerFiles]);
 
   useEffect(() => {
     if (!quizAttemptId || isFinished) return;
@@ -232,6 +261,51 @@ export function LearnerQuizPage() {
     setAnswers(prev => ({ ...prev, [questionId]: answer }));
   };
 
+  const handleAnswerFileUpload = async (questionId: string, file: File | null) => {
+    if (!file || !quizAttemptId || isFinished || isSubmitting || uploadingQuestionId) return;
+    const existingFiles = answerFiles[questionId] ?? [];
+    if (existingFiles.length >= QUIZ_ANSWER_MAX_FILES_PER_QUESTION) {
+      alert(`Maksimal ${QUIZ_ANSWER_MAX_FILES_PER_QUESTION} lampiran untuk setiap jawaban esai.`);
+      return;
+    }
+
+    setUploadingQuestionId(questionId);
+    try {
+      await uploadQuizAnswerFile({ attemptId: quizAttemptId, questionId, file });
+      await loadAnswerFiles(quizAttemptId);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Lampiran tidak dapat diunggah.");
+    } finally {
+      setUploadingQuestionId(null);
+    }
+  };
+
+  const handleAnswerFileDelete = async (file: QuizAttemptAnswerFile) => {
+    if (!quizAttemptId || isFinished || isSubmitting) return;
+    if (!window.confirm(`Hapus lampiran ${file.display_name}?`)) return;
+    setUploadingQuestionId(file.question_id);
+    try {
+      await deleteQuizAnswerFile(file.id);
+      await loadAnswerFiles(quizAttemptId);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Lampiran tidak dapat dihapus.");
+    } finally {
+      setUploadingQuestionId(null);
+    }
+  };
+
+  const openAnswerFile = async (file: QuizAttemptAnswerFile) => {
+    setOpeningFileId(file.id);
+    try {
+      const { signedUrl } = await requestQuizAnswerDownloadUrl(file.id);
+      window.open(signedUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Lampiran tidak dapat dibuka.");
+    } finally {
+      setOpeningFileId(null);
+    }
+  };
+
   const scrollToQuestion = (id: string) => {
     const el = questionRefs.current[id];
     if (el) {
@@ -245,7 +319,9 @@ export function LearnerQuizPage() {
     if (!quizAttemptId || isSubmitting || isFinished) return;
     
     // Check if all answered
-    const unansweredCount = questions.length - questions.filter(q => !!answers[q.id]).length;
+    const unansweredCount = questions.length - questions.filter(q => (
+      Boolean(answers[q.id]?.trim()) || (answerFiles[q.id]?.length ?? 0) > 0
+    )).length;
     if (timeLeft !== 0 && unansweredCount > 0) {
       const confirmSubmit = window.confirm(`Masih ada ${unansweredCount} soal yang belum dijawab. Yakin ingin mengumpulkan?`);
       if (!confirmSubmit) return;
@@ -318,7 +394,9 @@ export function LearnerQuizPage() {
   }
 
   // Calculate Progress safely using questions array to prevent out-of-bounds keys
-  const answeredCount = questions.filter(q => !!answers[q.id]).length;
+  const answeredCount = questions.filter(q => (
+    Boolean(answers[q.id]?.trim()) || (answerFiles[q.id]?.length ?? 0) > 0
+  )).length;
   const progressPercentage = questions.length > 0 ? (answeredCount / questions.length) * 100 : 0;
   const hasPassed = lesson?.passing_grade ? (finalScore !== null && finalScore >= lesson.passing_grade) : true;
 
@@ -330,7 +408,7 @@ export function LearnerQuizPage() {
             <Clock className="mx-auto mb-5 h-16 w-16 text-amber-600" />
             <CardTitle className="text-3xl text-amber-950">Jawaban Berhasil Dikumpulkan</CardTitle>
             <p className="mx-auto mt-3 max-w-xl text-slate-600">
-              Ujian <span className="font-semibold">{lesson?.title}</span> memuat soal esai dan sedang menunggu penilaian admin atau pengajar.
+              Ujian <span className="font-semibold">{lesson?.title}</span> memuat soal esai dan sedang menunggu penilaian admin, pengajar, atau musyrif.
             </p>
           </CardHeader>
           <CardContent className="space-y-5 p-8 text-center">
@@ -468,7 +546,8 @@ export function LearnerQuizPage() {
               const isCorrect = q.question_type === "essay"
                 ? (answerReviews[q.id]?.points ?? 0) >= (q.points || 10)
                 : q.correct_answer === userAnswer;
-              const hasAnswered = !!userAnswer;
+              const questionFiles = answerFiles[q.id] ?? [];
+              const hasAnswered = Boolean(userAnswer?.trim()) || questionFiles.length > 0;
               
               return (
                 <Card 
@@ -499,7 +578,7 @@ export function LearnerQuizPage() {
                     </div>
                     
                     {q.question_type === "essay" ? (
-                      <div className="space-y-3">
+                      <div className="space-y-4">
                         <label className="text-sm font-semibold text-slate-700">Jawaban Anda</label>
                         <textarea
                           className="field-control min-h-[180px] leading-relaxed"
@@ -508,6 +587,44 @@ export function LearnerQuizPage() {
                           onChange={(event) => handleAnswerChange(q.id, event.target.value)}
                           disabled={showReview}
                         />
+                        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="flex items-center gap-2 text-sm font-semibold text-slate-800"><FileText className="h-4 w-4 text-primary" /> Lampiran jawaban</p>
+                              <p className="mt-1 text-xs text-slate-500">Opsional. `.txt`, `.pdf`, `.doc`, atau `.docx`; maks. 10 MB per file, hingga {QUIZ_ANSWER_MAX_FILES_PER_QUESTION} file.</p>
+                            </div>
+                            {!showReview && (
+                              <label className={`inline-flex cursor-pointer items-center gap-2 rounded-md border bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-primary hover:text-primary ${uploadingQuestionId === q.id || questionFiles.length >= QUIZ_ANSWER_MAX_FILES_PER_QUESTION ? "pointer-events-none opacity-60" : ""}`}>
+                                {uploadingQuestionId === q.id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                                {uploadingQuestionId === q.id ? "Mengunggah..." : "Tambah file"}
+                                <input
+                                  type="file"
+                                  className="sr-only"
+                                  accept=".txt,.pdf,.doc,.docx,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                  onChange={(event) => {
+                                    void handleAnswerFileUpload(q.id, event.target.files?.[0] ?? null);
+                                    event.currentTarget.value = "";
+                                  }}
+                                />
+                              </label>
+                            )}
+                          </div>
+                          {questionFiles.length > 0 && (
+                            <ul className="mt-4 space-y-2">
+                              {questionFiles.map(file => (
+                                <li key={file.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2 text-sm">
+                                  <span className="min-w-0 truncate font-medium text-slate-700">{file.display_name}</span>
+                                  <span className="flex items-center gap-1.5">
+                                    <Button type="button" size="sm" variant="ghost" className="h-8 px-2" onClick={() => void openAnswerFile(file)} disabled={openingFileId === file.id}>
+                                      {openingFileId === file.id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}<span className="sr-only">Buka lampiran</span>
+                                    </Button>
+                                    {!showReview && <Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => void handleAnswerFileDelete(file)} disabled={uploadingQuestionId === q.id}><Trash2 className="h-4 w-4" /><span className="sr-only">Hapus lampiran</span></Button>}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
                         {showReview && (
                           <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
                             <div className="flex items-center justify-between gap-3">
@@ -597,7 +714,7 @@ export function LearnerQuizPage() {
               <CardContent className="p-5">
                 <div className="grid grid-cols-5 gap-2">
                   {questions.map((q, idx) => {
-                    const hasAnswered = !!answers[q.id];
+                    const hasAnswered = Boolean(answers[q.id]?.trim()) || (answerFiles[q.id]?.length ?? 0) > 0;
                     const isCorrect = showReview
                       ? q.question_type === "essay"
                         ? (answerReviews[q.id]?.points ?? 0) > 0
@@ -660,7 +777,7 @@ export function LearnerQuizPage() {
                 size="lg" 
                 className="px-8 sm:px-12 h-14 text-base font-bold bg-primary shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all" 
                 onClick={handleSubmitQuiz}
-                disabled={isSubmitting || questions.length === 0}
+                disabled={isSubmitting || uploadingQuestionId !== null || questions.length === 0}
               >
                 {isSubmitting ? (
                   <span className="flex items-center gap-2">

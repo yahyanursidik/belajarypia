@@ -189,6 +189,31 @@ export function LearnerDashboardPage() {
     void loadLearnerData();
   }, [user]);
 
+  useEffect(() => {
+    const enrolledProgramIds = new Set(enrollments.map((enrollment) => enrollment.program_id));
+    const channel = supabase
+      .channel("learner-learning-updates")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "announcements" },
+        (payload) => {
+          const announcement = payload.new as Record<string, unknown>;
+          const targetRole = String(announcement.target_role || "");
+          const targetProgramId = typeof announcement.target_program_id === "string" ? announcement.target_program_id : null;
+          const isEligible = (targetRole === "all" || targetRole === "participant")
+            && (!targetProgramId || enrolledProgramIds.has(targetProgramId));
+
+          if (!isEligible) return;
+          setAnnouncements((current) => current.some((item) => item.id === announcement.id) ? current : [announcement, ...current]);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [enrollments]);
+
   const handleDirectEnroll = async (programId: string) => {
     console.log("handleDirectEnroll TRIGGERED for program:", programId);
     console.log("Current participant state:", participant);
@@ -303,26 +328,30 @@ export function LearnerDashboardPage() {
         </div>
       </section>
 
-      {/* Papan Pengumuman */}
+      {/* Pengumuman umum dan pembaruan materi/ujian dari program peserta. */}
       {announcements.length > 0 && (
         <div className="space-y-3 mb-6 animate-in slide-in-from-bottom-4 duration-500">
           <h3 className="font-bold flex items-center gap-2 text-slate-800">
-            <Megaphone className="h-5 w-5 text-indigo-500"/> Papan Pengumuman
+            <Megaphone className="h-5 w-5 text-indigo-500"/> Pembaruan & Pengumuman
           </h3>
           <div className="grid gap-3">
-            {announcements.map(ann => (
-              <Alert key={ann.id} className="bg-indigo-50/50 border-indigo-200/60 shadow-sm relative overflow-hidden group">
-                 <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
-                 <Megaphone className="h-4 w-4 text-indigo-600 mt-1" />
-                 <AlertTitle className="text-indigo-900 font-bold text-base">{ann.title}</AlertTitle>
-                 <AlertDescription className="text-indigo-800/80 mt-1.5 whitespace-pre-wrap leading-relaxed">
-                   {ann.content}
-                 </AlertDescription>
-                 <p className="text-[10px] text-indigo-400 mt-3 font-medium">
-                   Disiarkan pada: {new Date(ann.created_at).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                 </p>
-              </Alert>
-            ))}
+            {announcements.map(ann => {
+              const isLearningUpdate = /^(Materi|Kuis|Ujian) baru:/i.test(ann.title);
+              const UpdateIcon = isLearningUpdate ? BookOpen : Megaphone;
+              return (
+                <Alert key={ann.id} className={`shadow-sm relative overflow-hidden group ${isLearningUpdate ? "border-emerald-200/70 bg-emerald-50/60" : "border-indigo-200/60 bg-indigo-50/50"}`}>
+                  <div className={`absolute top-0 left-0 w-1 h-full ${isLearningUpdate ? "bg-emerald-500" : "bg-indigo-500"}`}></div>
+                  <UpdateIcon className={`mt-1 h-4 w-4 ${isLearningUpdate ? "text-emerald-600" : "text-indigo-600"}`} />
+                  <AlertTitle className={`text-base font-bold ${isLearningUpdate ? "text-emerald-950" : "text-indigo-900"}`}>{ann.title}</AlertTitle>
+                  <AlertDescription className={`mt-1.5 whitespace-pre-wrap leading-relaxed ${isLearningUpdate ? "text-emerald-900/80" : "text-indigo-800/80"}`}>
+                    {ann.content}
+                  </AlertDescription>
+                  <p className={`mt-3 text-[10px] font-medium ${isLearningUpdate ? "text-emerald-600" : "text-indigo-400"}`}>
+                    {isLearningUpdate ? "Pembaruan pembelajaran" : "Disiarkan"}: {new Date(ann.created_at).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                  </p>
+                </Alert>
+              );
+            })}
           </div>
         </div>
       )}

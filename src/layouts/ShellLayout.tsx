@@ -379,7 +379,10 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
   }, [mobileMenuOpen]);
 
   return (
-    <div className={cn(`app-shell app-shell-${variant}`, sidebarCollapsed && "app-shell--sider-collapsed")}>
+    <div
+      className={cn(`app-shell app-shell-${variant}`, sidebarCollapsed && "app-shell--sider-collapsed")}
+      style={themeStyles}
+    >
       <aside className="app-shell__sider print:hidden">
           <div className="app-shell__sidebar-top">
             <Link to={homeByVariant[variant]} className="app-shell__brand" aria-label={appName} title={sidebarTitle}>

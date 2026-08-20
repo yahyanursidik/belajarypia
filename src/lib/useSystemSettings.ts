@@ -26,7 +26,13 @@ export function useSystemSettings() {
       }
     }
 
-    fetchSettings();
+    const handleSettingsUpdated = () => {
+      void fetchSettings();
+    };
+
+    void fetchSettings();
+    window.addEventListener("ypia-system-settings-updated", handleSettingsUpdated);
+    return () => window.removeEventListener("ypia-system-settings-updated", handleSettingsUpdated);
   }, []);
 
   return { settings, loading };

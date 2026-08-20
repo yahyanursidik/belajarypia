@@ -8,6 +8,7 @@ import {
   Calendar,
   CheckCircle2,
   ClipboardList,
+  Clock3,
   FileText,
   GraduationCap,
   KeyRound,
@@ -28,6 +29,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
+import { ParticipantContactCard } from "../../components/participants/ParticipantContactCard";
 import { supabase } from "../../lib/supabase";
 import type { Enrollment, EnrollmentStatus, GuardianParticipant, Participant, ParticipantStatus } from "../../lib/participant";
 
@@ -64,6 +66,11 @@ type EnrollmentRow = Enrollment & {
   halaqahs?: { name: string | null; mentor_user_id: string | null } | null;
 };
 
+type ParticipantLoginActivity = {
+  participant_id: string;
+  last_login_at: string | null;
+};
+
 const detailTabs: Array<{
   key: DetailTab;
   label: string;
@@ -95,6 +102,17 @@ function formatDate(value?: string | null, options: Intl.DateTimeFormatOptions =
   return new Date(value).toLocaleDateString("id-ID", options);
 }
 
+function formatDateTime(value?: string | null) {
+  if (!value) return "Belum pernah login";
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
 function getInitial(name?: string | null) {
   return (name?.trim().charAt(0) || "P").toUpperCase();
 }
@@ -119,6 +137,7 @@ export function AdminParticipantDetailPage() {
   const [participant, setParticipant] = useState<ParticipantDetail | null>(null);
   const [guardianRels, setGuardianRels] = useState<GuardianRelation[]>([]);
   const [enrollments, setEnrollments] = useState<EnrollmentRow[]>([]);
+  const [lastLoginAt, setLastLoginAt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
@@ -201,7 +220,7 @@ export function AdminParticipantDetailPage() {
     }
 
     try {
-      const [participantResult, guardiansResult, enrollmentsResult] = await Promise.all([
+      const [participantResult, guardiansResult, enrollmentsResult, loginActivityResult] = await Promise.all([
         supabase
           .from("participants")
           .select("*, profiles(full_name, email, phone, status)")
@@ -217,6 +236,7 @@ export function AdminParticipantDetailPage() {
           .select("*, programs(code, name), batches(code, name), classes(name, teacher_user_id, profiles(full_name)), halaqahs(name, mentor_user_id)")
           .eq("participant_id", participantId)
           .order("created_at", { ascending: false }),
+        supabase.rpc("get_participant_login_activity", { p_participant_ids: [participantId] }),
       ]);
 
       if (participantResult.error) throw participantResult.error;
@@ -226,6 +246,13 @@ export function AdminParticipantDetailPage() {
       setParticipant((participantResult.data as ParticipantDetail | null) ?? null);
       setGuardianRels((guardiansResult.data ?? []) as GuardianRelation[]);
       setEnrollments((enrollmentsResult.data ?? []) as EnrollmentRow[]);
+      if (loginActivityResult.error) {
+        console.warn("Gagal memuat login terakhir peserta:", loginActivityResult.error.message);
+        setLastLoginAt(null);
+      } else {
+        const activity = (loginActivityResult.data ?? []) as ParticipantLoginActivity[];
+        setLastLoginAt(activity[0]?.last_login_at ?? null);
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Gagal memuat detail peserta.";
       notify(`Gagal memuat detail peserta: ${message}`, "error");
@@ -525,13 +552,21 @@ export function AdminParticipantDetailPage() {
         <main className="min-w-0 space-y-6">
           {activeTab === "overview" && (
             <div className="grid gap-6">
-              <div className="grid gap-4 md:grid-cols-4">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm text-muted-foreground">Program Aktif</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-3xl font-bold">{activeEnrollments}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-muted-foreground">Login Terakhir</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm font-bold leading-snug">{formatDateTime(lastLoginAt)}</p>
                   </CardContent>
                 </Card>
                 <Card>
@@ -600,9 +635,17 @@ export function AdminParticipantDetailPage() {
                   <InfoRow icon={MapPin} label="Domisili" value={participant.city} />
                   <InfoRow icon={GraduationCap} label="Pendidikan" value={participant.education_level} />
                   <InfoRow icon={Calendar} label="Tanggal Bergabung" value={formatDate(participant.joined_at, { day: "numeric", month: "long", year: "numeric" })} />
+                  <InfoRow icon={Clock3} label="Login Terakhir" value={formatDateTime(lastLoginAt)} />
                   <InfoRow icon={Users} label="Wali Utama" value={primaryGuardian?.guardians?.profiles?.full_name} />
                 </CardContent>
               </Card>
+
+              <ParticipantContactCard
+                participantName={participant.display_name}
+                phone={profileData?.phone || participant.phone}
+                email={profileData?.email}
+                programName={enrollments.find((item) => item.enrollment_status === "active")?.programs?.name}
+              />
             </div>
           )}
 
@@ -623,6 +666,7 @@ export function AdminParticipantDetailPage() {
                   <InfoRow icon={MapPin} label="Kota / Domisili" value={participant.city} />
                   <InfoRow icon={GraduationCap} label="Pendidikan Terakhir" value={participant.education_level} />
                   <InfoRow icon={Calendar} label="Tanggal Bergabung" value={formatDate(participant.joined_at, { day: "numeric", month: "long", year: "numeric" })} />
+                  <InfoRow icon={Clock3} label="Login Terakhir" value={formatDateTime(lastLoginAt)} />
                 </CardContent>
               </Card>
 

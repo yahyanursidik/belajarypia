@@ -11,6 +11,32 @@ type SignedUrlRequest =
   | {
       operation: "download";
       file_id: string;
+    }
+  | {
+      operation: "quiz_answer_upload";
+      attempt_id: string;
+      question_id: string;
+      file_name: string;
+      mime_type: string;
+      file_size_bytes: number;
+    }
+  | {
+      operation: "quiz_answer_complete";
+      attempt_id: string;
+      question_id: string;
+      bucket_name: string;
+      object_key: string;
+      file_name: string;
+      mime_type: string;
+      file_size_bytes: number;
+    }
+  | {
+      operation: "quiz_answer_download";
+      file_id: string;
+    }
+  | {
+      operation: "quiz_answer_delete";
+      file_id: string;
     };
 
 const corsHeaders = {
@@ -88,6 +114,68 @@ Deno.serve(async (request) => {
       });
     }
 
+    if (body.operation === "quiz_answer_upload") {
+      const { error } = await supabase.rpc("authorize_quiz_answer_file_upload", {
+        p_attempt_id: body.attempt_id,
+        p_question_id: body.question_id,
+        p_file_name: body.file_name,
+        p_mime_type: body.mime_type,
+        p_file_size_bytes: body.file_size_bytes,
+      });
+      if (error) return json({ error: error.message }, 403);
+
+      const objectKey = buildQuizAnswerObjectKey(user.id, body.attempt_id, body.question_id, body.file_name);
+      const signedUrl = await createS3SignedUrl({
+        method: "PUT",
+        objectKey,
+        contentType: body.mime_type,
+      });
+      return json({
+        bucket: requiredEnv("S3_BUCKET"),
+        objectKey,
+        signedUrl,
+        mimeType: body.mime_type,
+        expiresIn: Number(Deno.env.get("S3_SIGNED_URL_EXPIRES_SECONDS") ?? "900"),
+      });
+    }
+
+    if (body.operation === "quiz_answer_complete") {
+      const { data, error } = await supabase.rpc("register_quiz_answer_file", {
+        p_attempt_id: body.attempt_id,
+        p_question_id: body.question_id,
+        p_bucket_name: body.bucket_name,
+        p_object_key: body.object_key,
+        p_display_name: body.file_name,
+        p_mime_type: body.mime_type,
+        p_file_size_bytes: body.file_size_bytes,
+      });
+      if (error) return json({ error: error.message }, 403);
+      return json(data);
+    }
+
+    if (body.operation === "quiz_answer_download") {
+      const { data, error } = await supabase.rpc("get_quiz_answer_file_for_download", {
+        p_file_id: body.file_id,
+      });
+      const file = Array.isArray(data) ? data[0] : data;
+      if (error || !file) return json({ error: error?.message ?? "Lampiran tidak ditemukan." }, 403);
+      return json({
+        signedUrl: await createS3SignedUrl({ method: "GET", objectKey: file.object_key }),
+        displayName: file.display_name,
+        expiresIn: Number(Deno.env.get("S3_SIGNED_URL_EXPIRES_SECONDS") ?? "900"),
+      });
+    }
+
+    if (body.operation === "quiz_answer_delete") {
+      const { data: objectKey, error } = await supabase.rpc("delete_quiz_answer_file", {
+        p_file_id: body.file_id,
+      });
+      if (error || !objectKey) return json({ error: error?.message ?? "Lampiran tidak ditemukan." }, 403);
+      const deleteUrl = await createS3SignedUrl({ method: "DELETE", objectKey });
+      const deleteResponse = await fetch(deleteUrl, { method: "DELETE" });
+      return json({ deleted: true, storageCleanupPending: !deleteResponse.ok });
+    }
+
     const { data: canAccess, error: accessError } = await supabase.rpc(
       "can_access_document_file",
       { target_file_id: body.file_id },
@@ -163,13 +251,22 @@ function buildSystemObjectKey(fileName: string) {
   return `system/${crypto.randomUUID()}-${safeName || "file"}`;
 }
 
+function buildQuizAnswerObjectKey(userId: string, attemptId: string, questionId: string, fileName: string) {
+  const safeName = fileName
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+  return `quiz-answers/${userId}/${attemptId}/${questionId}/${crypto.randomUUID()}-${safeName || "answer"}`;
+}
+
 async function createS3SignedUrl({
   method,
   objectKey,
   contentType,
   acl,
 }: {
-  method: "GET" | "PUT";
+  method: "GET" | "PUT" | "DELETE";
   objectKey: string;
   contentType?: string;
   acl?: string;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { AlertCircle, ArrowLeft, CheckCircle2, ClipboardCheck, Save, UserCheck } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle2, ClipboardCheck, Download, FileText, LoaderCircle, Save, UserCheck } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { FullPageLoader } from "@/components/ui/full-page-loader";
 import { supabase } from "../../lib/supabase";
+import { requestQuizAnswerDownloadUrl, type QuizAttemptAnswerFile } from "../../lib/quizAnswerFiles";
 
 type AttemptRow = {
   id: string;
@@ -57,6 +58,7 @@ export function QuizEssayReviewPage() {
   const navigate = useNavigate();
   const [attempt, setAttempt] = useState<AttemptRow | null>(null);
   const [answers, setAnswers] = useState<AnswerRow[]>([]);
+  const [answerFiles, setAnswerFiles] = useState<Record<string, QuizAttemptAnswerFile[]>>({});
   const [questions, setQuestions] = useState<QuestionRow[]>([]);
   const [context, setContext] = useState<ReviewContext | null>(null);
   const [grades, setGrades] = useState<Record<string, { points: string; feedback: string }>>({});
@@ -65,6 +67,7 @@ export function QuizEssayReviewPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [openingFileId, setOpeningFileId] = useState<string | null>(null);
 
   const reviewHome = location.pathname.startsWith("/admin")
     ? "/admin/penilaian"
@@ -83,12 +86,13 @@ export function QuizEssayReviewPage() {
         .single();
       if (attemptError) throw attemptError;
 
-      const [{ data: lessonRow, error: lessonError }, { data: enrollmentRow, error: enrollmentError }, { data: answerRows, error: answerError }] = await Promise.all([
+      const [{ data: lessonRow, error: lessonError }, { data: enrollmentRow, error: enrollmentError }, { data: answerRows, error: answerError }, { data: fileRows, error: fileError }] = await Promise.all([
         supabase.from("lessons").select("id, title, module_id").eq("id", attemptRow.lesson_id).single(),
         supabase.from("enrollments").select("id, participant_id").eq("id", attemptRow.enrollment_id).single(),
         supabase.from("quiz_attempt_answers").select("id, question_id, selected_option, essay_answer, points_earned, grader_feedback").eq("quiz_attempt_id", attemptId),
+        supabase.from("quiz_attempt_answer_files").select("id, quiz_attempt_id, question_id, display_name, mime_type, file_size_bytes, created_at").eq("quiz_attempt_id", attemptId).order("created_at"),
       ]);
-      if (lessonError || enrollmentError || answerError) throw lessonError || enrollmentError || answerError;
+      if (lessonError || enrollmentError || answerError || fileError) throw lessonError || enrollmentError || answerError || fileError;
 
       const questionIds = (answerRows ?? []).map(row => row.question_id);
       const [{ data: moduleRow, error: moduleError }, { data: participantRow, error: participantError }, questionResult] = await Promise.all([
@@ -104,8 +108,15 @@ export function QuizEssayReviewPage() {
       if (programError) throw programError;
 
       const nextAnswers = (answerRows ?? []) as AnswerRow[];
+      const nextAnswerFiles = (fileRows ?? []).reduce<Record<string, QuizAttemptAnswerFile[]>>((current, file) => {
+        const questionFiles = current[file.question_id] ?? [];
+        questionFiles.push(file as QuizAttemptAnswerFile);
+        current[file.question_id] = questionFiles;
+        return current;
+      }, {});
       setAttempt(attemptRow as AttemptRow);
       setAnswers(nextAnswers);
+      setAnswerFiles(nextAnswerFiles);
       setQuestions((questionResult.data ?? []) as QuestionRow[]);
       setContext({
         lessonTitle: lessonRow.title,
@@ -166,6 +177,18 @@ export function QuizEssayReviewPage() {
     }
   };
 
+  const openAnswerFile = async (file: QuizAttemptAnswerFile) => {
+    setOpeningFileId(file.id);
+    try {
+      const { signedUrl } = await requestQuizAnswerDownloadUrl(file.id);
+      window.open(signedUrl, "_blank", "noopener,noreferrer");
+    } catch (openError) {
+      setError(errorMessage(openError));
+    } finally {
+      setOpeningFileId(null);
+    }
+  };
+
   if (isLoading) return <FullPageLoader message="Memuat jawaban ujian..." />;
 
   if (!attempt || !context) {
@@ -201,6 +224,7 @@ export function QuizEssayReviewPage() {
           const answer = answerMap.get(question.id);
           if (!answer) return null;
           const isEssay = question.question_type === "essay";
+          const files = answerFiles[question.id] ?? [];
           return (
             <Card key={question.id} className={isEssay ? "border-amber-200" : "border-border/60"}>
               <CardHeader className="border-b bg-muted/30">
@@ -211,7 +235,8 @@ export function QuizEssayReviewPage() {
                 <p className="whitespace-pre-wrap text-sm leading-relaxed">{question.question_text}</p>
               </CardHeader>
               <CardContent className="space-y-4 p-5">
-                <div><p className="mb-1 text-xs font-semibold uppercase text-muted-foreground">Jawaban Peserta</p><div className="rounded-lg border bg-background p-4 text-sm whitespace-pre-wrap">{answer.essay_answer || answer.selected_option || "Tidak dijawab"}</div></div>
+                <div><p className="mb-1 text-xs font-semibold uppercase text-muted-foreground">Jawaban Peserta</p><div className="rounded-lg border bg-background p-4 text-sm whitespace-pre-wrap">{answer.essay_answer || answer.selected_option || (files.length > 0 ? "Peserta mengirim jawaban dalam lampiran." : "Tidak dijawab")}</div></div>
+                {isEssay && files.length > 0 && <div className="rounded-lg border border-sky-200 bg-sky-50/60 p-4"><p className="flex items-center gap-2 text-sm font-semibold text-sky-950"><FileText className="h-4 w-4" /> Lampiran jawaban ({files.length})</p><div className="mt-3 flex flex-wrap gap-2">{files.map(file => <Button key={file.id} type="button" size="sm" variant="outline" className="bg-white" onClick={() => void openAnswerFile(file)} disabled={openingFileId === file.id}>{openingFileId === file.id ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}{file.display_name}</Button>)}</div></div>}
                 {isEssay ? <>
                   <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p className="font-semibold">Panduan penilaian</p><p className="mt-1 whitespace-pre-wrap">{question.grading_guide || "Belum ada panduan khusus."}</p></div>
                   <div className="grid gap-4 md:grid-cols-[180px_1fr]">

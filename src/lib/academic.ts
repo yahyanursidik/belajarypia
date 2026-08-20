@@ -145,3 +145,13 @@ export type QuizQuestion = {
   order_no: number;
   points: number;
 };
+
+export type QuizAttemptAnswerFile = {
+  id: string;
+  quiz_attempt_id: string;
+  question_id: string;
+  display_name: string;
+  mime_type: string;
+  file_size_bytes: number;
+  created_at: string;
+};
