@@ -256,6 +256,11 @@ const TeacherReviewPage = lazy(() =>
     default: module.TeacherReviewPage,
   })),
 );
+const QuizEssayReviewPage = lazy(() =>
+  import("./teacher/QuizEssayReviewPage").then((module) => ({
+    default: module.QuizEssayReviewPage,
+  })),
+);
 const TeacherProfilePage = lazy(() =>
   import("./teacher/TeacherProfilePage").then((module) => ({
     default: module.TeacherProfilePage,
@@ -345,6 +350,8 @@ export function AppRoutes() {
             }
           />
           <Route path="profil" element={<AdminProfilePage />} />
+          <Route path="penilaian" element={<ProtectedRoute allowedRoles={["admin"]}><TeacherReviewPage /></ProtectedRoute>} />
+          <Route path="penilaian/:attemptId" element={<ProtectedRoute allowedRoles={["admin"]}><QuizEssayReviewPage /></ProtectedRoute>} />
           <Route
             path="pengumuman"
             element={
@@ -441,6 +448,7 @@ export function AppRoutes() {
           <Route path="quran" element={<ProtectedRoute allowedRoles={["mentor"]}><MentorQuranPage /></ProtectedRoute>} />
           <Route path="konten" element={<TeacherContentPage />} />
           <Route path="review" element={<TeacherReviewPage />} />
+          <Route path="review/quiz/:attemptId" element={<QuizEssayReviewPage />} />
           <Route path="profil" element={<TeacherProfilePage />} />
           <Route path="*" element={<TeacherPlaceholderPage />} />
         </Route>
@@ -497,6 +505,8 @@ export function AppRoutes() {
           <Route path="audit" element={<SystemAuditPage />} />
           <Route path="helpdesk" element={<SystemHelpdeskPage />} />
           <Route path="konten" element={<SystemContentReviewPage />} />
+          <Route path="penilaian" element={<TeacherReviewPage />} />
+          <Route path="penilaian/:attemptId" element={<QuizEssayReviewPage />} />
           <Route path="pengguna" element={<SystemUsersPage />} />
           <Route path="keuangan" element={<AdminFinancePage />} />
           <Route path="profil" element={<AdminProfilePage />} />

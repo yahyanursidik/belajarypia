@@ -42,6 +42,7 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
           ],
         },
         { href: "/system/program", label: "Program & Kurikulum", description: "Program, kelas, materi, dan evaluasi", group: "Akademik", icon: menuIcon.book, keywords: ["silabus", "kurikulum", "kelas", "bank soal"] },
+        { href: "/system/penilaian", label: "Penilaian Ujian", description: "Koreksi esai dan umpan balik peserta", group: "Akademik", icon: menuIcon.review, keywords: ["esai", "nilai", "ujian", "koreksi"] },
         {
           href: "/system/sertifikat", label: "Syahadah & Sertifikat", description: "Kelayakan dan penerbitan", group: "Akademik", icon: menuIcon.certificate, keywords: ["ijazah", "kelulusan"],
           children: [
@@ -102,6 +103,7 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
           ],
         },
         { href: "/admin/program", label: "Program & Kurikulum", description: "Kelas, materi, dan evaluasi", group: "Akademik", icon: menuIcon.book, keywords: ["silabus", "kelas", "bank soal"], mobilePriority: 4 },
+        { href: "/admin/penilaian", label: "Penilaian Ujian", description: "Koreksi esai dan umpan balik peserta", group: "Akademik", icon: menuIcon.review, keywords: ["esai", "nilai", "ujian", "koreksi"] },
         {
           href: "/admin/sertifikat", label: "Syahadah & Sertifikat", description: "Kelayakan dan penerbitan", group: "Akademik", icon: menuIcon.certificate,
           children: [
@@ -161,7 +163,7 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
         { href: "/teacher/kelas", label: "Program & Kelas", description: "Kelas dan peserta yang diampu", group: "Pembelajaran", icon: menuIcon.book, keywords: ["kelas", "peserta", "program"], mobilePriority: 2 },
         { href: "/teacher/silabus", label: "Silabus Pengajaran", description: "Tujuan, capaian, dan rencana belajar", group: "Pembelajaran", icon: menuIcon.document, keywords: ["rps", "kurikulum", "tujuan", "capaian"], mobilePriority: 4 },
         { href: "/teacher/konten", label: "Konten Materi", description: "Materi, dokumen, dan evaluasi", group: "Pembelajaran", icon: menuIcon.library, mobilePriority: 4 },
-        { href: "/teacher/review", label: "Tugas & Review", description: "Penilaian dan umpan balik", group: "Pembelajaran", icon: menuIcon.review, mobilePriority: 3 },
+        { href: "/teacher/review", label: "Tugas & Review", description: "Koreksi esai, nilai, dan umpan balik", group: "Pembelajaran", icon: menuIcon.review, mobilePriority: 3 },
         { href: "/teacher/profil", label: "Profil Saya", description: "Identitas dan akun pengajar", group: "Akun", icon: menuIcon.user, mobilePriority: 5 },
       ];
     case "mentor":

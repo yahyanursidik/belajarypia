@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 import { useAuthSession } from "../../app/providers/authSessionContext";
 import { supabase } from "../../lib/supabase";
@@ -12,6 +13,7 @@ import type { Lesson, QuizQuestion } from "../../lib/academic";
 export function LearnerQuizPage() {
   const { lessonId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuthSession();
 
   const [lesson, setLesson] = useState<Lesson | null>(null);
@@ -25,10 +27,14 @@ export function LearnerQuizPage() {
   const [isFinished, setIsFinished] = useState(false);
   const [finalScore, setFinalScore] = useState<number | null>(null);
   const [showReview, setShowReview] = useState(false);
+  const [awaitingReview, setAwaitingReview] = useState(false);
+  const [graderFeedback, setGraderFeedback] = useState<string | null>(null);
+  const [answerReviews, setAnswerReviews] = useState<Record<string, { points: number; feedback: string | null }>>({});
   
   // Ref for scrolling to questions
   const questionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const initializedLessonIdRef = useRef<string | null>(null);
+  const submitQuizRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     async function loadQuiz() {
@@ -76,14 +82,17 @@ export function LearnerQuizPage() {
         // 3. Check Attempts
         const { data: attemptData } = await supabase
           .from("quiz_attempts")
-          .select("id, status, score, started_at")
+          .select("id, status, score, started_at, grader_feedback")
           .eq("enrollment_id", enrollData.id)
           .eq("lesson_id", lessonId)
           .order("created_at", { ascending: false });
 
-        const submittedAttempts = attemptData?.filter(a => a.status === 'submitted') || [];
+        const completedAttempts = attemptData?.filter(a => ['submitted', 'pending_review', 'graded'].includes(a.status)) || [];
         const ongoingAttempt = attemptData?.find(a => a.status === 'ongoing');
-        const isMaxAttemptsReached = lessonData.max_attempts && submittedAttempts.length >= lessonData.max_attempts;
+        const requestedAttemptId = searchParams.get("attempt");
+        const requestedAttempt = requestedAttemptId ? completedAttempts.find(a => a.id === requestedAttemptId) : null;
+        const pendingAttempt = completedAttempts.find(a => a.status === 'pending_review');
+        const isMaxAttemptsReached = lessonData.max_attempts && completedAttempts.length >= lessonData.max_attempts;
 
         // 4. Get Questions
         const { data: qData, error: qError } = await supabase
@@ -95,26 +104,38 @@ export function LearnerQuizPage() {
         
         let loadedQuestions = qData || [];
         
-        // If finished/max attempts reached, load past answers for review
-        if (isMaxAttemptsReached) {
-          const lastAttemptId = submittedAttempts[0].id;
+        // Pending essays stay locked until a reviewer finishes grading. A final attempt can also be reviewed here.
+        if (requestedAttempt || pendingAttempt || isMaxAttemptsReached) {
+          const reviewAttempt = requestedAttempt || pendingAttempt || completedAttempts[0];
+          const lastAttemptId = reviewAttempt.id;
           
           const { data: pastAnswers } = await supabase
             .from("quiz_attempt_answers")
-            .select("question_id, selected_option")
+            .select("question_id, selected_option, essay_answer, points_earned, grader_feedback")
             .eq("quiz_attempt_id", lastAttemptId);
             
           if (pastAnswers) {
             const reconstructedAnswers: Record<string, string> = {};
             pastAnswers.forEach(pa => {
-              if (pa.selected_option) reconstructedAnswers[pa.question_id] = pa.selected_option;
+              const answerValue = pa.essay_answer || pa.selected_option;
+              if (answerValue) reconstructedAnswers[pa.question_id] = answerValue;
             });
             setAnswers(reconstructedAnswers);
+            setAnswerReviews(Object.fromEntries(pastAnswers.map(pa => [pa.question_id, {
+              points: Number(pa.points_earned || 0),
+              feedback: pa.grader_feedback,
+            }])));
+            if (lessonData.randomized_questions_count) {
+              const answeredIds = new Set(pastAnswers.map(pa => pa.question_id));
+              loadedQuestions = loadedQuestions.filter(question => answeredIds.has(question.id));
+            }
           }
           
           setQuestions(loadedQuestions.sort((a, b) => a.order_no - b.order_no) as any);
           setIsFinished(true);
-          setFinalScore(submittedAttempts[0].score);
+          setAwaitingReview(reviewAttempt.status === 'pending_review');
+          setFinalScore(reviewAttempt.score);
+          setGraderFeedback((reviewAttempt as any).grader_feedback || null);
           setIsLoading(false);
           return;
         }
@@ -124,20 +145,15 @@ export function LearnerQuizPage() {
         let startedAt = ongoingAttempt?.started_at ? new Date(ongoingAttempt.started_at) : new Date();
 
         if (!currentAttemptId) {
-          const { data: newAttempt, error: attemptInsertError } = await supabase
-            .from("quiz_attempts")
-            .insert({
-              enrollment_id: enrollData.id,
-              lesson_id: lessonId,
-              attempt_number: submittedAttempts.length + 1,
-              status: "ongoing"
-            })
-            .select("id, started_at")
-            .single();
+          const { data: attemptResult, error: attemptInsertError } = await supabase.rpc("start_quiz_attempt", {
+            p_lesson_id: lessonId,
+          });
 
           if (attemptInsertError) throw new Error("Gagal memulai kuis: " + attemptInsertError.message);
-          currentAttemptId = newAttempt.id;
-          startedAt = new Date(newAttempt.started_at);
+          const newAttempt = Array.isArray(attemptResult) ? attemptResult[0] : attemptResult;
+          if (!newAttempt?.attempt_id) throw new Error("Percobaan ujian tidak berhasil dibuat.");
+          currentAttemptId = newAttempt.attempt_id;
+          startedAt = new Date(newAttempt.attempt_started_at);
         }
         
         setQuizAttemptId(currentAttemptId);
@@ -164,6 +180,11 @@ export function LearnerQuizPage() {
         
         setQuestions(loadedQuestions as any);
 
+        const savedDraft = localStorage.getItem(`ypia-quiz-draft:${currentAttemptId}`);
+        if (savedDraft) {
+          try { setAnswers(JSON.parse(savedDraft)); } catch { localStorage.removeItem(`ypia-quiz-draft:${currentAttemptId}`); }
+        }
+
         // Set Timer correctly accounting for time elapsed if it's an ongoing attempt
         if (lessonData.duration_minutes) {
           const elapsedSeconds = Math.floor((new Date().getTime() - startedAt.getTime()) / 1000);
@@ -181,7 +202,12 @@ export function LearnerQuizPage() {
     }
 
     void loadQuiz();
-  }, [user?.id, lessonId]);
+  }, [user?.id, lessonId, searchParams]);
+
+  useEffect(() => {
+    if (!quizAttemptId || isFinished) return;
+    localStorage.setItem(`ypia-quiz-draft:${quizAttemptId}`, JSON.stringify(answers));
+  }, [answers, isFinished, quizAttemptId]);
 
   // Timer Effect
   useEffect(() => {
@@ -191,7 +217,7 @@ export function LearnerQuizPage() {
       setTimeLeft(prev => {
         if (prev !== null && prev <= 1) {
           clearInterval(timer);
-          void handleSubmitQuiz(); // Auto submit when time is up
+          submitQuizRef.current();
           return 0;
         }
         return prev !== null ? prev - 1 : null;
@@ -201,9 +227,9 @@ export function LearnerQuizPage() {
     return () => clearInterval(timer);
   }, [timeLeft, isFinished, isSubmitting]);
 
-  const handleOptionSelect = (questionId: string, option: string) => {
+  const handleAnswerChange = (questionId: string, answer: string) => {
     if (isFinished || isSubmitting) return;
-    setAnswers(prev => ({ ...prev, [questionId]: option }));
+    setAnswers(prev => ({ ...prev, [questionId]: answer }));
   };
 
   const scrollToQuestion = (id: string) => {
@@ -228,52 +254,22 @@ export function LearnerQuizPage() {
     setIsSubmitting(true);
 
     try {
-      // Calculate Score
-      let totalPoints = 0;
-      let earnedPoints = 0;
-
-      const answersToInsert = questions.map(q => {
-        const isCorrect = answers[q.id] === q.correct_answer;
-        if (isCorrect) {
-          earnedPoints += (q.points || 10);
-        }
-        totalPoints += (q.points || 10);
-
-        return {
-          quiz_attempt_id: quizAttemptId,
-          question_id: q.id,
-          selected_option: answers[q.id] || null,
-          is_correct: isCorrect,
-          points_earned: isCorrect ? (q.points || 10) : 0
-        };
+      const { data: submitResult, error: submitError } = await supabase.rpc("submit_quiz_attempt", {
+        p_attempt_id: quizAttemptId,
+        p_answers: questions.map(question => ({
+          question_id: question.id,
+          answer_text: answers[question.id] || "",
+        })),
       });
+      if (submitError) throw new Error(submitError.message);
 
-      const finalCalcScore = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0;
-
-      // Update attempt
-      const { error: updateError } = await supabase
-        .from("quiz_attempts")
-        .update({
-          status: "submitted",
-          score: finalCalcScore,
-          submitted_at: new Date().toISOString()
-        })
-        .eq("id", quizAttemptId);
-
-      if (updateError) throw new Error("Gagal menyimpan nilai ujian.");
-
-      // Insert answers
-      if (answersToInsert.length > 0) {
-        const { error: ansError } = await supabase
-          .from("quiz_attempt_answers")
-          .insert(answersToInsert);
-          
-        if (ansError) console.error("Failed to insert answers", ansError); // non-blocking
-      }
-
-      setFinalScore(finalCalcScore);
+      const result = Array.isArray(submitResult) ? submitResult[0] : submitResult;
+      const needsReview = result?.attempt_status === "pending_review";
+      setAwaitingReview(needsReview);
+      setFinalScore(result?.final_score === null || result?.final_score === undefined ? null : Number(result.final_score));
       setIsFinished(true);
       setShowReview(false);
+      localStorage.removeItem(`ypia-quiz-draft:${quizAttemptId}`);
 
       // Scroll to top to see results
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -284,6 +280,8 @@ export function LearnerQuizPage() {
       setIsSubmitting(false);
     }
   };
+
+  submitQuizRef.current = () => { void handleSubmitQuiz(); };
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -324,6 +322,30 @@ export function LearnerQuizPage() {
   const progressPercentage = questions.length > 0 ? (answeredCount / questions.length) * 100 : 0;
   const hasPassed = lesson?.passing_grade ? (finalScore !== null && finalScore >= lesson.passing_grade) : true;
 
+  if (isFinished && awaitingReview) {
+    return (
+      <div className="page-stack max-w-3xl mx-auto py-12">
+        <Card className="overflow-hidden border-t-8 border-amber-500 shadow-xl">
+          <CardHeader className="border-b bg-amber-50/70 pb-9 pt-11 text-center">
+            <Clock className="mx-auto mb-5 h-16 w-16 text-amber-600" />
+            <CardTitle className="text-3xl text-amber-950">Jawaban Berhasil Dikumpulkan</CardTitle>
+            <p className="mx-auto mt-3 max-w-xl text-slate-600">
+              Ujian <span className="font-semibold">{lesson?.title}</span> memuat soal esai dan sedang menunggu penilaian admin atau pengajar.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-5 p-8 text-center">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              Nilai akhir dan umpan balik akan tampil di halaman materi setelah proses penilaian selesai.
+            </div>
+            <Button size="lg" onClick={() => navigate(`/learner/lesson/${lessonId}`)}>
+              <ArrowLeft className="mr-2 h-5 w-5" /> Kembali ke Materi
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (isFinished && !showReview) {
     return (
       <div className="page-stack max-w-3xl mx-auto py-12">
@@ -360,6 +382,12 @@ export function LearnerQuizPage() {
                     Tidak Lulus (KKM: {lesson.passing_grade})
                   </div>
                 )}
+              </div>
+            )}
+            {graderFeedback && (
+              <div className="mt-7 rounded-xl border border-sky-200 bg-sky-50 p-4 text-left text-sm text-sky-950">
+                <p className="font-semibold">Catatan penilai</p>
+                <p className="mt-1 whitespace-pre-wrap">{graderFeedback}</p>
               </div>
             )}
           </CardContent>
@@ -437,7 +465,9 @@ export function LearnerQuizPage() {
           <div className="space-y-8">
             {questions.map((q, idx) => {
               const userAnswer = answers[q.id];
-              const isCorrect = q.correct_answer === userAnswer;
+              const isCorrect = q.question_type === "essay"
+                ? (answerReviews[q.id]?.points ?? 0) >= (q.points || 10)
+                : q.correct_answer === userAnswer;
               const hasAnswered = !!userAnswer;
               
               return (
@@ -446,10 +476,10 @@ export function LearnerQuizPage() {
                   ref={el => { questionRefs.current[q.id] = el; }}
                   className={`border-slate-200 shadow-sm overflow-hidden transition-all duration-300 ${!showReview && hasAnswered ? 'border-primary/20 bg-slate-50/30' : ''}`}
                 >
-                  <div className={`px-6 py-4 border-b flex items-center justify-between ${showReview ? (isCorrect ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100') : 'bg-slate-50/80 border-slate-100'}`}>
+                  <div className={`px-6 py-4 border-b flex items-center justify-between ${showReview ? (q.question_type === "essay" ? 'bg-sky-50 border-sky-100' : isCorrect ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100') : 'bg-slate-50/80 border-slate-100'}`}>
                     <div className="flex items-center gap-3">
                       <span className="font-bold text-slate-700 text-sm tracking-wide uppercase">Soal {idx + 1}</span>
-                      {showReview && (
+                      {showReview && q.question_type !== "essay" && (
                         <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 ${isCorrect ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
                           {isCorrect ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
                           {isCorrect ? 'Benar' : 'Salah'}
@@ -468,7 +498,29 @@ export function LearnerQuizPage() {
                         )}
                     </div>
                     
-                    <div className="space-y-4">
+                    {q.question_type === "essay" ? (
+                      <div className="space-y-3">
+                        <label className="text-sm font-semibold text-slate-700">Jawaban Anda</label>
+                        <textarea
+                          className="field-control min-h-[180px] leading-relaxed"
+                          placeholder="Tuliskan jawaban secara jelas dan terstruktur..."
+                          value={userAnswer || ""}
+                          onChange={(event) => handleAnswerChange(q.id, event.target.value)}
+                          disabled={showReview}
+                        />
+                        {showReview && (
+                          <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="font-semibold">Hasil penilaian esai</span>
+                              <Badge variant="outline" className="border-sky-300 bg-white text-sky-800">
+                                {answerReviews[q.id]?.points ?? 0} / {q.points || 10} poin
+                              </Badge>
+                            </div>
+                            <p className="mt-2 whitespace-pre-wrap">{answerReviews[q.id]?.feedback || "Tidak ada catatan khusus dari penilai."}</p>
+                          </div>
+                        )}
+                      </div>
+                    ) : <div className="space-y-4">
                       {((q.options as string[]) || []).map((opt, oIdx) => {
                         const isSelected = userAnswer === opt;
                         const isActualCorrectAnswer = showReview && q.correct_answer === opt;
@@ -511,7 +563,7 @@ export function LearnerQuizPage() {
                                   name={`question-${q.id}`} 
                                   value={opt} 
                                   checked={isSelected}
-                                  onChange={() => handleOptionSelect(q.id, opt)}
+                                  onChange={() => handleAnswerChange(q.id, opt)}
                                   className="w-5 h-5 accent-primary cursor-pointer transition-all"
                                   disabled={showReview}
                                 />
@@ -523,7 +575,7 @@ export function LearnerQuizPage() {
                           </label>
                         );
                       })}
-                    </div>
+                    </div>}
                   </CardContent>
                 </Card>
               );
@@ -546,7 +598,11 @@ export function LearnerQuizPage() {
                 <div className="grid grid-cols-5 gap-2">
                   {questions.map((q, idx) => {
                     const hasAnswered = !!answers[q.id];
-                    const isCorrect = showReview ? answers[q.id] === q.correct_answer : false;
+                    const isCorrect = showReview
+                      ? q.question_type === "essay"
+                        ? (answerReviews[q.id]?.points ?? 0) > 0
+                        : answers[q.id] === q.correct_answer
+                      : false;
                     
                     let btnStyle = 'bg-white border-slate-200 text-slate-600 hover:border-primary hover:text-primary';
                     if (showReview) {

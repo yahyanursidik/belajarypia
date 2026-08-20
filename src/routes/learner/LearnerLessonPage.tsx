@@ -197,8 +197,9 @@ export function LearnerLessonPage() {
   };
 
   const isQuiz = lesson?.lesson_type === 'quiz' || lesson?.lesson_type === 'exam';
-  const submittedAttempts = quizAttempts.filter(a => a.status === 'submitted');
-  const maxAttemptsReached = lesson?.max_attempts && submittedAttempts.length >= lesson.max_attempts;
+  const completedAttempts = quizAttempts.filter(a => ['submitted', 'pending_review', 'graded'].includes(a.status));
+  const pendingReview = quizAttempts.some(a => a.status === 'pending_review');
+  const maxAttemptsReached = lesson?.max_attempts && completedAttempts.length >= lesson.max_attempts;
   const hasExternalUrlDocument = Boolean(
     lesson?.external_url && documents.some((doc) => doc.external_url === lesson.external_url),
   );
@@ -421,7 +422,7 @@ export function LearnerLessonPage() {
                   <div>
                     <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Batas Percobaan</p>
                     <p className="font-semibold text-slate-900">
-                      {lesson.max_attempts ? `${submittedAttempts.length} / ${lesson.max_attempts} Kali` : `${submittedAttempts.length} Kali (Tak Terbatas)`}
+                      {lesson.max_attempts ? `${completedAttempts.length} / ${lesson.max_attempts} Kali` : `${completedAttempts.length} Kali (Tak Terbatas)`}
                     </p>
                   </div>
                 </div>
@@ -461,10 +462,14 @@ export function LearnerLessonPage() {
                         <p className="text-xs text-slate-500">{new Date(attempt.created_at).toLocaleDateString("id-ID", { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
                       </div>
                       <div>
-                        {attempt.status === 'submitted' ? (
-                          <Badge variant={attempt.score >= (lesson.passing_grade || 0) ? "default" : "secondary"} className={`px-2 ${attempt.score >= (lesson.passing_grade || 0) ? "" : "bg-red-100 text-red-700"}`}>
-                            {attempt.score}
-                          </Badge>
+                        {['submitted', 'graded'].includes(attempt.status) ? (
+                          <button type="button" onClick={() => navigate(`/learner/lesson/${lessonId}/quiz?attempt=${attempt.id}`)} title="Buka hasil dan umpan balik">
+                            <Badge variant={attempt.score >= (lesson.passing_grade || 0) ? "default" : "secondary"} className={`px-2 ${attempt.score >= (lesson.passing_grade || 0) ? "" : "bg-red-100 text-red-700"}`}>
+                              {attempt.score} · Lihat
+                            </Badge>
+                          </button>
+                        ) : attempt.status === 'pending_review' ? (
+                          <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800">Menunggu Nilai</Badge>
                         ) : (
                           <Badge variant="outline" className="text-slate-500 border-slate-200">
                             Sedang Berjalan
@@ -665,9 +670,11 @@ export function LearnerLessonPage() {
             size="lg" 
             onClick={() => navigate(`/learner/lesson/${lessonId}/quiz`)}
             className="bg-orange-600 hover:bg-orange-700 shadow-sm w-full sm:w-auto"
-            disabled={maxAttemptsReached}
+            disabled={Boolean(maxAttemptsReached || pendingReview)}
           >
-            {maxAttemptsReached ? (
+            {pendingReview ? (
+              <>Menunggu Penilaian Esai</>
+            ) : maxAttemptsReached ? (
               <>Batas Percobaan Habis</>
             ) : (
               <><BookOpen className="w-5 h-5 mr-2 text-white" /> Mulai Kerjakan Ujian</>

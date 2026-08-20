@@ -215,6 +215,11 @@ Manage evaluation and feedback.
 - score
 - feedback
 - finalized status
+- multiple-choice and essay questions
+- bulk text import for essay questions
+- secure quiz submission and automatic multiple-choice scoring
+- manual essay review with per-answer and final feedback
+- learner draft recovery and pending-review status
 
 ### MVP
 Included basic.

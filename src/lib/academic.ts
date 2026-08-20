@@ -1,4 +1,5 @@
 import type { Program } from "./organization";
+import type { QuizQuestionType } from "./quiz";
 
 export type AcademicStatus = "draft" | "active" | "archived";
 export type LessonVisibilityStatus = "draft" | "published" | "locked" | "archived";
@@ -123,22 +124,24 @@ export type QuestionBank = {
 export type QuestionBankItem = {
   id: string;
   question_bank_id: string;
-  question_type: string;
+  question_type: QuizQuestionType;
   question_text: string;
   options: string[] | any;
   correct_answer: string | null;
   explanation: string | null;
+  grading_guide: string | null;
   points: number;
 };
 
 export type QuizQuestion = {
   id: string;
   lesson_id: string;
-  question_type: string;
+  question_type: QuizQuestionType;
   question_text: string;
   options: string[] | any;
   correct_answer: string | null;
   explanation: string | null;
+  grading_guide: string | null;
   order_no: number;
   points: number;
 };

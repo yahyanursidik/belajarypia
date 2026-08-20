@@ -44,6 +44,7 @@ import type {
 } from "../../lib/academic";
 import { inferFileCategory, requestSignedUploadUrl } from "../../lib/documents";
 import type { Program } from "../../lib/organization";
+import { parseQuizImport, type ParsedImportQuestion, type QuizQuestionType } from "../../lib/quiz";
 import { supabase } from "../../lib/supabase";
 import { ProgramParticipants } from "./ProgramParticipants";
 import { ProgramDetailSection } from "./ProgramDetailSection";
@@ -74,7 +75,18 @@ const emptyLesson = {
   max_tab_switches: "3",
   randomized_questions_count: ""
 };
-const emptyQuestion = { question_text: "", optA: "", optB: "", optC: "", optD: "", correct_option: "A", explanation: "", points: 10 };
+const emptyQuestion = {
+  question_type: "multiple_choice" as QuizQuestionType,
+  question_text: "",
+  optA: "",
+  optB: "",
+  optC: "",
+  optD: "",
+  correct_option: "A",
+  explanation: "",
+  grading_guide: "",
+  points: 10,
+};
 
 type MaterialLinkDraft = {
   id: string;
@@ -197,7 +209,8 @@ export function ProgramBuilderPage() {
   const [allBankItems, setAllBankItems] = useState<any[]>([]);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importText, setImportText] = useState("");
-  const [importPreview, setImportPreview] = useState<any[]>([]);
+  const [importPreview, setImportPreview] = useState<ParsedImportQuestion[]>([]);
+  const [importQuestionType, setImportQuestionType] = useState<QuizQuestionType>("multiple_choice");
   const [selectedBankItems, setSelectedBankItems] = useState<Record<string, boolean>>({});
 
   const [bankForm, setBankForm] = useState({ name: "", description: "" });
@@ -236,42 +249,8 @@ export function ProgramBuilderPage() {
   }, [selectedUploadFiles]);
 
   /* ── Loader Functions ── */
-  const parseQuestionsText = (text: string) => {
-    const questions: any[] = [];
-    const matches = [...text.matchAll(/(?:^|\n)\s*(\d+)\.\s+([\s\S]*?)(?=(?:\n\s*\d+\.\s+)|$)/g)];
-    
-    for (const match of matches) {
-      const block = match[2].trim();
-      const lines = block.split('\n').map(l => l.trim()).filter(l => l);
-      if (lines.length === 0) continue;
-      
-      const qTextLine = lines[0];
-      const options: {label: string, text: string}[] = [];
-      let correctAnswer = "";
-      
-      for (const line of lines.slice(1)) {
-        const optMatch = line.match(/^([A-E])[.)]\s*(.*)/i);
-        if (optMatch) {
-          options.push({ label: optMatch[1].toUpperCase(), text: optMatch[2].trim() });
-        } else {
-          const keyMatch = line.match(/^kunci\s*:\s*([A-E])/i);
-          if (keyMatch) {
-            correctAnswer = keyMatch[1].toUpperCase();
-          }
-        }
-      }
-      
-      const isValid = options.length >= 2 && correctAnswer !== "";
-      
-      questions.push({
-        question_text: qTextLine,
-        options,
-        correct_answer: correctAnswer,
-        isValid
-      });
-    }
-    
-    setImportPreview(questions);
+  const parseQuestionsText = (text: string, type = importQuestionType) => {
+    setImportPreview(parseQuizImport(text, type));
   };
 
   const handleBulkImport = async () => {
@@ -286,16 +265,17 @@ export function ProgramBuilderPage() {
     }
     
     const insertData = validQuestions.map(q => {
-      const ops = q.options.map((opt: any) => opt.text);
-      const correctAnswerText = q.options.find((opt: any) => opt.label === q.correct_answer)?.text || "";
+      const ops = q.options.map((opt) => opt.text);
+      const correctAnswerText = q.options.find((opt) => opt.label === q.correct_answer)?.text || null;
 
       return {
         question_bank_id: managingBankId,
-        question_type: "multiple_choice",
+        question_type: q.question_type,
         question_text: q.question_text,
         options: ops,
-        correct_answer: correctAnswerText,
-        points: 10
+        correct_answer: q.question_type === "essay" ? null : correctAnswerText,
+        grading_guide: q.grading_guide || null,
+        points: q.points,
       };
     });
     
@@ -559,7 +539,8 @@ export function ProgramBuilderPage() {
 
   const submitQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
-    const opts = [questionForm.optA, questionForm.optB, questionForm.optC, questionForm.optD].filter(o => o.trim() !== "");
+    const isEssay = questionForm.question_type === "essay";
+    const opts = isEssay ? [] : [questionForm.optA, questionForm.optB, questionForm.optC, questionForm.optD].filter(o => o.trim() !== "");
     let correct = questionForm.optA;
     if (questionForm.correct_option === "B") correct = questionForm.optB;
     if (questionForm.correct_option === "C") correct = questionForm.optC;
@@ -569,10 +550,12 @@ export function ProgramBuilderPage() {
       await submit(async () => {
         const payload = {
           lesson_id: managingLesson.id,
+          question_type: questionForm.question_type,
           question_text: questionForm.question_text,
           options: opts,
-          correct_answer: correct,
+          correct_answer: isEssay ? null : correct,
           explanation: questionForm.explanation || null,
+          grading_guide: isEssay ? questionForm.grading_guide || null : null,
           points: Number(questionForm.points || 10),
           order_no: quizQuestions.length + 1
         };
@@ -587,10 +570,12 @@ export function ProgramBuilderPage() {
       await submit(async () => {
         const payload = {
           question_bank_id: managingBankId,
+          question_type: questionForm.question_type,
           question_text: questionForm.question_text,
           options: opts,
-          correct_answer: correct,
+          correct_answer: isEssay ? null : correct,
           explanation: questionForm.explanation || null,
+          grading_guide: isEssay ? questionForm.grading_guide || null : null,
           points: Number(questionForm.points || 10),
         };
         const res = await supabase.from("question_bank_items").insert(payload);
@@ -619,6 +604,7 @@ export function ProgramBuilderPage() {
       options: item.options,
       correct_answer: item.correct_answer,
       explanation: item.explanation,
+      grading_guide: item.grading_guide,
       points: Number(item.points || 10),
       order_no: startOrder + idx + 1
     }));
@@ -1291,19 +1277,27 @@ export function ProgramBuilderPage() {
                           {i + 1}
                         </div>
                         <div className="flex-1">
-                          <p className="font-medium text-sm text-foreground mb-3">{q.question_text}</p>
-                          <div className="space-y-2">
+                          <div className="mb-3 flex flex-wrap items-center gap-2">
+                            <p className="font-medium text-sm text-foreground">{q.question_text}</p>
+                            <Badge variant="outline">{q.question_type === "essay" ? "Esai" : "Pilihan Ganda"}</Badge>
+                            <Badge variant="secondary">{q.points} poin</Badge>
+                          </div>
+                          {q.question_type === "essay" ? (
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                              <span className="font-semibold">Panduan penilaian:</span> {q.grading_guide || "Belum diisi"}
+                            </div>
+                          ) : <div className="space-y-2">
                             {(q.options || []).map((opt: string, idx: number) => (
                               <div key={idx} className={`p-2 border rounded-md text-sm ${opt === q.correct_answer ? "bg-emerald-50 border-emerald-200 font-medium" : "bg-muted/30"}`}>
                                 {String.fromCharCode(65 + idx)}. {opt}
                                 {opt === q.correct_answer && <span className="float-right text-emerald-600 text-xs">Jawaban Benar</span>}
                               </div>
                             ))}
-                          </div>
+                          </div>}
                         </div>
                         <div className="flex flex-col gap-2 shrink-0">
                           <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-blue-500 hover:bg-blue-50 rounded-full"><Edit2 className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full"><Trash2 className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full" onClick={() => submit(async () => { const res = await supabase.from("quiz_questions").delete().eq("id", q.id); if (!res.error && managingLesson) { const { data } = await supabase.from("quiz_questions").select("*").eq("lesson_id", managingLesson.id).order("order_no"); setQuizQuestions(data || []); } return res; }, "Soal dihapus.")}><Trash2 className="h-4 w-4" /></Button>
                         </div>
                       </div>
                     </Card>
@@ -2032,11 +2026,29 @@ export function ProgramBuilderPage() {
             <CardContent className="p-6">
               <form className="space-y-4" onSubmit={submitQuestion}>
                 <div>
+                  <label className="text-sm font-semibold mb-1 block">Tipe Soal</label>
+                  <div className="grid grid-cols-2 gap-2 rounded-lg border bg-muted/30 p-1">
+                    {([
+                      ["multiple_choice", "Pilihan Ganda"],
+                      ["essay", "Esai"],
+                    ] as const).map(([value, label]) => (
+                      <Button
+                        key={value}
+                        type="button"
+                        variant={questionForm.question_type === value ? "default" : "ghost"}
+                        onClick={() => setQuestionForm((current) => ({ ...current, question_type: value }))}
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div>
                   <label className="text-sm font-semibold mb-1 block">Teks Soal / Pertanyaan <span className="text-red-500">*</span></label>
                   <textarea className="field-control min-h-[100px]" required placeholder="Masukkan pertanyaan..." value={questionForm.question_text} onChange={e => setQuestionForm(c => ({ ...c, question_text: e.target.value }))} />
                 </div>
                 
-                <div className="space-y-3">
+                {questionForm.question_type === "multiple_choice" ? <div className="space-y-3">
                   <label className="text-sm font-semibold block">Pilihan Jawaban</label>
                   <div className="grid gap-3">
                     {["A", "B", "C", "D"].map(opt => (
@@ -2056,12 +2068,23 @@ export function ProgramBuilderPage() {
                       </div>
                     ))}
                   </div>
-                </div>
+                </div> : (
+                  <div>
+                    <label className="text-sm font-semibold mb-1 block">Panduan Penilaian</label>
+                    <textarea
+                      className="field-control min-h-[110px]"
+                      placeholder="Tuliskan poin-poin jawaban ideal atau rubrik singkat untuk penilai."
+                      value={questionForm.grading_guide}
+                      onChange={e => setQuestionForm(c => ({ ...c, grading_guide: e.target.value }))}
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">Panduan hanya terlihat oleh admin/pengajar saat menilai.</p>
+                  </div>
+                )}
 
-                <div>
+                {questionForm.question_type === "multiple_choice" && <div>
                   <label className="text-sm font-semibold mb-1 block">Penjelasan (Opsional)</label>
                   <textarea className="field-control min-h-[80px]" placeholder="Penjelasan kenapa jawaban tersebut benar..." value={questionForm.explanation} onChange={e => setQuestionForm(c => ({ ...c, explanation: e.target.value }))} />
-                </div>
+                </div>}
                 
                 <div>
                   <label className="text-sm font-semibold mb-1 block">Bobot Nilai (Points)</label>
@@ -2114,15 +2137,23 @@ export function ProgramBuilderPage() {
                       <div className="flex gap-4 p-4">
                         <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0 font-bold">{i + 1}</div>
                         <div className="flex-1">
-                          <p className="font-medium text-sm text-foreground mb-3">{q.question_text}</p>
-                          <div className="space-y-2">
+                          <div className="mb-3 flex flex-wrap items-center gap-2">
+                            <p className="font-medium text-sm text-foreground">{q.question_text}</p>
+                            <Badge variant="outline">{q.question_type === "essay" ? "Esai" : "Pilihan Ganda"}</Badge>
+                            <Badge variant="secondary">{q.points} poin</Badge>
+                          </div>
+                          {q.question_type === "essay" ? (
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                              <span className="font-semibold">Panduan penilaian:</span> {q.grading_guide || "Belum diisi"}
+                            </div>
+                          ) : <div className="space-y-2">
                             {(q.options || []).map((opt: string, idx: number) => (
                               <div key={idx} className={`p-2 border rounded-md text-sm ${opt === q.correct_answer ? "bg-emerald-50 border-emerald-200 font-medium" : "bg-muted/30"}`}>
                                 {String.fromCharCode(65 + idx)}. {opt}
                                 {opt === q.correct_answer && <span className="float-right text-emerald-600 text-xs">Jawaban Benar</span>}
                               </div>
                             ))}
-                          </div>
+                          </div>}
                         </div>
                         <div className="flex flex-col gap-2 shrink-0">
                           <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full" onClick={() => submit(async () => { await supabase.from("question_bank_items").delete().eq("id", q.id); const { data } = await supabase.from("question_bank_items").select("*").eq("question_bank_id", managingBankId).order("created_at"); setBankItems(data || []); return {error: null}; }, "Soal dihapus.")}><Trash2 className="h-4 w-4" /></Button>
@@ -2237,10 +2268,31 @@ export function ProgramBuilderPage() {
             </CardHeader>
             <CardContent className="p-0 flex-1 overflow-y-auto bg-muted/10 grid grid-cols-1 md:grid-cols-2">
               <div className="p-4 border-r bg-white flex flex-col">
+                <label className="text-sm font-semibold mb-2 block">Tipe Soal yang Diimpor</label>
+                <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg border bg-muted/30 p-1">
+                  {([[
+                    "multiple_choice",
+                    "Pilihan Ganda",
+                  ], ["essay", "Esai"]] as const).map(([value, label]) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      variant={importQuestionType === value ? "default" : "ghost"}
+                      onClick={() => {
+                        setImportQuestionType(value);
+                        parseQuestionsText(importText, value);
+                      }}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
                 <label className="text-sm font-semibold mb-2 block">Teks Sumber Soal</label>
                 <textarea 
                   className="w-full h-[400px] p-4 text-sm border rounded-xl focus:ring-primary focus:border-primary font-mono text-slate-700 bg-slate-50" 
-                  placeholder={"1. Apa tujuan manusia diciptakan?\nA. Mencari ilmu\nB. Beribadah\nKunci: B\n\n2. Makna tauhid adalah...\nA. Mengikhlaskan ibadah\nB. Membaca\nKunci: A"}
+                  placeholder={importQuestionType === "essay"
+                    ? "1. Jelaskan makna ikhlas dalam menuntut ilmu.\nPanduan: Menjelaskan niat karena Allah dan contoh penerapannya.\nPoin: 20"
+                    : "1. Apa tujuan manusia diciptakan?\nA. Mencari ilmu\nB. Beribadah\nKunci: B\nPoin: 10"}
                   value={importText}
                   onChange={(e) => {
                     setImportText(e.target.value);
@@ -2248,13 +2300,18 @@ export function ProgramBuilderPage() {
                   }}
                 />
                 <div className="mt-4 p-3 bg-blue-50 text-blue-800 text-xs rounded-lg border border-blue-100">
-                  <strong>Format:</strong><br />
+                  <strong>Format {importQuestionType === "essay" ? "esai" : "pilihan ganda"}:</strong><br />
                   - Awali soal dengan angka & titik (<code>1. </code>, <code>2. </code>)<br />
-                  - Awali opsi dengan huruf (<code>A. </code>, <code>B. </code>)<br />
-                  - Di bagian akhir, tambahkan baris <code>Kunci: [A/B/C/D]</code>
+                  {importQuestionType === "essay" ? <>
+                    - Tambahkan <code>Panduan: ...</code> sebagai rubrik penilai<br />
+                    - Tambahkan <code>Poin: 10</code> untuk bobot soal
+                  </> : <>
+                    - Awali opsi dengan huruf (<code>A. </code>, <code>B. </code>)<br />
+                    - Tambahkan <code>Kunci: [A/B/C/D]</code> dan <code>Poin: 10</code>
+                  </>}
                   
                   <div className="mt-3 pt-3 border-t border-blue-200/50">
-                    <a href="/template-impor-soal.txt" download className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-blue-200 rounded text-blue-700 hover:bg-blue-50 transition-colors font-medium">
+                    <a href={importQuestionType === "essay" ? "/template-impor-soal-esai.txt" : "/template-impor-soal.txt"} download className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-blue-200 rounded text-blue-700 hover:bg-blue-50 transition-colors font-medium">
                       <FileText className="w-3.5 h-3.5" />
                       Unduh Contoh Format (.txt)
                     </a>
@@ -2273,7 +2330,7 @@ export function ProgramBuilderPage() {
                       <Card key={idx} className={`p-4 border-l-4 ${q.isValid ? 'border-l-emerald-500 shadow-sm' : 'border-l-red-500 bg-red-50'}`}>
                         <p className="font-semibold text-sm mb-2">{idx + 1}. {q.question_text}</p>
                         <div className="space-y-1 mb-3">
-                          {q.options.map((opt: any, oidx: number) => (
+                          {q.options.map((opt, oidx: number) => (
                             <div key={oidx} className="text-xs flex gap-2">
                               <span className="font-bold text-slate-500">{opt.label}.</span> 
                               <span className={opt.label === q.correct_answer ? "font-semibold text-emerald-700 bg-emerald-100 px-1 rounded" : "text-slate-600"}>
@@ -2282,8 +2339,13 @@ export function ProgramBuilderPage() {
                             </div>
                           ))}
                         </div>
+                        {q.question_type === "essay" && (
+                          <div className="mb-3 rounded-md bg-amber-50 p-2 text-xs text-amber-900">
+                            <span className="font-semibold">Panduan:</span> {q.grading_guide || "Tidak diisi"} · {q.points} poin
+                          </div>
+                        )}
                         {!q.isValid && (
-                          <p className="text-xs text-red-600 font-medium">⚠️ Format soal tidak lengkap atau Kunci salah.</p>
+                          <p className="text-xs text-red-600 font-medium">Format soal belum lengkap atau nilai poin tidak valid.</p>
                         )}
                       </Card>
                     ))}

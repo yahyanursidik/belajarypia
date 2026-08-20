@@ -1,5 +1,5 @@
 export type LessonProgressStatus = "started" | "completed";
-export type QuizAttemptStatus = "ongoing" | "submitted" | "abandoned";
+export type QuizAttemptStatus = "ongoing" | "submitted" | "pending_review" | "graded" | "abandoned";
 
 export type LessonProgress = {
   id: string;
@@ -21,6 +21,9 @@ export type QuizAttempt = {
   status: QuizAttemptStatus;
   started_at: string;
   submitted_at: string | null;
+  graded_by?: string | null;
+  graded_at?: string | null;
+  grader_feedback?: string | null;
 };
 
 export type QuizAttemptAnswer = {
@@ -28,6 +31,10 @@ export type QuizAttemptAnswer = {
   quiz_attempt_id: string;
   question_id: string;
   selected_option: string | null;
+  essay_answer?: string | null;
   is_correct: boolean | null;
   points_earned: number;
+  grader_feedback?: string | null;
+  graded_by?: string | null;
+  graded_at?: string | null;
 };

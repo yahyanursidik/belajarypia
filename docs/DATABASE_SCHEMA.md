@@ -422,6 +422,41 @@
 
 ## 8. Assignments and Assessments
 
+### quiz_questions
+- id uuid PK
+- lesson_id uuid references lessons(id)
+- question_type text (`multiple_choice` or `essay`)
+- question_text text
+- options jsonb
+- correct_answer text nullable
+- grading_guide text nullable, internal reviewer guidance
+- points numeric
+- order_no int
+
+### quiz_attempts
+- id uuid PK
+- enrollment_id uuid references enrollments(id)
+- lesson_id uuid references lessons(id)
+- attempt_number int
+- score numeric nullable
+- status text (`ongoing`, `pending_review`, `graded`, `abandoned`; legacy `submitted` supported)
+- grader_feedback text nullable
+- graded_by uuid nullable references profiles(id)
+- graded_at timestamptz nullable
+- started_at, submitted_at timestamptz
+
+### quiz_attempt_answers
+- id uuid PK
+- quiz_attempt_id uuid references quiz_attempts(id)
+- question_id uuid references quiz_questions(id)
+- selected_option text nullable
+- essay_answer text nullable
+- is_correct boolean nullable
+- points_earned numeric
+- grader_feedback text nullable
+- graded_by uuid nullable references profiles(id)
+- graded_at timestamptz nullable
+
 ### assignments
 - id uuid PK
 - lesson_id uuid references lessons(id)

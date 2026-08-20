@@ -406,3 +406,35 @@ npm.cmd run build
 
 ### Follow-Up Task
 Apply Phase 6 migration, deploy `document-signed-url`, set Contabo S3 secrets, then test one PDF upload and one learner signed download before adding richer content features.
+
+---
+
+### Date
+2026-08-20
+
+### Phase
+Assessment Enhancement - Essay Quiz and Manual Grading
+
+### Prompt
+Kembangkan kuis/ujian tipe esai, impor soal esai, pemeriksaan dan pemberian nilai oleh admin, serta penyesuaian portal peserta dan navigasi.
+
+### Scope
+- Soal esai pada bank soal dan kuis
+- Impor teks massal dengan panduan penilaian dan bobot poin
+- Submit ujian melalui RPC tervalidasi dan penilaian pilihan ganda di server
+- Antrean penilaian admin, superadmin, pengajar, dan musyrif
+- Nilai serta umpan balik per jawaban esai
+- Draf jawaban lokal dan status menunggu penilaian di portal peserta
+
+### Commands Run
+```bash
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd run build
+```
+
+### Result Summary
+Alur kuis kini mendukung campuran pilihan ganda dan esai. Jawaban esai menunggu koreksi manual, sedangkan peserta menerima nilai final dan umpan balik setelah penilai menyimpan hasil.
+
+### Follow-Up Task
+Apply migration `202608200001_essay_quiz_manual_grading.sql` ke Supabase, lalu uji satu ujian campuran end-to-end dengan akun peserta dan akun penilai.

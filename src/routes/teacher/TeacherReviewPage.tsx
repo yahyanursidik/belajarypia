@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   AlertCircle,
   BarChart3,
@@ -63,7 +63,7 @@ type QuizAttemptRow = {
   lesson_id: string;
   attempt_number: number;
   score: number | null;
-  status: "ongoing" | "submitted" | "abandoned";
+  status: "ongoing" | "submitted" | "pending_review" | "graded" | "abandoned";
   submitted_at: string | null;
   started_at: string;
 };
@@ -91,6 +91,7 @@ type ReviewItem = {
   submittedAt: string | null;
   status: "pending_review" | "passed" | "needs_attention";
   attemptNumber?: number;
+  attemptStatus?: QuizAttemptRow["status"];
 };
 
 type ReviewFilter = "all" | "pending_review" | "needs_attention" | "quiz" | "assignment";
@@ -126,6 +127,7 @@ function getErrorMessage(error: unknown) {
 
 export function TeacherReviewPage() {
   const { user } = useAuthSession();
+  const location = useLocation();
   const [programs, setPrograms] = useState<TeacherProgram[]>([]);
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -207,7 +209,7 @@ export function TeacherReviewPage() {
         .from("quiz_attempts")
         .select("id, enrollment_id, lesson_id, attempt_number, score, status, submitted_at, started_at")
         .in("lesson_id", lessonIds)
-        .eq("status", "submitted")
+        .in("status", ["submitted", "pending_review", "graded"])
         .order("submitted_at", { ascending: false }),
       supabase
         .from("lesson_progresses")
@@ -273,6 +275,7 @@ export function TeacherReviewPage() {
         submittedAt: attempt.submitted_at ?? attempt.started_at,
         status,
         attemptNumber: attempt.attempt_number,
+        attemptStatus: attempt.status,
       };
     });
 
@@ -461,11 +464,17 @@ export function TeacherReviewPage() {
                       </td>
                       <td className="px-4 py-4">{reviewBadge(item.status)}</td>
                       <td className="px-4 py-4 text-right">
-                        <Button asChild size="sm" variant="outline">
-                          <Link to={`/teacher/kelas/program/${item.program?.id}/peserta`}>
-                            Buka Peserta
-                          </Link>
-                        </Button>
+                        {item.source === "quiz_attempt" ? (
+                          <Button asChild size="sm" variant={item.attemptStatus === "pending_review" ? "default" : "outline"}>
+                            <Link to={`${location.pathname.startsWith("/admin") ? "/admin/penilaian" : location.pathname.startsWith("/system") ? "/system/penilaian" : "/teacher/review/quiz"}/${item.id}`}>
+                              {item.attemptStatus === "pending_review" ? "Nilai Esai" : "Lihat Nilai"}
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button asChild size="sm" variant="outline">
+                            <Link to={`/teacher/kelas/program/${item.program?.id}/peserta`}>Buka Peserta</Link>
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   ))}
