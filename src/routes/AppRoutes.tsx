@@ -266,6 +266,11 @@ const TeacherProfilePage = lazy(() =>
     default: module.TeacherProfilePage,
   })),
 );
+const LessonBoardEditorPage = lazy(() =>
+  import("./teacher/LessonBoardEditorPage").then((module) => ({
+    default: module.LessonBoardEditorPage,
+  })),
+);
 
 function RouteFallback() {
   return <FullPageLoader message="Memuat halaman..." />;
@@ -384,6 +389,7 @@ export function AppRoutes() {
               </ProtectedRoute>
             }
           />
+          <Route path="board/:lessonId" element={<ProtectedRoute allowedRoles={["admin"]}><LessonBoardEditorPage /></ProtectedRoute>} />
           <Route
             path="keuangan"
             element={
@@ -442,6 +448,7 @@ export function AppRoutes() {
           <Route path="kelas" element={<TeacherClassPage />} />
           <Route path="kelas/program/:programId" element={<ProgramBuilderPage />} />
           <Route path="kelas/program/:programId/:section" element={<ProgramBuilderPage />} />
+          <Route path="board/:lessonId" element={<LessonBoardEditorPage />} />
           <Route path="kelas/:classId" element={<TeacherClassDashboardPage />} />
           <Route path="silabus" element={<TeacherSyllabusPage />} />
           <Route path="halaqah" element={<ProtectedRoute allowedRoles={["mentor"]}><MentorHalaqahPage /></ProtectedRoute>} />
@@ -499,6 +506,7 @@ export function AppRoutes() {
           <Route path="program/:programId" element={<ProgramBuilderPage />} />
           <Route path="program/:programId/report" element={<AdminProgramReportPage />} />
           <Route path="program/:programId/:section" element={<ProgramBuilderPage />} />
+          <Route path="board/:lessonId" element={<LessonBoardEditorPage />} />
           <Route path="katalog/:programId" element={<ProgramDetailPage />} />
           <Route path="pendaftaran/:programId" element={<AdmissionPortalPage />} />
           <Route path="cek-status" element={<AdmissionStatusPage />} />

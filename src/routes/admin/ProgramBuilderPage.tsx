@@ -374,6 +374,12 @@ export function ProgramBuilderPage() {
     return `${location.pathname.slice(0, markerIndex)}${marker}`;
   }, [location.pathname, programId]);
 
+  const boardEditorPrefix = useMemo(() => {
+    if (location.pathname.startsWith("/system")) return "/system";
+    if (location.pathname.startsWith("/teacher")) return "/teacher";
+    return "/admin";
+  }, [location.pathname]);
+
   const getProgramSectionPath = useCallback((tab: ProgramTab) => {
     return `${programBasePath}/${programTabSegments[tab]}`;
   }, [programBasePath]);
@@ -444,6 +450,7 @@ export function ProgramBuilderPage() {
       case "quiz": case "exam": return <FileText className="h-4 w-4 text-orange-500" />;
       case "live_session": return <Video className="h-4 w-4 text-rose-500" />;
       case "assignment": return <BookOpen className="h-4 w-4 text-blue-500" />;
+      case "board": return <Presentation className="h-4 w-4 text-violet-600" />;
       default: return <PlayCircle className="h-4 w-4 text-emerald-500" />;
     }
   };
@@ -732,6 +739,7 @@ export function ProgramBuilderPage() {
     const primaryExternalUrl = lessonForm.lesson_type === "live_session"
       ? lessonForm.external_url.trim() || null
       : cleanedMaterialLinks[0]?.url ?? null;
+    const shouldOpenBoardAfterSave = lessonForm.lesson_type === "board" && !editingLessonId;
     const payload = {
       module_id: lessonForm.module_id,
       code: editingLessonId ? lessonForm.code : autoCode,
@@ -762,6 +770,20 @@ export function ProgramBuilderPage() {
     }
 
     const lessonIdToUse = editingLessonId || data.id;
+
+    if (lessonForm.lesson_type === "board") {
+      const { error: boardError } = await supabase.from("lesson_boards").upsert({
+        lesson_id: lessonIdToUse,
+        title: lessonForm.title.trim(),
+        description: lessonForm.content_body.trim() || null,
+        created_by: user?.id || null,
+      }, { onConflict: "lesson_id", ignoreDuplicates: true });
+      if (boardError) {
+        setErrorMessage(boardError.message);
+        setIsSubmitting(false);
+        return;
+      }
+    }
 
     if (lessonForm.lesson_type !== "live_session" && lessonModalMode !== "kuis") {
       const { error: deleteLinkError } = await supabase
@@ -839,6 +861,7 @@ export function ProgramBuilderPage() {
     setSelectedUploadFiles([]);
     await loadData();
     setIsSubmitting(false);
+    if (shouldOpenBoardAfterSave) navigate(`${boardEditorPrefix}/board/${lessonIdToUse}`);
   };
 
   /* ───────────────── Render ───────────────── */
@@ -1144,6 +1167,11 @@ export function ProgramBuilderPage() {
                                     {(lesson.lesson_type === "quiz" || lesson.lesson_type === "exam") && (
                                       <Button variant="outline" size="sm" className="h-8 text-xs border-orange-200 text-orange-600 hover:bg-orange-50" onClick={() => manageQuestions(lesson)}>
                                         <BookOpen className="h-3 w-3 mr-1" /> Kelola Soal
+                                      </Button>
+                                    )}
+                                    {lesson.lesson_type === "board" && (
+                                      <Button variant="outline" size="sm" className="h-8 text-xs border-violet-200 text-violet-700 hover:bg-violet-50" onClick={() => navigate(`${boardEditorPrefix}/board/${lesson.id}`)}>
+                                        <Presentation className="h-3 w-3 mr-1" /> Kelola Board
                                       </Button>
                                     )}
                                     <Badge variant={lesson.visibility_status === "published" ? "default" : "secondary"} className="text-xs">{lesson.visibility_status}</Badge>
@@ -1647,6 +1675,7 @@ export function ProgramBuilderPage() {
                       {lessonModalMode === "materi" ? (
                         <>
                           <option value="content">📖 Materi Pembelajaran</option>
+                          <option value="board">🗂️ Board Materi Interaktif</option>
                           <option value="live_session">🎥 Sesi Live</option>
                           <option value="assignment">📝 Tugas</option>
                         </>

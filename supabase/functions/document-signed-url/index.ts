@@ -37,6 +37,22 @@ type SignedUrlRequest =
   | {
       operation: "quiz_answer_delete";
       file_id: string;
+    }
+  | {
+      operation: "board_image_upload";
+      board_id: string;
+      file_name: string;
+      mime_type: string;
+      file_size_bytes: number;
+    }
+  | {
+      operation: "board_image_download";
+      post_id: string;
+    }
+  | {
+      operation: "board_image_delete";
+      board_id: string;
+      object_key: string;
     };
 
 const corsHeaders = {
@@ -176,6 +192,48 @@ Deno.serve(async (request) => {
       return json({ deleted: true, storageCleanupPending: !deleteResponse.ok });
     }
 
+    if (body.operation === "board_image_upload") {
+      if (!isSupportedBoardImage(body.file_name, body.mime_type, body.file_size_bytes)) {
+        return json({ error: "Gambar board harus JPG, PNG, atau WebP dengan ukuran maksimal 5 MB." }, 400);
+      }
+      const { data: canManage, error } = await supabase.rpc("can_manage_lesson_board", {
+        target_board_id: body.board_id,
+      });
+      if (error || !canManage) return json({ error: "Tidak memiliki akses untuk mengelola board ini." }, 403);
+
+      const objectKey = buildBoardImageObjectKey(body.board_id, body.file_name);
+      return json({
+        objectKey,
+        mimeType: body.mime_type,
+        signedUrl: await createS3SignedUrl({ method: "PUT", objectKey, contentType: body.mime_type }),
+        expiresIn: Number(Deno.env.get("S3_SIGNED_URL_EXPIRES_SECONDS") ?? "900"),
+      });
+    }
+
+    if (body.operation === "board_image_download") {
+      const { data: objectKey, error } = await supabase.rpc("get_lesson_board_image_for_download", {
+        p_post_id: body.post_id,
+      });
+      if (error || !objectKey) return json({ error: error?.message ?? "Gambar board tidak ditemukan." }, 403);
+      return json({
+        signedUrl: await createS3SignedUrl({ method: "GET", objectKey }),
+        expiresIn: Number(Deno.env.get("S3_SIGNED_URL_EXPIRES_SECONDS") ?? "900"),
+      });
+    }
+
+    if (body.operation === "board_image_delete") {
+      const { data: canManage, error } = await supabase.rpc("can_manage_lesson_board", {
+        target_board_id: body.board_id,
+      });
+      const expectedPrefix = `lesson-boards/${body.board_id}/`;
+      if (error || !canManage || !body.object_key.startsWith(expectedPrefix)) {
+        return json({ error: "Tidak memiliki akses untuk menghapus gambar board ini." }, 403);
+      }
+      const deleteUrl = await createS3SignedUrl({ method: "DELETE", objectKey: body.object_key });
+      const response = await fetch(deleteUrl, { method: "DELETE" });
+      return json({ deleted: response.ok, storageCleanupPending: !response.ok });
+    }
+
     const { data: canAccess, error: accessError } = await supabase.rpc(
       "can_access_document_file",
       { target_file_id: body.file_id },
@@ -258,6 +316,29 @@ function buildQuizAnswerObjectKey(userId: string, attemptId: string, questionId:
     .replace(/^-+|-+$/g, "")
     .slice(0, 120);
   return `quiz-answers/${userId}/${attemptId}/${questionId}/${crypto.randomUUID()}-${safeName || "answer"}`;
+}
+
+function buildBoardImageObjectKey(boardId: string, fileName: string) {
+  const safeName = fileName
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+  return `lesson-boards/${boardId}/${crypto.randomUUID()}-${safeName || "image"}`;
+}
+
+function isSupportedBoardImage(fileName: string, mimeType: string, fileSize: number) {
+  const extension = fileName.toLowerCase().split(".").pop();
+  const allowed = new Map([
+    ["jpg", "image/jpeg"],
+    ["jpeg", "image/jpeg"],
+    ["png", "image/png"],
+    ["webp", "image/webp"],
+  ]);
+  return Number.isFinite(fileSize)
+    && fileSize > 0
+    && fileSize <= 5 * 1024 * 1024
+    && allowed.get(extension ?? "") === mimeType.toLowerCase();
 }
 
 async function createS3SignedUrl({

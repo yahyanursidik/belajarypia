@@ -8,7 +8,9 @@ import { useAuthSession } from "../../app/providers/authSessionContext";
 import { supabase } from "../../lib/supabase";
 import { ArrowLeft, BookOpen, Download, ExternalLink, FileText, CheckCircle2, PlayCircle, Clock, AlertTriangle, ListChecks, Trophy } from "lucide-react";
 import type { DocumentFile } from "../../lib/academic";
+import { LessonBoardView } from "../../components/boards/LessonBoardView";
 import { requestSignedDownloadUrl } from "../../lib/documents";
+import { requestLessonBoardImageUrl, type LessonBoard, type LessonBoardColumn, type LessonBoardPost } from "../../lib/lessonBoards";
 
 export function LearnerLessonPage() {
   const { lessonId } = useParams();
@@ -21,6 +23,10 @@ export function LearnerLessonPage() {
   const [prerequisites, setPrerequisites] = useState<any[]>([]);
   const [quizAttempts, setQuizAttempts] = useState<any[]>([]);
   const [questionCount, setQuestionCount] = useState(0);
+  const [lessonBoard, setLessonBoard] = useState<LessonBoard | null>(null);
+  const [boardColumns, setBoardColumns] = useState<LessonBoardColumn[]>([]);
+  const [boardPosts, setBoardPosts] = useState<LessonBoardPost[]>([]);
+  const [boardImageUrls, setBoardImageUrls] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -49,6 +55,40 @@ export function LearnerLessonPage() {
 
         setLesson(lessonRow);
         const programId = (lessonRow.program_modules as any)?.program_id;
+
+        if (lessonRow.lesson_type === "board") {
+          const { data: boardRow, error: boardError } = await supabase
+            .from("lesson_boards")
+            .select("id, lesson_id, layout, title, description")
+            .eq("lesson_id", lessonId)
+            .maybeSingle();
+          if (boardError) throw boardError;
+          if (boardRow) {
+            const [columnsResult, postsResult] = await Promise.all([
+              supabase.from("lesson_board_columns").select("id, board_id, title, order_no").eq("board_id", boardRow.id).order("order_no"),
+              supabase.from("lesson_board_posts").select("id, board_id, column_id, title, body, image_object_key, image_mime_type, image_alt, order_no, created_at").eq("board_id", boardRow.id).order("order_no").order("created_at"),
+            ]);
+            if (columnsResult.error || postsResult.error) throw columnsResult.error ?? postsResult.error;
+            const nextPosts = (postsResult.data ?? []) as LessonBoardPost[];
+            setLessonBoard(boardRow as LessonBoard);
+            setBoardColumns((columnsResult.data ?? []) as LessonBoardColumn[]);
+            setBoardPosts(nextPosts);
+            const imageEntries = await Promise.all(nextPosts.filter((post) => post.image_object_key).map(async (post) => {
+              try {
+                const { signedUrl } = await requestLessonBoardImageUrl(post.id);
+                return [post.id, signedUrl] as const;
+              } catch {
+                return null;
+              }
+            }));
+            setBoardImageUrls(Object.fromEntries(imageEntries.filter((entry): entry is readonly [string, string] => entry !== null)));
+          }
+        } else {
+          setLessonBoard(null);
+          setBoardColumns([]);
+          setBoardPosts([]);
+          setBoardImageUrls({});
+        }
 
         // Load Documents
         const { data: docRows } = await supabase
@@ -192,11 +232,13 @@ export function LearnerLessonPage() {
       case "video": return <PlayCircle className="w-6 h-6 text-primary" />;
       case "quiz":
       case "exam": return <CheckCircle2 className="w-6 h-6 text-orange-500" />;
+      case "board": return <BookOpen className="w-6 h-6 text-primary" />;
       default: return <FileText className="w-6 h-6 text-emerald-500" />;
     }
   };
 
   const isQuiz = lesson?.lesson_type === 'quiz' || lesson?.lesson_type === 'exam';
+  const isBoard = lesson?.lesson_type === "board";
   const completedAttempts = quizAttempts.filter(a => ['submitted', 'pending_review', 'graded'].includes(a.status));
   const pendingReview = quizAttempts.some(a => a.status === 'pending_review');
   const maxAttemptsReached = lesson?.max_attempts && completedAttempts.length >= lesson.max_attempts;
@@ -483,6 +525,8 @@ export function LearnerLessonPage() {
             </CardContent>
           </Card>
         </div>
+      ) : isBoard && lessonBoard ? (
+        <LessonBoardView board={lessonBoard} columns={boardColumns} posts={boardPosts} imageUrls={boardImageUrls} className="mb-8" />
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-8">
           {/* External Content Embed / Link */}

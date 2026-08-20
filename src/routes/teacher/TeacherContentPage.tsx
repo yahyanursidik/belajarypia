@@ -78,6 +78,7 @@ function lessonTypeLabel(type: string) {
     quiz: "Kuis",
     exam: "Ujian",
     assignment: "Tugas",
+    board: "Board Interaktif",
   };
   return labels[type] ?? type;
 }
@@ -363,8 +364,8 @@ export function TeacherContentPage() {
                       </td>
                       <td className="px-4 py-4 text-right">
                         <Button asChild size="sm" variant="outline">
-                          <Link to={`/teacher/kelas/program/${lesson.program?.id}/kurikulum`}>
-                            Buka Builder
+                          <Link to={lesson.lesson_type === "board" ? `/teacher/board/${lesson.id}` : `/teacher/kelas/program/${lesson.program?.id}/kurikulum`}>
+                            {lesson.lesson_type === "board" ? "Kelola Board" : "Buka Builder"}
                           </Link>
                         </Button>
                       </td>
