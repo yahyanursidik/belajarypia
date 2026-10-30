@@ -1,3 +1,4 @@
+import { Dialog } from "../../components/ui/dialog";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,11 @@ export function LearnerQuizPage() {
   const [searchParams] = useSearchParams();
   const { user } = useAuthSession();
 
+  const [confirmedLessonId, setConfirmedLessonId] = useState<string | null>(null);
+  const [isPreflight, setIsPreflight] = useState(false);
+  const [confirmation, setConfirmation] = useState<"submit" | "leave" | null>(null);
+  const [draftStatus, setDraftStatus] = useState("Draf tersimpan di perangkat ini");
+  const [submitErrorMessage, setSubmitErrorMessage] = useState<string | null>(null);
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -45,6 +51,7 @@ export function LearnerQuizPage() {
   const questionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const initializedLessonIdRef = useRef<string | null>(null);
   const submitQuizRef = useRef<() => void>(() => undefined);
+  const timedOutAttemptRef = useRef<string | null>(null);
 
   const loadAnswerFiles = useCallback(async (attemptId: string) => {
     const { data, error } = await supabase
@@ -168,6 +175,13 @@ export function LearnerQuizPage() {
           return;
         }
 
+        if (!ongoingAttempt && confirmedLessonId !== lessonId) {
+          setQuestions(loadedQuestions as QuizQuestion[]);
+          setIsPreflight(true);
+          initializedLessonIdRef.current = null;
+          return;
+        }
+        setIsPreflight(false);
         // 5. Handle ongoing attempt or create a new one
         let currentAttemptId = ongoingAttempt?.id;
         let startedAt = ongoingAttempt?.started_at ? new Date(ongoingAttempt.started_at) : new Date();
@@ -184,7 +198,6 @@ export function LearnerQuizPage() {
           startedAt = new Date(newAttempt.attempt_started_at);
         }
         
-        setQuizAttemptId(currentAttemptId);
         await loadAnswerFiles(currentAttemptId);
 
         // Randomize questions deterministically based on Attempt ID so refreshes yield the exact same 30 questions
@@ -209,10 +222,13 @@ export function LearnerQuizPage() {
         
         setQuestions(loadedQuestions as any);
 
-        const savedDraft = localStorage.getItem(`ypia-quiz-draft:${currentAttemptId}`);
-        if (savedDraft) {
-          try { setAnswers(JSON.parse(savedDraft)); } catch { localStorage.removeItem(`ypia-quiz-draft:${currentAttemptId}`); }
-        }
+        try {
+          const savedDraft = localStorage.getItem(`ypia-quiz-draft:${currentAttemptId}`);
+          if (savedDraft) setAnswers(JSON.parse(savedDraft));
+        } catch { setDraftStatus("Draf belum dapat dipulihkan di perangkat ini."); }
+
+        // Enable autosave only after the stored draft has been restored.
+        setQuizAttemptId(currentAttemptId);
 
         // Set Timer correctly accounting for time elapsed if it's an ongoing attempt
         if (lessonData.duration_minutes) {
@@ -231,30 +247,36 @@ export function LearnerQuizPage() {
     }
 
     void loadQuiz();
-  }, [user?.id, lessonId, searchParams, loadAnswerFiles]);
+  }, [user?.id, lessonId, searchParams, loadAnswerFiles, confirmedLessonId]);
 
   useEffect(() => {
     if (!quizAttemptId || isFinished) return;
-    localStorage.setItem(`ypia-quiz-draft:${quizAttemptId}`, JSON.stringify(answers));
+    try {
+      localStorage.setItem(`ypia-quiz-draft:${quizAttemptId}`, JSON.stringify(answers));
+      setDraftStatus("Draf tersimpan di perangkat ini");
+    } catch { setDraftStatus("Draf belum tersimpan. Jangan tutup halaman ini."); }
   }, [answers, isFinished, quizAttemptId]);
+
+  useEffect(() => {
+    if (!quizAttemptId || isFinished) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [quizAttemptId, isFinished]);
 
   // Timer Effect
   useEffect(() => {
-    if (timeLeft === null || timeLeft <= 0 || isFinished || isSubmitting) return;
-
-    const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev !== null && prev <= 1) {
-          clearInterval(timer);
-          submitQuizRef.current();
-          return 0;
-        }
-        return prev !== null ? prev - 1 : null;
-      });
-    }, 1000);
-
+    if (timeLeft === null || isFinished || isSubmitting || !quizAttemptId || !questions.length) return;
+    if (timeLeft <= 0) {
+      if (timedOutAttemptRef.current !== quizAttemptId) {
+        timedOutAttemptRef.current = quizAttemptId;
+        submitQuizRef.current();
+      }
+      return;
+    }
+    const timer = setInterval(() => setTimeLeft((previous) => previous === null ? null : Math.max(0, previous - 1)), 1000);
     return () => clearInterval(timer);
-  }, [timeLeft, isFinished, isSubmitting]);
+  }, [timeLeft, isFinished, isSubmitting, quizAttemptId, questions.length]);
 
   const handleAnswerChange = (questionId: string, answer: string) => {
     if (isFinished || isSubmitting) return;
@@ -318,15 +340,8 @@ export function LearnerQuizPage() {
   const handleSubmitQuiz = async () => {
     if (!quizAttemptId || isSubmitting || isFinished) return;
     
-    // Check if all answered
-    const unansweredCount = questions.length - questions.filter(q => (
-      Boolean(answers[q.id]?.trim()) || (answerFiles[q.id]?.length ?? 0) > 0
-    )).length;
-    if (timeLeft !== 0 && unansweredCount > 0) {
-      const confirmSubmit = window.confirm(`Masih ada ${unansweredCount} soal yang belum dijawab. Yakin ingin mengumpulkan?`);
-      if (!confirmSubmit) return;
-    }
-
+    setConfirmation(null);
+    setSubmitErrorMessage(null);
     setIsSubmitting(true);
 
     try {
@@ -345,13 +360,13 @@ export function LearnerQuizPage() {
       setFinalScore(result?.final_score === null || result?.final_score === undefined ? null : Number(result.final_score));
       setIsFinished(true);
       setShowReview(false);
-      localStorage.removeItem(`ypia-quiz-draft:${quizAttemptId}`);
+      try { localStorage.removeItem(`ypia-quiz-draft:${quizAttemptId}`); } catch { /* Server submission already succeeded. */ }
 
       // Scroll to top to see results
       window.scrollTo({ top: 0, behavior: 'smooth' });
 
     } catch (err: any) {
-      alert("Terjadi kesalahan: " + err.message);
+      setSubmitErrorMessage("Jawaban belum terkirim. " + err.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -399,6 +414,14 @@ export function LearnerQuizPage() {
   )).length;
   const progressPercentage = questions.length > 0 ? (answeredCount / questions.length) * 100 : 0;
   const hasPassed = lesson?.passing_grade ? (finalScore !== null && finalScore >= lesson.passing_grade) : true;
+
+  if (isPreflight && confirmedLessonId !== lessonId) return <div className="learner-exam-intro">
+    <span className="learner-kicker">Persiapan ujian</span><h1>{lesson?.title}</h1>
+    <dl><div><dt>Soal</dt><dd>{Math.min(questions.length, lesson?.randomized_questions_count || questions.length)}</dd></div><div><dt>Durasi</dt><dd>{lesson?.duration_minutes ? `${lesson.duration_minutes} menit` : "Tanpa batas waktu"}</dd></div><div><dt>Batas percobaan</dt><dd>{lesson?.max_attempts || "Tidak dibatasi"}</dd></div></dl>
+    <p>Waktu dimulai saat Anda menekan Mulai. Draf disimpan di perangkat ini; waktu tetap berjalan jika halaman ditutup.</p>
+    <div className="flex flex-wrap gap-3"><Button variant="outline" onClick={() => navigate(`/learner/lesson/${lessonId}`)}>Kembali ke materi</Button><Button disabled={!questions.length} onClick={() => { setIsLoading(true); setConfirmedLessonId(lessonId!); }}>Mulai ujian</Button></div>
+    {!questions.length && <p role="status">Soal belum tersedia.</p>}
+  </div>;
 
   if (isFinished && awaitingReview) {
     return (
@@ -484,7 +507,7 @@ export function LearnerQuizPage() {
   }
 
   return (
-    <div className="page-stack max-w-6xl mx-auto pb-32 pt-4 px-4 flex flex-col lg:flex-row gap-8">
+    <div className="learner-exam page-stack max-w-6xl mx-auto pb-32 pt-4 px-4 flex flex-col lg:flex-row gap-8">
       
       {/* Main Content (Questions) */}
       <div className="flex-1 min-w-0">
@@ -492,6 +515,7 @@ export function LearnerQuizPage() {
         <div className="sticky top-4 z-30 bg-white/95 backdrop-blur-md border border-slate-200 p-5 mb-8 rounded-2xl shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex-1 w-full">
             <h1 className="text-xl font-bold text-slate-900 mb-2">{lesson?.title}</h1>
+            {!showReview && <p className="learner-draft-status" role="status">{draftStatus}</p>}
             
             {/* Progress Bar & Stats */}
             {!showReview && (
@@ -501,7 +525,7 @@ export function LearnerQuizPage() {
                     <span>Progres Jawaban</span>
                     <span>{answeredCount} / {questions.length}</span>
                   </div>
-                  <Progress value={progressPercentage} className="h-2" />
+                  <Progress aria-label="Soal terjawab" value={progressPercentage} className="h-2" />
                 </div>
                 {lesson?.passing_grade && (
                   <div className="hidden md:flex items-center gap-2 text-slate-500 border-l pl-4 font-medium">
@@ -579,8 +603,8 @@ export function LearnerQuizPage() {
                     
                     {q.question_type === "essay" ? (
                       <div className="space-y-4">
-                        <label className="text-sm font-semibold text-slate-700">Jawaban Anda</label>
-                        <textarea
+                        <label htmlFor={`answer-${q.id}`} className="text-sm font-semibold text-slate-700">Jawaban Anda</label>
+                        <textarea id={`answer-${q.id}`}
                           className="field-control min-h-[180px] leading-relaxed"
                           placeholder="Tuliskan jawaban secara jelas dan terstruktur..."
                           value={userAnswer || ""}
@@ -760,12 +784,17 @@ export function LearnerQuizPage() {
         </div>
       )}
 
+      {submitErrorMessage && <p role="alert" className="learner-exam-error">{submitErrorMessage}</p>}
+      {confirmation && <Dialog title={confirmation === "submit" ? "Kirim jawaban?" : "Keluar dari ujian?"} busy={isSubmitting} onClose={() => setConfirmation(null)}>
+        <p className="mb-5 text-sm">{confirmation === "submit" ? `${answeredCount} dari ${questions.length} soal terjawab. ${questions.length - answeredCount > 0 ? "Masih ada soal kosong." : "Semua soal sudah terjawab."}` : "Waktu ujian tetap berjalan. Draf hanya tersedia pada perangkat ini jika penyimpanan berhasil."}</p>
+        <div className="flex flex-wrap justify-end gap-3"><Button variant="outline" onClick={() => setConfirmation(null)}>Periksa lagi</Button><Button onClick={() => confirmation === "submit" ? void handleSubmitQuiz() : navigate(`/learner/lesson/${lessonId}`)}>{confirmation === "submit" ? "Kirim jawaban" : "Keluar"}</Button></div>
+      </Dialog>}
       {/* Floating Submit Action */}
       {!showReview && (
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur border-t shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.1)] z-40 flex justify-center">
+        <div className="learner-exam-actions fixed bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur border-t shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.1)] z-40 flex justify-center">
           <div className="w-full max-w-6xl flex items-center justify-between px-2">
-            <Button variant="ghost" className="text-slate-500 font-semibold" onClick={() => navigate(-1)} disabled={isSubmitting}>
-              Batalkan
+            <Button variant="ghost" className="text-slate-500 font-semibold" onClick={() => setConfirmation("leave")} disabled={isSubmitting}>
+              Keluar ujian
             </Button>
             <div className="flex items-center gap-4">
               {answeredCount < questions.length && (
@@ -776,7 +805,7 @@ export function LearnerQuizPage() {
               <Button 
                 size="lg" 
                 className="px-8 sm:px-12 h-14 text-base font-bold bg-primary shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all" 
-                onClick={handleSubmitQuiz}
+                onClick={() => setConfirmation("submit")}
                 disabled={isSubmitting || uploadingQuestionId !== null || questions.length === 0}
               >
                 {isSubmitting ? (
@@ -786,7 +815,7 @@ export function LearnerQuizPage() {
                   </span>
                 ) : (
                   <span className="flex items-center gap-2">
-                    Selesai & Kumpulkan <ChevronRight className="w-5 h-5" />
+                    Kirim jawaban <ChevronRight className="w-5 h-5" />
                   </span>
                 )}
               </Button>
@@ -797,7 +826,7 @@ export function LearnerQuizPage() {
 
       {/* Floating Action for Review Mode */}
       {showReview && (
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur border-t shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.1)] z-40 flex justify-center">
+        <div className="learner-exam-actions fixed bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur border-t shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.1)] z-40 flex justify-center">
           <div className="w-full max-w-6xl flex items-center justify-between px-2">
             <div className="font-semibold text-slate-700 hidden sm:block">
               Selesai mereview jawaban?

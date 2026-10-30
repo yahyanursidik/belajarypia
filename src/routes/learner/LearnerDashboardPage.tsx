@@ -1,3 +1,4 @@
+import { LearningCards } from "../../components/learner/LearningCards";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuthSession } from "../../app/providers/authSessionContext";
@@ -6,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FullPageLoader } from "@/components/ui/full-page-loader";
-import { BookOpen, Award, IdCard, GraduationCap, Megaphone, CalendarClock, ClipboardCheck, ArrowRight, HelpCircle, User, WalletCards } from "lucide-react";
+import { Megaphone, CalendarClock, ClipboardCheck, ArrowRight } from "lucide-react";
 import type { Enrollment, OnboardingProgress, Participant } from "../../lib/enrollment";
 import {
   formatRegistrationDateTime,
@@ -62,18 +63,7 @@ export function LearnerDashboardPage() {
         return;
       }
 
-      let currentParticipant = (participantRow as Participant | null) ?? null;
-      
-      // Inject Mock Participant for Admin Testing
-      if (!currentParticipant && user) {
-        currentParticipant = {
-          id: 'test-admin',
-          user_id: user.id,
-          global_participant_number: 'SIMULASI-ADMIN',
-          display_name: user.user_metadata?.full_name || 'Admin Tester',
-          status: 'active'
-        } as unknown as Participant;
-      }
+      const currentParticipant = (participantRow as Participant | null) ?? null;
       
       setParticipant(currentParticipant);
 
@@ -215,8 +205,6 @@ export function LearnerDashboardPage() {
   }, [enrollments]);
 
   const handleDirectEnroll = async (programId: string) => {
-    console.log("handleDirectEnroll TRIGGERED for program:", programId);
-    console.log("Current participant state:", participant);
     
     if (!participant) {
       console.warn("handleDirectEnroll ABORTED: participant is null!");
@@ -230,13 +218,13 @@ export function LearnerDashboardPage() {
     
     try {
       console.log("Calling supabase.rpc direct_enroll_participant...");
-      const { data, error } = await supabase.rpc("direct_enroll_participant", {
+      const { error } = await supabase.rpc("direct_enroll_participant", {
         target_participant_id: participant.id,
         target_program_id: programId,
       });
       if (error) throw error;
       
-      console.log("RPC Result:", data, "Error:", error);
+
 
       // Update local state without reloading
       setAvailablePrograms(prev => prev.filter(p => p.id !== programId));
@@ -301,119 +289,20 @@ export function LearnerDashboardPage() {
       <Alert>
         <AlertTitle>Belum terhubung sebagai peserta</AlertTitle>
         <AlertDescription>
-          Akun login ini belum memiliki participant aktif. Pastikan applicant
-          sudah di-approve dan email Auth sama dengan email pendaftaran.
+          Akun Anda belum terhubung dengan data peserta. Periksa pendaftaran atau hubungi bantuan.
         </AlertDescription>
+        <div className="mt-4 flex flex-wrap gap-3"><Button asChild><Link to="/learner/cek-status">Cek pendaftaran</Link></Button><Button asChild variant="outline"><Link to="/learner/bantuan">Hubungi bantuan</Link></Button></div>
       </Alert>
     );
   }
 
   return (
     <div className="page-stack">
-      <section className="page-hero">
-        <Badge variant="secondary" className="mb-4 bg-white/20 hover:bg-white/30 text-white border-white/10 backdrop-blur-sm">
-          {participant.status.toUpperCase()}
-        </Badge>
-        <div className="flex items-center gap-4">
-          <div className="hidden sm:flex h-16 w-16 rounded-2xl bg-white/10 backdrop-blur-md items-center justify-center border border-white/20">
-            <GraduationCap className="h-8 w-8 text-white" />
-          </div>
-          <div>
-            <p className="text-white/70 text-sm font-medium mb-1">Assalamu'alaikum, Peserta 👋</p>
-            <h2>Selamat Datang, {participant.display_name}!</h2>
-            <p>
-              Selamat datang di portal pembelajaran Anda. Lanjutkan proses belajar Anda dan pantau perkembangan program yang Anda ikuti.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Pengumuman umum dan pembaruan materi/ujian dari program peserta. */}
-      {announcements.length > 0 && (
-        <div className="space-y-3 mb-6 animate-in slide-in-from-bottom-4 duration-500">
-          <h3 className="font-bold flex items-center gap-2 text-slate-800">
-            <Megaphone className="h-5 w-5 text-indigo-500"/> Pembaruan & Pengumuman
-          </h3>
-          <div className="grid gap-3">
-            {announcements.map(ann => {
-              const isLearningUpdate = /^(Materi|Kuis|Ujian) baru:/i.test(ann.title);
-              const UpdateIcon = isLearningUpdate ? BookOpen : Megaphone;
-              return (
-                <Alert key={ann.id} className={`shadow-sm relative overflow-hidden group ${isLearningUpdate ? "border-emerald-200/70 bg-emerald-50/60" : "border-indigo-200/60 bg-indigo-50/50"}`}>
-                  <div className={`absolute top-0 left-0 w-1 h-full ${isLearningUpdate ? "bg-emerald-500" : "bg-indigo-500"}`}></div>
-                  <UpdateIcon className={`mt-1 h-4 w-4 ${isLearningUpdate ? "text-emerald-600" : "text-indigo-600"}`} />
-                  <AlertTitle className={`text-base font-bold ${isLearningUpdate ? "text-emerald-950" : "text-indigo-900"}`}>{ann.title}</AlertTitle>
-                  <AlertDescription className={`mt-1.5 whitespace-pre-wrap leading-relaxed ${isLearningUpdate ? "text-emerald-900/80" : "text-indigo-800/80"}`}>
-                    {ann.content}
-                  </AlertDescription>
-                  <p className={`mt-3 text-[10px] font-medium ${isLearningUpdate ? "text-emerald-600" : "text-indigo-400"}`}>
-                    {isLearningUpdate ? "Pembaruan pembelajaran" : "Disiarkan"}: {new Date(ann.created_at).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                  </p>
-                </Alert>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <div className="flex overflow-x-auto snap-x snap-mandatory gap-4 pb-4 -mx-4 px-4 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:overflow-visible sm:pb-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-        <Card className="rounded-xl border-border/50 bg-card/50 backdrop-blur-sm shrink-0 w-[240px] sm:w-auto snap-center">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Program Aktif</CardTitle>
-            <BookOpen className="h-4 w-4 text-primary opacity-70" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-foreground">{activeEnrollments.length}</div>
-            <p className="text-xs text-muted-foreground mt-1">Sedang dipelajari</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-xl border-border/50 bg-card/50 backdrop-blur-sm shrink-0 w-[240px] sm:w-auto snap-center">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Nomor Induk</CardTitle>
-            <IdCard className="h-4 w-4 text-primary opacity-70" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold text-foreground truncate">{participant.global_participant_number}</div>
-            <p className="text-xs text-muted-foreground mt-1">ID Global Peserta</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-xl border-border/50 bg-card/50 backdrop-blur-sm shrink-0 w-[240px] sm:w-auto snap-center">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Onboarding</CardTitle>
-            <Award className="h-4 w-4 text-primary opacity-70" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-foreground">
-              {onboarding.filter((item) => item.status === "completed").length}/
-              {onboarding.length}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">Tugas selesai</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="mt-6 border-border/60 shadow-sm">
-        <CardHeader>
-          <CardTitle>Alur Peserta</CardTitle>
-          <p className="text-sm text-muted-foreground">Akses cepat ke pekerjaan utama selama mengikuti program.</p>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {[
-            { title: "Lanjut Belajar", desc: "Buka program dan materi yang sedang diikuti.", href: "/learner/program-saya", icon: BookOpen },
-            { title: "Cek Pendaftaran", desc: "Pantau status formulir dan program baru.", href: "/learner/cek-status", icon: ClipboardCheck },
-            { title: "Keuangan", desc: "Lihat transaksi, infaq, dan kanal pembayaran.", href: "/learner/keuangan", icon: WalletCards },
-            { title: "Profil", desc: "Perbarui data diri dan kontak peserta.", href: "/learner/profil", icon: User },
-            { title: "Bantuan", desc: "Ajukan tiket kendala akademik atau keuangan.", href: "/learner/bantuan", icon: HelpCircle },
-          ].map((item) => (
-            <Link key={item.title} to={item.href} className="rounded-lg border border-border/60 p-4 transition-colors hover:border-primary/30 hover:bg-primary/5">
-              <item.icon className="h-5 w-5 text-primary" />
-              <p className="mt-3 font-semibold text-foreground">{item.title}</p>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{item.desc}</p>
-            </Link>
-          ))}
-        </CardContent>
-      </Card>
-
+      <header className="learner-home-header"><div><p>Assalamu’alaikum,</p><h1>{participant.display_name}</h1></div><Link className="learner-text-link" to="/learner/profil">Akun saya</Link></header>
+      <section aria-labelledby="continue-heading" className="learner-section"><div className="learner-section-heading"><h2 id="continue-heading">Belajar hari ini</h2><Link className="learner-text-link" to="/learner/program-saya">Semua program</Link></div><LearningCards enrollments={activeEnrollments} /></section>
+      {onboarding.some((item) => item.status !== "completed") && <p className="learner-notice">Persiapan belajar belum lengkap. <Link to="/learner/program-saya">Buka program Anda</Link></p>}
+      {announcements.length > 0 && <section className="learner-section" aria-labelledby="updates-heading"><h2 id="updates-heading">Pengumuman terbaru</h2><div className="learner-announcements">{announcements.slice(0, 3).map((item) => <details key={item.id}><summary><Megaphone size={17} /><span>{item.title}</span><time>{new Date(item.created_at).toLocaleDateString("id-ID")}</time></summary><p>{item.content}</p></details>)}</div>{announcements.length > 3 && <details className="learner-more-updates"><summary>{announcements.length - 3} pengumuman lainnya</summary>{announcements.slice(3).map((item) => <details key={item.id}><summary>{item.title}</summary><p>{item.content}</p></details>)}</details>}</section>}
+      <details className="learner-catalog"><summary>Temukan program baru <span>{availablePrograms.length} program</span></summary>
       <Card className="mt-6">
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -505,6 +394,7 @@ export function LearnerDashboardPage() {
           )}
         </CardContent>
       </Card>
+      </details>
     </div>
   );
 }

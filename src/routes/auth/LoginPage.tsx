@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   BookOpenCheck,
-  BriefcaseBusiness,
   Eye,
   EyeOff,
-  GraduationCap,
-  HeartHandshake,
+  CalendarDays,
+  Check,
+  ShieldCheck,
   KeyRound,
   Loader2,
   MailCheck,
@@ -21,7 +21,7 @@ import {
   TurnstileWidget,
   type TurnstileWidgetHandle,
 } from "@/components/auth/TurnstileWidget";
-import { getDashboardPathForRole, type RoleCode } from "../../lib/auth";
+import { canAccessPath, getDashboardPathForRole } from "../../lib/auth";
 import { getAuthRedirectUrl } from "../../lib/authRedirects";
 import { getThemeStyles } from "../../lib/theme";
 import { useSystemSettings } from "../../lib/useSystemSettings";
@@ -32,41 +32,11 @@ type LoginPageProps = {
   portal: PortalType;
 };
 
-const portalConfig = {
-  admin: {
-    title: "Login Admin",
-    welcome: "Selamat datang di pusat operasional YPIA.",
-    Icon: BriefcaseBusiness,
-    allowedRoles: ["super_admin", "admin", "finance", "helpdesk", "content_reviewer"] as RoleCode[],
-  },
-  teacher: {
-    title: "Login Pengajar",
-    welcome: "Selamat datang di ruang pengajaran.",
-    Icon: BookOpenCheck,
-    allowedRoles: ["teacher"] as RoleCode[],
-  },
-  mentor: {
-    title: "Login Musyrif",
-    welcome: "Selamat datang di ruang pendampingan.",
-    Icon: HeartHandshake,
-    allowedRoles: ["mentor"] as RoleCode[],
-  },
-  learner: {
-    title: "Login Peserta",
-    welcome: "Selamat datang kembali di ruang belajar.",
-    Icon: GraduationCap,
-    allowedRoles: ["participant", "guardian"] as RoleCode[],
-  },
-};
-
-const portalNavigation = [
-  { portal: "admin", label: "Admin", href: "/admin/login", Icon: BriefcaseBusiness },
-  { portal: "teacher", label: "Pengajar", href: "/teacher/login", Icon: BookOpenCheck },
-  { portal: "mentor", label: "Musyrif", href: "/musyrif/login", Icon: HeartHandshake },
-  { portal: "learner", label: "Peserta", href: "/learner/login", Icon: GraduationCap },
-] as const;
-
 const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? "";
+const isLocalDevelopment = import.meta.env.DEV &&
+  ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
+const isTurnstileDisabled = isLocalDevelopment &&
+  import.meta.env.VITE_DISABLE_TURNSTILE === "true";
 
 function getAuthErrorMessage(error: unknown, context: "login" | "register" | "forgot" = "login") {
   if (error instanceof Error && error.message.includes("tidak memiliki akses")) {
@@ -121,7 +91,7 @@ function getAuthErrorMessage(error: unknown, context: "login" | "register" | "fo
     }
 
     if (/Akun staf tidak dapat didaftarkan/i.test(message)) {
-      return "Email ini sudah terdaftar sebagai akun staf. Gunakan portal login sesuai peran akun.";
+      return "Email ini sudah terdaftar sebagai akun staf. Silakan masuk menggunakan akun Anda.";
     }
 
     if (/already registered|already exists|duplicate key/i.test(message)) {
@@ -160,10 +130,10 @@ export function LoginPage({ portal }: LoginPageProps) {
     isLoading,
     session,
     primaryRole,
+    roles,
     requestPasswordReset,
     signIn,
     signInLearnerWithGoogle,
-    signOut,
     signUpLearner,
   } = useAuthSession();
   const [authMode, setAuthMode] = useState<"login" | "register" | "forgot">("login");
@@ -177,10 +147,14 @@ export function LoginPage({ portal }: LoginPageProps) {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { settings } = useSystemSettings();
-  const dashboardPath = getDashboardPathForRole(primaryRole);
-  const config = portalConfig[portal];
-  const Icon = config.Icon;
-  const isLearnerPortal = portal === "learner";
+  const from = location.state as { from?: string } | null;
+  const requestedPath = from?.from;
+  const dashboardPath = requestedPath?.startsWith("/") && !requestedPath.startsWith("//") &&
+    !requestedPath.startsWith("/auth") && canAccessPath(requestedPath, roles)
+    ? requestedPath
+    : getDashboardPathForRole(primaryRole);
+  const Icon = BookOpenCheck;
+  const isLearnerPortal = true;
   const isLearnerRegistration = isLearnerPortal && authMode === "register";
   const isPasswordRecovery = authMode === "forgot";
   const hasCompletionState = Boolean(successMessage);
@@ -197,7 +171,7 @@ export function LoginPage({ portal }: LoginPageProps) {
     ? "Daftar Peserta"
     : isPasswordRecovery
       ? "Lupa Kata Sandi"
-      : config.title;
+      : "Masuk ke ruang belajar";
   const welcomeMessage = hasCompletionState
     ? isPasswordRecovery
       ? "Periksa inbox email Anda untuk melanjutkan reset sandi."
@@ -206,7 +180,7 @@ export function LoginPage({ portal }: LoginPageProps) {
     ? "Mulai perjalanan belajar bersama YPIA."
     : isPasswordRecovery
       ? "Masukkan email akun untuk menerima tautan reset sandi."
-      : config.welcome;
+      : "Lanjutkan belajar, mengajar, dan bertumbuh bersama YPIA.";
   const isLearnerRegistrationInProgress =
     isLearnerPortal && authMode === "register" && isSubmitting;
   const loginLogo = settings?.login_logo_url || settings?.logo_url;
@@ -227,42 +201,31 @@ export function LoginPage({ portal }: LoginPageProps) {
     };
   }, [themeStyles]);
 
-  useEffect(() => {
-    if (!isLoading && session && !isLearnerRegistrationInProgress) {
-      navigate(dashboardPath, { replace: true });
-    }
-  }, [dashboardPath, isLearnerRegistrationInProgress, isLoading, navigate, session]);
-
   if (!isLoading && session && !isLearnerRegistrationInProgress) {
     return <Navigate to={dashboardPath} replace />;
   }
 
   return (
-    <div className={`portal-login portal-login--${portal}`}>
-      <div className="portal-login__watermark" aria-hidden="true">
-        <Icon />
-      </div>
-
+    <div className="portal-login portal-login--unified">
       <div className="portal-login__shell">
-        <nav className="portal-login__navigation" aria-label="Pilih portal login">
-          {portalNavigation.map((item) => {
-            const NavigationIcon = item.Icon;
-            const isActive = item.portal === portal;
-
-            return (
-              <Link
-                key={item.portal}
-                to={item.href}
-                className={isActive ? "is-active" : undefined}
-                aria-current={isActive ? "page" : undefined}
-              >
-                <NavigationIcon className="h-4 w-4" />
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-
+        <section className="learning-intro" aria-label="Tentang ruang belajar YPIA">
+          <div className="learning-intro__brand">
+            <span className="learning-intro__brand-mark">{loginLogo ? <img src={loginLogo} alt="" /> : <BookOpenCheck />}</span>
+            <div><strong>{settings?.institution_name || "YPIA"}</strong><span>Ruang belajar bersama</span></div>
+          </div>
+          <div className="learning-intro__story">
+            <span className="learning-intro__eyebrow">ILMU • ADAB • AMAL</span>
+            <h2>Menuntut ilmu.<br />Menumbuhkan adab.<br /><em>Melangkah bersama.</em></h2>
+            <p>Dari bacaan pertama hingga pemahaman yang lebih dalam. Satu ruang untuk belajar Al-Qur’an, mendalami ilmu, dan mendampingi tumbuhnya keluarga.</p>
+          </div>
+          <div className="learning-journey" aria-label="Alur belajar di YPIA">
+            <div className="learning-journey__heading"><span>PERJALANAN BELAJAR</span><BookOpenCheck size={20} /></div>
+            <div className="learning-journey__step"><span className="learning-journey__number"><BookOpenCheck size={19} /></span><div><strong>Ilmu yang terarah</strong><p>Materi dan kelas sesuai program Anda.</p></div></div>
+            <div className="learning-journey__step"><span className="learning-journey__number"><CalendarDays size={19} /></span><div><strong>Belajar dengan pendampingan</strong><p>Jadwal, halaqah, tugas, dan umpan balik.</p></div></div>
+            <div className="learning-journey__step"><span className="learning-journey__number"><Check size={19} /></span><div><strong>Setiap langkah berarti</strong><p>Pantau progres dan hasil belajar Anda.</p></div></div>
+          </div>
+          <p className="learning-intro__footer">Yayasan Pendidikan Ihsanul Adab</p>
+        </section>
         <main className="portal-login__card" aria-label={pageTitle}>
           <div className="portal-login__institution">
             {loginLogo ? (
@@ -291,37 +254,6 @@ export function LoginPage({ portal }: LoginPageProps) {
               <p>{welcomeMessage}</p>
             </div>
           </header>
-
-          {isLearnerPortal && !hasCompletionState ? (
-            <div className="portal-login__mode" aria-label="Pilih masuk atau daftar">
-              <button
-                type="button"
-                className={authMode === "login" ? "is-active" : undefined}
-                onClick={() => {
-                  setAuthMode("login");
-                  setCaptchaToken(null);
-                  turnstileRef.current?.reset();
-                  setErrorMessage(null);
-                  setSuccessMessage(null);
-                }}
-              >
-                Masuk
-              </button>
-              <button
-                type="button"
-                className={authMode === "register" ? "is-active" : undefined}
-                onClick={() => {
-                  setAuthMode("register");
-                  setCaptchaToken(null);
-                  turnstileRef.current?.reset();
-                  setErrorMessage(null);
-                  setSuccessMessage(null);
-                }}
-              >
-                Daftar
-              </button>
-            </div>
-          ) : null}
 
           {errorMessage ? (
             <Alert className="border-red-200 bg-red-50 text-red-700">
@@ -358,7 +290,7 @@ export function LoginPage({ portal }: LoginPageProps) {
                   setPasswordConfirmation("");
                 }}
               >
-                <span>{isLearnerPortal ? "Kembali ke login peserta" : "Kembali ke login"}</span>
+                <span>{isLearnerPortal ? "Kembali ke login" : "Kembali ke login"}</span>
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </section>
@@ -366,7 +298,7 @@ export function LoginPage({ portal }: LoginPageProps) {
 
           <form
             className="portal-login__form"
-            data-turnstile-status={turnstileSiteKey ? "enabled" : "missing-site-key"}
+            data-turnstile-status={isTurnstileDisabled ? "disabled-local" : turnstileSiteKey ? "enabled" : "missing-site-key"}
             onSubmit={async (event) => {
             event.preventDefault();
             setErrorMessage(null);
@@ -376,11 +308,11 @@ export function LoginPage({ portal }: LoginPageProps) {
             try {
               const normalizedEmail = email.trim().toLowerCase();
 
-              if (!turnstileSiteKey) {
+              if (!isTurnstileDisabled && !turnstileSiteKey) {
                 throw new Error("Turnstile belum dikonfigurasi. Autentikasi sementara dinonaktifkan.");
               }
 
-              if (!captchaToken) {
+              if (!isTurnstileDisabled && !captchaToken) {
                 throw new Error(
                   isLearnerRegistration
                     ? "Selesaikan verifikasi keamanan sebelum mendaftar."
@@ -395,7 +327,7 @@ export function LoginPage({ portal }: LoginPageProps) {
                   await requestPasswordReset(
                     normalizedEmail,
                     getAuthRedirectUrl(`/auth/update-password?portal=${portal}`),
-                    captchaToken,
+                    isTurnstileDisabled ? undefined : captchaToken ?? undefined,
                   );
                 } finally {
                   setCaptchaToken(null);
@@ -424,7 +356,7 @@ export function LoginPage({ portal }: LoginPageProps) {
                     fullName,
                     normalizedEmail,
                     password,
-                    captchaToken ?? undefined,
+                    isTurnstileDisabled ? undefined : captchaToken ?? undefined,
                   );
                 } finally {
                   if (turnstileSiteKey) {
@@ -446,24 +378,19 @@ export function LoginPage({ portal }: LoginPageProps) {
 
               let nextState: Awaited<ReturnType<typeof signIn>>;
               try {
-                nextState = await signIn(normalizedEmail, password, captchaToken);
+                nextState = await signIn(normalizedEmail, password, isTurnstileDisabled ? undefined : captchaToken ?? undefined);
               } finally {
                 setCaptchaToken(null);
                 turnstileRef.current?.reset();
               }
 
-              const userRoles = nextState.roles.map((role) => role.code);
-              const hasAccessToPortal = config.allowedRoles.some((role) => userRoles.includes(role));
-
-              if (!hasAccessToPortal) {
-                await signOut();
-                throw new Error(`Akun Anda tidak memiliki akses ke ${config.title}. Gunakan halaman login sesuai peran akun.`);
-              }
-
               const from = location.state as { from?: string } | null;
-              navigate(from?.from ?? getDashboardPathForRole(nextState.primaryRole), {
-                replace: true,
-              });
+              const requestedPath = from?.from;
+              const destination = requestedPath?.startsWith("/") && !requestedPath.startsWith("//") &&
+                !requestedPath.startsWith("/auth") && canAccessPath(requestedPath, nextState.roles)
+                ? requestedPath
+                : getDashboardPathForRole(nextState.primaryRole);
+              navigate(destination, { replace: true });
             } catch (error: unknown) {
               console.error("Login gagal:", error);
               setErrorMessage(
@@ -537,6 +464,8 @@ export function LoginPage({ portal }: LoginPageProps) {
                   type="button"
                   onClick={() => setShowPassword((current) => !current)}
                   className="portal-login__password-toggle"
+                  disabled={isSubmitting}
+                  aria-pressed={showPassword}
                   aria-label={showPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
                 >
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
@@ -562,7 +491,7 @@ export function LoginPage({ portal }: LoginPageProps) {
             </div>
           ) : null}
 
-          {turnstileSiteKey ? (
+          {isTurnstileDisabled ? null : turnstileSiteKey ? (
             <TurnstileWidget
               key={`${turnstileSiteKey}-${turnstileAction}`}
               ref={turnstileRef}
@@ -578,7 +507,7 @@ export function LoginPage({ portal }: LoginPageProps) {
           )}
 
           <Button
-            disabled={isSubmitting || !turnstileSiteKey || !captchaToken}
+            disabled={isSubmitting || (!isTurnstileDisabled && (!turnstileSiteKey || !captchaToken))}
             type="submit"
             className="portal-login__submit h-12 w-full"
           >
@@ -650,12 +579,26 @@ export function LoginPage({ portal }: LoginPageProps) {
                 }}
               >
                 <span className="portal-login__google-mark" aria-hidden="true">G</span>
-                {authMode === "register" ? "Daftar dengan Google" : "Masuk dengan Google"}
+                {authMode === "register" ? "Daftar dengan Google" : "Masuk dengan Google (peserta)"}
               </Button>
             </>
           ) : null}
           </form>
           )}
+          {!hasCompletionState && !isPasswordRecovery ? (
+            <p className="learning-signup">
+              {authMode === "register" ? "Sudah memiliki akun? " : "Baru di YPIA? "}
+              <button type="button" disabled={isSubmitting} onClick={() => {
+                setAuthMode(authMode === "register" ? "login" : "register");
+                setCaptchaToken(null);
+                turnstileRef.current?.reset();
+                setErrorMessage(null);
+                setPassword("");
+                setPasswordConfirmation("");
+              }}>{authMode === "register" ? "Masuk di sini" : "Daftar sebagai peserta"}</button>
+            </p>
+          ) : null}
+          <p className="learning-access"><ShieldCheck size={16} aria-hidden="true" />Satu pintu untuk peserta, wali, pengajar, musyrif, dan pengelola. Akses menyesuaikan peran akun Anda.</p>
         </main>
       </div>
     </div>

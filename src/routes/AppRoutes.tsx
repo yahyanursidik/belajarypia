@@ -280,15 +280,15 @@ export function AppRoutes() {
   return (
     <Suspense fallback={<RouteFallback />}>
       <Routes>
-        <Route path="/" element={<Navigate to="/admin/login" replace />} />
-        <Route path="/admin/login" element={<LoginPage portal="admin" />} />
-        <Route path="/teacher/login" element={<LoginPage portal="teacher" />} />
-        <Route path="/musyrif/login" element={<LoginPage portal="mentor" />} />
+        <Route path="/" element={<Navigate to="/auth/login" replace />} />
+        <Route path="/admin/login" element={<LoginPage portal="learner" />} />
+        <Route path="/teacher/login" element={<LoginPage portal="learner" />} />
+        <Route path="/musyrif/login" element={<LoginPage portal="learner" />} />
         <Route path="/mentor/login" element={<Navigate to="/musyrif/login" replace />} />
         <Route path="/learner/login" element={<LoginPage portal="learner" />} />
         <Route path="/learner/auth/callback" element={<LearnerAuthCallbackPage />} />
         <Route path="/auth/update-password" element={<UpdatePasswordPage />} />
-        <Route path="/auth/login" element={<Navigate to="/learner/login" replace />} />
+        <Route path="/auth/login" element={<LoginPage portal="learner" />} />
         <Route
           path="/auth/no-role"
           element={
@@ -389,6 +389,7 @@ export function AppRoutes() {
               </ProtectedRoute>
             }
           />
+          <Route path="program/:programId/report" element={<ProtectedRoute allowedRoles={["admin"]}><AdminProgramReportPage /></ProtectedRoute>} />
           <Route path="board/:lessonId" element={<ProtectedRoute allowedRoles={["admin"]}><LessonBoardEditorPage /></ProtectedRoute>} />
           <Route
             path="keuangan"

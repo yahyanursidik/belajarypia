@@ -438,3 +438,113 @@ Alur kuis kini mendukung campuran pilihan ganda dan esai. Jawaban esai menunggu 
 
 ### Follow-Up Task
 Apply migration `202608200001_essay_quiz_manual_grading.sql` ke Supabase, lalu uji satu ujian campuran end-to-end dengan akun peserta dan akun penilai.
+
+---
+
+## AUTH-UX-001
+
+### Date
+2026-10-30
+
+### Prompt
+Redesign dan revamp halaman login agar lebih seamless dan menggambarkan LMS, tanpa tab peran.
+
+### Result Summary
+- Satu form email/kata sandi untuk seluruh peran; dashboard mengikuti peran akun yang telah ditetapkan.
+- Seluruh URL login lama tetap membuka form yang sama, dengan `/auth/login` sebagai pintu masuk utama.
+- Tampilan dua kolom dengan pengenalan pembelajaran, halaqah, tugas, dan progres; tampilan ringkas di ponsel.
+- Pendaftaran peserta melalui tautan, tanpa tab masuk/daftar. Google tetap khusus alur peserta.
+- CAPTCHA, reset sandi, dan backend authorization tetap menggunakan implementasi yang tersedia.
+- Akun dengan beberapa peran mengikuti prioritas primaryRole yang sudah ada; pemilih ruang kerja setelah login tidak termasuk perubahan ini.
+
+### Files Changed
+- src/routes/auth/LoginPage.tsx
+- src/routes/AppRoutes.tsx
+- src/styles/global.css
+- docs/PROMPT_LOG.md
+
+### Validation
+- `npm run lint`: berhasil, 0 error; 11 warning pada file lain.
+- `npm run typecheck`: berhasil.
+- `npm run build`: berhasil.
+- Preview desktop dan perpindahan masuk/daftar/lupa sandi diperiksa melalui browser.
+- Login end-to-end belum diuji: konfigurasi Supabase dan Turnstile lokal belum tersedia.
+
+## AUTH-LOCAL-002 — 2026-10-30
+- Permintaan: nonaktifkan Turnstile untuk login localhost.
+- Menambahkan `VITE_DISABLE_TURNSTILE`, berlaku hanya pada Vite development dan hostname loopback.
+- `.env.local` mengaktifkan opsi tersebut; build produksi tetap mewajibkan CAPTCHA.
+- Form masuk, daftar, dan reset sandi tidak mengirim token CAPTCHA saat opsi lokal aktif.
+- Browser localhost diverifikasi: panel CAPTCHA hilang dan tombol Masuk aktif.
+- Lint: 0 error, 11 warning sebelumnya. Build mencakup typecheck.
+- Konfigurasi CAPTCHA Supabase tidak diubah; anon key masih perlu diisi untuk autentikasi sungguhan.
+
+## AUTH-LOCAL-003 — 2026-10-30
+- Permintaan: lengkapi konfigurasi Supabase untuk admin dan peserta di localhost.
+- URL proyek dan anon key dicocokkan dengan konfigurasi frontend publik aplikasi YPIA yang berjalan.
+- `.env.local` diisi dengan anon key (role JWT `anon`, project ref sesuai); tidak menggunakan service_role di frontend.
+- Redirect origin localhost dan penonaktifan Turnstile lokal dipertahankan.
+- `.env.local` dipastikan diabaikan Git.
+
+## ADMIN-UX-001
+
+### Date
+2026-10-31
+
+### Prompt
+Implementasi hasil review UI/UX portal admin: navigasi ringkas, warna fungsional, komponen bersama, dan wizard mudah tanpa teks dekoratif berlebihan.
+
+### Result Summary
+- Sidebar admin disederhanakan menjadi kelompok Utama, Akademik, dan Operasional; submenu duplikat diganti navigasi lokal ringkas.
+- Memperbaiki highlight submenu berbasis query dan perilaku buka/tutup submenu aktif.
+- Header workspace mengikuti modul aktif. Dialog menu seluler mendukung focus containment, Escape, serta pengembalian fokus.
+- Dashboard membaca jumlah pendaftar untuk review, program draf/aktif, dan transaksi pending sesuai peran pengguna. Kegagalan query ditampilkan sebagai data belum tersedia, bukan nol.
+- Halaman pendaftaran/peserta membuka daftar kerja secara default; ringkasan tetap tersedia melalui query tab=overview.
+- Header halaman peserta, program, dan pendaftaran dipadatkan dengan komponen PageHeader/SectionNav bersama.
+- Detail program menggunakan breadcrumb dan navigasi ringkas menggantikan sidebar kedua dan banner berulang.
+- Wizard buat/edit program: Identitas → Pembelajaran → Pengaturan → Tinjau. Pembuatan awal menyimpan draf; unit, field wajib, dan nominal SPP divalidasi.
+- Dialog program memakai native modal dialog dengan Escape/fokus keyboard. Fitur terlarang dan konfigurasi non-boolean tidak muncul sebagai checkbox.
+- Tautan program, laporan program, serta detail peserta mengikuti konteks admin atau superadmin.
+- Preview desktop dan seluler dijalankan dengan fixture lokal terisolasi; fixture dihapus setelah pengujian. Tidak ada perubahan data Supabase atau bypass login aplikasi.
+
+### Validation
+- Lint: 0 error, 11 warning yang sudah ada.
+- Empat pengujian navigasi lulus: root dashboard, batas path, query submenu, dan route alternatif.
+- Browser fixture: direktori default, wizard 4 langkah, validasi field wajib, penyimpanan contoh, pemulihan fokus, menu seluler + Escape, dan layout empty state seluler.
+- Perintah test: `node --experimental-strip-types tests/navigation.test.mjs` (Node 22).
+- Integrasi database dan login nyata belum dapat diverifikasi karena endpoint Supabase belum tersedia.
+- `npm run build` berhasil (mencakup TypeScript typecheck), 2931 modul ditransformasi.
+- Server aplikasi utama dijalankan kembali pada localhost:5173. Screenshot fixture: ../admin-dashboard-preview.png.
+
+## LEARNER-UX-001
+
+### Date
+2026-10-31
+
+### Prompt
+Implementasikan revamp portal peserta sesuai hasil review, mulai dari progres belajar, layout ujian, navigasi, dan beranda.
+
+### Result Summary
+- RPC `complete_learning_lesson` memvalidasi pengguna, peserta/enrollment/program aktif, materi terbit dan waktu rilis, serta prasyarat. Menyimpan progres secara idempoten dan mencatat audit. Penilaian/presensi tidak bisa dilewati melalui RPC ini.
+- Tombol penyelesaian materi menunggu hasil RPC sebelum melanjutkan. Jika gagal, tetap pada halaman materi. Urutan materi mengikuti modul dan prasyarat; semua materi selesai mengarah ke hasil, bukan materi pertama.
+- Ringkasan progres dipakai bersama oleh beranda dan daftar program. Kegagalan membaca progres tidak dianggap sebagai progres nol.
+- Beranda memprioritaskan program aktif/materi berikutnya; pengumuman dibuka seperlunya dan katalog ditempatkan dalam bagian terlipat.
+- Identitas peserta simulasi dihapus; akun yang belum terhubung diarahkan ke pendaftaran/bantuan.
+- Navigasi mobile: Beranda, Program, Pembayaran, Akun. Layanan pendaftaran/bantuan tetap tersedia di menu dan halaman akun.
+- Layout fokus ujian menyembunyikan sidebar/header/navigasi bawah aplikasi sehingga tidak menutupi tombol kirim.
+- Percobaan baru menunggu konfirmasi Mulai; percobaan berjalan dilanjutkan dengan sisa waktu berdasarkan waktu mulai server.
+- Konfirmasi kirim/keluar memakai dialog; ada indikator penyimpanan draf dan peringatan saat menutup halaman.
+- Memperbaiki race autosave yang sebelumnya dapat menimpa draf kosong sebelum pemulihan selesai. Pemulihan pilihan ganda dan esai diuji melalui keluar/masuk kembali.
+- Timer yang sudah habis saat membuka kembali percobaan memicu pengumpulan satu kali. Kegagalan kirim ditampilkan tanpa menghapus draf.
+- Komponen progres memiliki atribut aksesibilitas dan batas nilai 0–100.
+
+### Validation
+- Enam tes learning progress lulus: urutan modul, hitungan unik/lingkup program, prasyarat, program kosong, status started, serta pengecualian assessment/presensi.
+- Browser fixture desktop/mobile: beranda, progres 33% → 67% setelah menyelesaikan materi, navigasi 4 item, persiapan ujian tanpa membuat attempt, pengisian draf, keluar dan pemulihan jawaban/waktu, konfirmasi kirim, serta status menunggu penilaian esai.
+- Fixture menggunakan endpoint dan identitas lokal terisolasi. Berkas entry preview telah dihapus; autentikasi aplikasi utama tidak diubah.
+- Lint: 0 error, 11 warning lama. Typecheck lulus.
+
+### Deployment / Remaining Verification
+- Terapkan `supabase/migrations/202610310001_complete_learning_lesson.sql` pada proyek YPIA yang aktif sebelum menggunakan penyimpanan progres materi.
+- Migration dan aturan server belum dijalankan terhadap PostgreSQL/Supabase nyata karena endpoint proyek belum tersedia. Uji ownership, enrollment hold/inactive, materi draft/future, prasyarat, dan RPC idempotensi pada database sesudah deployment.
+- Pemeriksaan akhir `npm run build` berhasil, termasuk TypeScript; 2934 modul ditransformasi. `git diff --check` bersih.

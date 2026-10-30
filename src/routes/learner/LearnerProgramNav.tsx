@@ -21,16 +21,16 @@ export function LearnerProgramNav({ programId, enrollmentId }: LearnerProgramNav
       <div className="flex min-w-max items-center sm:min-w-0">
         <NavLink to={`/learner/program/${programId}`} end className={itemClass}>
           <BookOpen className="h-4 w-4" />
-          Materi & Progres
+          Materi
         </NavLink>
         <NavLink to={`/learner/program/${programId}/silabus`} className={itemClass}>
           <FileText className="h-4 w-4" />
-          Silabus
+          Tentang program
         </NavLink>
         {enrollmentId ? (
           <NavLink to={`/learner/transkrip/${enrollmentId}`} className={itemClass}>
             <Award className="h-4 w-4" />
-            Nilai & Kelulusan
+            Hasil
           </NavLink>
         ) : null}
       </div>

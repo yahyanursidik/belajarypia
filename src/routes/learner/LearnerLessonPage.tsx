@@ -1,5 +1,7 @@
+import { canCompleteReading } from "../../lib/learningProgress";
+import { fetchLearningSummary } from "../../lib/learningSummary";
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,8 +17,11 @@ import { requestLessonBoardImageUrl, type LessonBoard, type LessonBoardColumn, t
 export function LearnerLessonPage() {
   const { lessonId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuthSession();
   
+  const [isCompleting, setIsCompleting] = useState(false);
+  const [completionError, setCompletionError] = useState<string | null>(null);
   const [lesson, setLesson] = useState<any>(null);
   const [documents, setDocuments] = useState<DocumentFile[]>([]);
   const [documentUrls, setDocumentUrls] = useState<Record<string, string>>({});
@@ -369,15 +374,40 @@ export function LearnerLessonPage() {
     );
   };
 
+  const completeLesson = async () => {
+    if (!lessonId || isCompleting) return;
+    setIsCompleting(true); setCompletionError(null);
+    try {
+      const { error } = await supabase.rpc("complete_learning_lesson", { p_lesson_id: lessonId });
+      if (error) {
+        const missing = /function .*does not exist|schema cache|PGRST202/i.test(`${error.code} ${error.message}`);
+        throw new Error(missing ? "Penyimpanan progres belum tersedia. Hubungi pengelola program." : error.message);
+      }
+      if (!programId) { navigate("/learner/program-saya"); return; }
+      const { data: participant } = await supabase.from("participants").select("id").eq("user_id", user!.id).maybeSingle();
+      const { data: enrollment } = await supabase.from("enrollments").select("id").eq("participant_id", participant?.id ?? "").eq("program_id", programId).eq("enrollment_status", "active").maybeSingle();
+      if (enrollment) {
+        try {
+          const summary = await fetchLearningSummary(programId, enrollment.id);
+          if (summary.next) { navigate(`/learner/lesson/${summary.next.id}`, { state: { completedLesson: lesson.title } }); return; }
+        } catch { /* Completion is saved; return to the program if the next lesson cannot load. */ }
+      }
+      navigate(`/learner/program/${programId}`, { state: { completedLesson: lesson.title } });
+    } catch (error) {
+      setCompletionError(error instanceof Error ? error.message : "Progres belum tersimpan. Silakan coba lagi.");
+    } finally { setIsCompleting(false); }
+  };
+
   return (
     <div className="page-stack w-full pb-20">
+      {location.state?.completedLesson && <p role="status" className="learner-success">Progres materi sebelumnya tersimpan.</p>}
       <div className="flex items-center justify-between mb-2">
         <Button 
           variant="ghost" 
           onClick={() => programId ? navigate(`/learner/program/${programId}`) : navigate(-1)} 
           className="text-slate-600 hover:text-slate-900 -ml-4"
         >
-          <ArrowLeft className="w-4 h-4 mr-2" /> Kembali ke Silabus
+          <ArrowLeft className="w-4 h-4 mr-2" /> Kembali ke program
         </Button>
         {lesson?.program_modules?.programs && (
           <Badge variant="outline" className="text-xs text-slate-500 hidden sm:inline-flex">
@@ -707,8 +737,9 @@ export function LearnerLessonPage() {
         </Card>
       )}
 
+      {completionError && <Alert className="border-red-200 text-red-800"><AlertTitle>Progres belum tersimpan</AlertTitle><AlertDescription>{completionError}</AlertDescription></Alert>}
       {/* Actions */}
-      <div className="mt-12 flex flex-col sm:flex-row justify-end gap-3">
+      <div className="learner-lesson-actions mt-12 flex flex-col sm:flex-row justify-end gap-3">
         {isQuiz ? (
           <Button 
             size="lg" 
@@ -721,18 +752,19 @@ export function LearnerLessonPage() {
             ) : maxAttemptsReached ? (
               <>Batas Percobaan Habis</>
             ) : (
-              <><BookOpen className="w-5 h-5 mr-2 text-white" /> Mulai Kerjakan Ujian</>
+              <><BookOpen className="w-5 h-5 mr-2 text-white" /> {quizAttempts.some((attempt) => attempt.status === "ongoing") ? "Lanjutkan ujian" : "Mulai ujian"}</>
             )}
           </Button>
-        ) : (
+        ) : canCompleteReading(lesson?.lesson_type) ? (
           <Button 
             size="lg" 
-            onClick={() => programId ? navigate(`/learner/program/${programId}`) : navigate(-1)}
+            onClick={() => void completeLesson()}
+            disabled={isCompleting}
             className="bg-emerald-600 hover:bg-emerald-700 shadow-sm w-full sm:w-auto"
           >
-            <CheckCircle2 className="w-5 h-5 mr-2 text-white" /> Selesai & Kembali
+            <CheckCircle2 className="w-5 h-5 mr-2 text-white" /> {isCompleting ? "Menyimpan progres…" : "Selesai & lanjutkan"}
           </Button>
-        )}
+        ) : <p className="text-sm text-muted-foreground">Penyelesaian aktivitas ini mengikuti penilaian atau presensi.</p>}
       </div>
     </div>
   );
