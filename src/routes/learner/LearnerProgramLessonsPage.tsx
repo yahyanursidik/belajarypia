@@ -1,18 +1,16 @@
+import { LearningCards } from "../../components/learner/LearningCards";
 import { useEffect, useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FullPageLoader } from "@/components/ui/full-page-loader";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuthSession } from "../../app/providers/authSessionContext";
-import { BookOpen, FileText, LayoutGrid, List, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import type { Enrollment, Participant } from "../../lib/enrollment";
 import { supabase } from "../../lib/supabase";
 
 export function LearnerProgramLessonsPage() {
-  const navigate = useNavigate();
+
   const { user } = useAuthSession();
   const [participant, setParticipant] = useState<Participant | null>(null);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
@@ -20,7 +18,7 @@ export function LearnerProgramLessonsPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   // UI States
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
@@ -118,114 +116,9 @@ export function LearnerProgramLessonsPage() {
     );
   }
 
-  return (
-    <div className="page-stack w-full">
-      <section className="page-hero mb-8">
-        <Badge className="mb-2">Program Saya</Badge>
-        <h2>Direktori Program</h2>
-        <p>
-          Pilih program di bawah ini untuk melihat silabus, modul materi, serta sertifikat/syahadah Anda.
-        </p>
-      </section>
-
-      {/* Toolbar: Search and View Mode */}
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6 bg-slate-50 p-3 rounded-xl border border-slate-200">
-        <div className="relative w-full max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <Input 
-            placeholder="Cari nama program, kode, atau ID pendaftaran..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 bg-white focus:bg-white"
-          />
-        </div>
-        <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200 shadow-sm w-full sm:w-auto shrink-0 justify-center">
-          <Button 
-            variant={viewMode === "grid" ? "default" : "ghost"} 
-            size="sm" 
-            onClick={() => setViewMode("grid")}
-            className="h-8 px-3"
-          >
-            <LayoutGrid className="w-4 h-4 mr-2" /> Grid
-          </Button>
-          <Button 
-            variant={viewMode === "list" ? "default" : "ghost"} 
-            size="sm" 
-            onClick={() => setViewMode("list")}
-            className="h-8 px-3"
-          >
-            <List className="w-4 h-4 mr-2" /> List
-          </Button>
-        </div>
-      </div>
-
-      {enrollments.length === 0 ? (
-        <Alert>
-          <AlertTitle>Belum ada program aktif</AlertTitle>
-          <AlertDescription>
-            Anda belum terdaftar di program mana pun. Silakan mendaftar melalui Katalog Program.
-          </AlertDescription>
-        </Alert>
-      ) : filteredPrograms.length === 0 ? (
-        <div className="text-center p-12 text-slate-500 border border-dashed rounded-lg bg-slate-50/50">
-          <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-20" />
-          <p>Tidak ada program yang cocok dengan pencarian "{searchQuery}".</p>
-        </div>
-      ) : (
-        <div className={viewMode === "grid" ? "grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" : "flex flex-col gap-4"}>
-          {filteredPrograms.map((program) => 
-            viewMode === "grid" ? (
-              <Card key={program.id} className="flex flex-col h-full hover:shadow-md transition-shadow overflow-hidden border-slate-200">
-                <CardHeader className="bg-slate-50 border-b border-slate-100 pb-4">
-                  <Badge variant="outline" className="w-fit mb-2 bg-white">{program.code}</Badge>
-                  <CardTitle className="text-xl leading-tight">
-                    {program.name}
-                  </CardTitle>
-                  <p className="text-sm text-slate-500 mt-2 font-mono bg-slate-100 px-2 py-1 rounded w-fit">
-                    ID: {program.enrollment.enrollment_number}
-                  </p>
-                </CardHeader>
-                <CardContent className="flex flex-1 flex-col justify-center gap-2 p-5">
-                  <Button className="w-full" onClick={() => navigate(`/learner/program/${program.id}`)}>
-                    <BookOpen className="h-4 w-4" />
-                    Materi & Progres
-                  </Button>
-                  <Button variant="outline" className="w-full" onClick={() => navigate(`/learner/program/${program.id}/silabus`)}>
-                    <FileText className="h-4 w-4" />
-                    Lihat Silabus
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card key={program.id} className="flex flex-row items-center justify-between p-4 sm:p-5 hover:shadow-md transition-shadow border-slate-200 gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                    <Badge variant="outline" className="bg-slate-50">{program.code}</Badge>
-                    <span className="text-xs text-slate-500 font-mono bg-slate-100 px-1.5 py-0.5 rounded">
-                      ID: {program.enrollment.enrollment_number}
-                    </span>
-                  </div>
-                  <h3 className="font-semibold text-base sm:text-lg text-slate-900 leading-tight">
-                    {program.name}
-                  </h3>
-                </div>
-                <div className="hidden shrink-0 gap-2 sm:flex">
-                  <Button variant="outline" size="sm" onClick={() => navigate(`/learner/program/${program.id}/silabus`)}>
-                    <FileText className="h-4 w-4" /> Silabus
-                  </Button>
-                  <Button size="sm" onClick={() => navigate(`/learner/program/${program.id}`)}>
-                    <BookOpen className="h-4 w-4" /> Materi
-                  </Button>
-                </div>
-                <Button size="icon" className="shrink-0 sm:hidden h-9 w-9" onClick={() => navigate(`/learner/program/${program.id}`)}>
-                  <BookOpen className="h-4 w-4" />
-                  <span className="sr-only">Buka materi program</span>
-                </Button>
-              </Card>
-            )
-          )}
-        </div>
-      )}
-    </div>
-  );
+  return <div className="page-stack learner-program-directory">
+    <header className="learner-section-heading"><h1>Program saya</h1></header>
+    <label className="learner-program-search"><Search size={18} /><Input aria-label="Cari program" placeholder="Cari program…" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} /></label>
+    {filteredPrograms.length === 0 && searchQuery ? <p role="status">Program tidak ditemukan. Coba kata lain.</p> : <LearningCards enrollments={filteredPrograms.map((item) => item.enrollment)} />}
+  </div>;
 }

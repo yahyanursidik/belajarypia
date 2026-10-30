@@ -1,3 +1,4 @@
+import { isHrefActive, isNavigationItemActive } from "../lib/navigationMatching";
 import {
   BookOpen,
   BriefcaseBusiness,
@@ -16,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 import type { ComponentType, PropsWithChildren } from "react";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuthSession } from "../app/providers/authSessionContext";
 import { Button } from "../components/ui/button";
@@ -86,28 +87,6 @@ function readStoredList(key: string) {
   }
 }
 
-function isHrefActive(pathname: string, search: string, href: string, includeNested = true) {
-  const [targetPath, targetQuery = ""] = href.split("?");
-  const isPortalRoot = Object.values(homeByVariant).includes(targetPath);
-  const pathMatches = targetPath === "/"
-    ? pathname === targetPath
-    : pathname === targetPath || (includeNested && !isPortalRoot && pathname.startsWith(`${targetPath}/`));
-
-  if (!pathMatches) return false;
-  if (!targetQuery) return true;
-
-  const currentParams = new URLSearchParams(search);
-  const targetParams = new URLSearchParams(targetQuery);
-  return Array.from(targetParams.entries()).every(([key, value]) => currentParams.get(key) === value);
-}
-
-function isNavigationItemActive(pathname: string, search: string, item: AppNavItem) {
-  if (isHrefActive(pathname, search, item.href)) return true;
-
-  return item.activePathPrefixes?.some((prefix) =>
-    pathname === prefix || pathname.startsWith(`${prefix}/`),
-  ) ?? false;
-}
 
 function SidebarNavigation({
   collapsed = false,
@@ -121,7 +100,7 @@ function SidebarNavigation({
   const [closedGroups, setClosedGroups] = useState<Set<string>>(
     () => new Set(readStoredList(`${storageKey}-closed-groups`)),
   );
-  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [itemOverrides, setItemOverrides] = useState<Record<string, boolean>>({});
 
   const activeItem = useMemo(
     () => menuItems
@@ -143,6 +122,8 @@ function SidebarNavigation({
       return next;
     });
   }, [activeItem]);
+
+  useEffect(() => { setItemOverrides({}); }, [locationPath, locationSearch]);
 
   const filteredItems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -179,12 +160,10 @@ function SidebarNavigation({
   };
 
   const toggleItem = (href: string) => {
-    setExpandedItems((current) => {
-      const next = new Set(current);
-      if (next.has(href)) next.delete(href);
-      else next.add(href);
-      return next;
-    });
+    setItemOverrides((current) => ({
+      ...current,
+      [href]: !(current[href] ?? isNavigationItemActive(locationPath, locationSearch, menuItems.find((item) => item.href === href)!)),
+    }));
   };
 
   return (
@@ -232,13 +211,14 @@ function SidebarNavigation({
                     const Icon = item.icon;
                     const isActive = isNavigationItemActive(locationPath, locationSearch, item);
                     const hasChildren = Boolean(item.children?.length);
-                    const showChildren = !collapsed && hasChildren && (Boolean(query) || isActive || expandedItems.has(item.href));
+                    const showChildren = !collapsed && hasChildren && (Boolean(query) || (itemOverrides[item.href] ?? isActive));
 
                     return (
                       <div key={item.href} className="app-shell__menu-entry">
                         <div className="app-shell__menu-row">
                           <Link
                             to={item.href}
+                            aria-current={isActive ? "page" : undefined}
                             title={collapsed ? `${item.label}${item.description ? ` - ${item.description}` : ""}` : undefined}
                             className={cn("app-shell__menu-item", isActive && "is-active")}
                             onClick={onNavigate}
@@ -265,12 +245,15 @@ function SidebarNavigation({
                         {showChildren ? (
                           <div className="app-shell__submenu">
                             {item.children?.map((child) => {
-                              const isChildActive = isHrefActive(locationPath, locationSearch, child.href, false);
+                              const matchingChild = item.children?.filter((candidate) => isHrefActive(locationPath, locationSearch, candidate.href, false))
+                                .sort((a, b) => b.href.length - a.href.length)[0];
+                              const isChildActive = matchingChild?.href === child.href;
                               return (
                                 <Link
                                   key={child.href}
                                   to={child.href}
                                   className={cn("app-shell__submenu-item", isChildActive && "is-active")}
+                                  aria-current={isChildActive ? "page" : undefined}
                                   onClick={onNavigate}
                                 >
                                   <span className="app-shell__submenu-dot" />
@@ -312,8 +295,14 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
     () => localStorage.getItem(`ypia-sidebar-collapsed-${variant}`) === "true",
   );
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mobileDialogRef = useRef<HTMLDialogElement>(null);
   const BrandIcon = iconByVariant[variant];
   const portalIdentity = portalIdentityByVariant[variant];
+  const isQuizFocus = variant === "learner" && /^\/learner\/lesson\/[^/]+\/quiz\/?$/.test(location.pathname);
+  const isAdminWorkspace = variant === "admin" || variant === "superadmin";
+  const isCompactWorkspace = isAdminWorkspace || variant === "learner";
+  const currentModule = menuItems.find((item) => isNavigationItemActive(location.pathname, location.search, item));
+  const roleLabel = primaryRole === "participant" ? "Peserta" : primaryRole === "guardian" ? "Wali" : primaryRole?.replaceAll("_", " ");
   const displayName = profile?.full_name ?? profile?.email ?? "Pengguna";
 
   const initials = displayName
@@ -341,7 +330,7 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
     () => menuItems.filter((item) => !mobilePrimaryItems.includes(item)),
     [menuItems, mobilePrimaryItems],
   );
-  const hasMobileOverflow = mobileOverflowItems.length > 0;
+  const hasMobileOverflow = mobileOverflowItems.length > 0 && !(variant === "learner" && primaryRole === "participant");
   const isMobileOverflowActive = mobileOverflowItems.some((item) =>
     isNavigationItemActive(location.pathname, location.search, item),
   );
@@ -372,15 +361,20 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
   useEffect(() => {
     if (!mobileMenuOpen) return;
     const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement;
+    const dialog = mobileDialogRef.current;
+    dialog?.showModal();
     document.body.style.overflow = "hidden";
     return () => {
+      dialog?.close();
       document.body.style.overflow = previousOverflow;
+      if (previousFocus instanceof HTMLElement) previousFocus.focus();
     };
   }, [mobileMenuOpen]);
 
   return (
     <div
-      className={cn(`app-shell app-shell-${variant}`, sidebarCollapsed && "app-shell--sider-collapsed")}
+      className={cn(`app-shell app-shell-${variant}`, sidebarCollapsed && "app-shell--sider-collapsed", isQuizFocus && "app-shell--quiz-focus")}
       style={themeStyles}
     >
       <aside className="app-shell__sider print:hidden">
@@ -432,8 +426,8 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
             </div>
             <div className="min-w-0">
               <span className="app-shell__eyebrow">{portalIdentity.eyebrow}</span>
-              <h1 className="app-shell__title">{title}</h1>
-              <p className="app-shell__subtitle">{subtitle}</p>
+              <div className="app-shell__title">{isCompactWorkspace ? currentModule?.label ?? title : title}</div>
+              {!isCompactWorkspace && <p className="app-shell__subtitle">{subtitle}</p>}
             </div>
           </div>
 
@@ -447,7 +441,7 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
               >
                 <div className="app-shell__profile-copy">
                   <p>{displayName}</p>
-                  <span>{primaryRole.replaceAll("_", " ")}</span>
+                  <span>{roleLabel}</span>
                 </div>
                 <div className="app-shell__avatar">{initials}</div>
               </Link>
@@ -486,7 +480,7 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
 
       <div className={cn("app-shell__mobile-drawer", mobileMenuOpen && "is-open")} aria-hidden={!mobileMenuOpen}>
           <button className="app-shell__mobile-backdrop" type="button" onClick={() => setMobileMenuOpen(false)} aria-label="Tutup menu" />
-          <aside className="app-shell__mobile-panel" role="dialog" aria-modal="true" aria-label="Menu navigasi">
+          <dialog ref={mobileDialogRef} className="app-shell__mobile-panel" aria-label="Menu navigasi" onCancel={(event) => { event.preventDefault(); setMobileMenuOpen(false); }}>
             <div className="app-shell__mobile-panel-header">
               <Link to={homeByVariant[variant]} className="app-shell__mobile-brand" onClick={() => setMobileMenuOpen(false)}>
                 <span className="app-shell__brand-icon"><BrandIcon className="h-5 w-5 text-white" /></span>
@@ -509,17 +503,18 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
             {primaryRole ? (
               <div className="app-shell__mobile-account">
                 <div className="app-shell__avatar">{initials}</div>
-                <span className="min-w-0"><strong>{displayName}</strong><small>{primaryRole.replaceAll("_", " ")}</small></span>
+                <span className="min-w-0"><strong>{displayName}</strong><small>{roleLabel}</small></span>
               </div>
             ) : null}
-          </aside>
+          </dialog>
       </div>
 
       {(variant === "learner" || variant === "teacher" || variant === "mentor") ? (
         <nav className="app-shell__bottom-nav" aria-label="Navigasi cepat">
           {mobilePrimaryItems.map((item) => {
             const Icon = item.icon;
-            const isActive = isNavigationItemActive(location.pathname, location.search, item);
+            const isActive = isNavigationItemActive(location.pathname, location.search, item) ||
+              (variant === "learner" && primaryRole === "participant" && item.href === "/learner/profil" && isMobileOverflowActive);
             return (
               <Link
                 key={item.href}

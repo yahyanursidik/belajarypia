@@ -1,132 +1,74 @@
-import {
-  ArrowRight,
-  BookOpenCheck,
-  BriefcaseBusiness,
-  ClipboardCheck,
-  CreditCard,
-  UserRoundCheck,
-} from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Badge } from "../../components/ui/badge";
+import { ArrowRight, BookOpenCheck, ClipboardCheck, CreditCard, RefreshCw, Users } from "lucide-react";
+import { useAuthSession } from "../../app/providers/authSessionContext";
+import { PageHeader } from "../../components/admin/PageHeader";
+import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { getNavigationForRole } from "../../lib/navigation";
+import { supabase } from "../../lib/supabase";
 
-const operationalMetrics = [
-  { label: "Pendaftar Baru", value: 0, hint: "Hari ini", icon: ClipboardCheck, tone: "admin-metric--blue" },
-  { label: "Perlu Review", value: 0, hint: "Menunggu keputusan", icon: UserRoundCheck, tone: "admin-metric--amber" },
-  { label: "Program Aktif", value: 0, hint: "Sedang berjalan", icon: BookOpenCheck, tone: "admin-metric--green" },
-  { label: "Transaksi Perlu Cek", value: 0, hint: "Belum diverifikasi", icon: CreditCard, tone: "admin-metric--rose" },
-];
-
-const workflows = [
-  {
-    title: "Review pendaftaran",
-    description: "Periksa data calon peserta dan lanjutkan keputusan admisi.",
-    href: "/admin/pendaftaran?tab=review",
-    icon: ClipboardCheck,
-  },
-  {
-    title: "Kelola peserta",
-    description: "Buka direktori, enrollment, dan kelengkapan profil peserta.",
-    href: "/admin/peserta?tab=directory",
-    icon: UserRoundCheck,
-  },
-  {
-    title: "Atur program",
-    description: "Kelola program, kelas, kurikulum, dan materi pembelajaran.",
-    href: "/admin/program",
-    icon: BookOpenCheck,
-  },
-];
+type Metric = { key: string; title: string; href: string; tone: string; icon: typeof Users; count: number | null; failed: boolean };
 
 export function AdminDashboardPage() {
-  const today = new Intl.DateTimeFormat("id-ID", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(new Date());
+  const { primaryRole } = useAuthSession();
+  const [metrics, setMetrics] = useState<Metric[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [reload, setReload] = useState(0);
+  const menu = getNavigationForRole(primaryRole).filter((item) => item.href !== "/admin");
 
-  return (
-    <div className="page-stack admin-dashboard">
-      <section className="admin-command-bar">
-        <div className="admin-command-bar__icon">
-          <BriefcaseBusiness className="h-6 w-6" />
-        </div>
-        <div className="min-w-0">
-          <Badge variant="outline" className="mb-2 bg-white">OPERASIONAL HARIAN</Badge>
-          <h2>Dashboard Admin</h2>
-          <p>Pantau antrean kerja dan buka proses yang paling membutuhkan tindakan.</p>
-        </div>
-        <div className="admin-command-bar__date">
-          <span>Hari ini</span>
-          <strong>{today}</strong>
-        </div>
-      </section>
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setMetrics([]);
+    const requests = [];
+    if (primaryRole === "admin") {
+      requests.push(
+        { key: "review", title: "Pendaftar perlu ditinjau", href: "/admin/pendaftaran?tab=review", tone: "amber", icon: ClipboardCheck,
+          query: supabase.from("applicants").select("id", { count: "exact", head: true }).in("status", ["submitted", "under_review", "revision_requested"]) },
+        { key: "draft", title: "Program draf", href: "/admin/program?status=draft", tone: "violet", icon: BookOpenCheck,
+          query: supabase.from("programs").select("id", { count: "exact", head: true }).eq("status", "draft") },
+        { key: "active", title: "Program aktif", href: "/admin/program?status=active", tone: "emerald", icon: Users,
+          query: supabase.from("programs").select("id", { count: "exact", head: true }).eq("status", "active") },
+      );
+    }
+    if (primaryRole === "admin" || primaryRole === "finance") requests.push(
+      { key: "payments", title: "Pembayaran menunggu", href: "/admin/keuangan?tab=transactions", tone: "blue", icon: CreditCard,
+        query: supabase.from("transactions").select("id", { count: "exact", head: true }).eq("status", "pending") },
+    );
+    void Promise.all(requests.map(async ({ query, ...metric }) => {
+      try {
+        const { count, error } = await query.abortSignal(controller.signal);
+        return { ...metric, count: error ? null : count, failed: Boolean(error) };
+      } catch {
+        return { ...metric, count: null, failed: true };
+      }
+    })).then((results) => {
+      if (!controller.signal.aborted) { setMetrics(results); setLoading(false); }
+    });
+    return () => controller.abort();
+  }, [primaryRole, reload]);
 
-      <section className="admin-metric-grid" aria-label="Ringkasan operasional">
-        {operationalMetrics.map((metric) => {
-          const Icon = metric.icon;
-          return (
-            <Card key={metric.label} className={`admin-metric ${metric.tone}`}>
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className="admin-metric__icon"><Icon className="h-5 w-5" /></div>
-                <div className="min-w-0">
-                  <p>{metric.label}</p>
-                  <div className="flex items-end gap-2">
-                    <strong>{metric.value}</strong>
-                    <span>{metric.hint}</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </section>
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(300px,0.6fr)]">
-        <Card className="rounded-lg">
-          <CardHeader>
-            <CardTitle>Meja Kerja Admin</CardTitle>
-            <CardDescription>Alur utama yang paling sering digunakan dalam operasional program.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-3">
-            {workflows.map((workflow) => {
-              const Icon = workflow.icon;
-              return (
-                <Link key={workflow.title} to={workflow.href} className="admin-workflow">
-                  <Icon className="h-5 w-5" />
-                  <strong>{workflow.title}</strong>
-                  <span>{workflow.description}</span>
-                  <span className="admin-workflow__action">
-                    Buka modul <ArrowRight className="h-4 w-4" />
-                  </span>
-                </Link>
-              );
-            })}
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-lg">
-          <CardHeader>
-            <CardTitle>Antrean Prioritas</CardTitle>
-            <CardDescription>Item yang perlu segera ditindaklanjuti.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="admin-empty-queue">
-              <ClipboardCheck className="h-6 w-6" />
-              <strong>Belum ada antrean</strong>
-              <span>Antrean review dan verifikasi akan muncul di area ini.</span>
-            </div>
-            <Button asChild variant="outline" className="mt-4 w-full">
-              <Link to="/admin/pendaftaran?tab=review">
-                Lihat semua pendaftar
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+  const failed = metrics.some((metric) => metric.failed);
+  const queue = metrics.filter((metric) => metric.key !== "active" && metric.count !== null && metric.count > 0);
+  return <div className="page-stack admin-dashboard">
+    <PageHeader title="Dashboard" eyebrow="Hari ini" actions={<Button variant="outline" disabled={loading} onClick={() => setReload((value) => value + 1)}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />Muat ulang</Button>} />
+    {failed && <Alert><AlertTitle>Sebagian data belum tersedia</AlertTitle><AlertDescription>Coba muat ulang. Angka yang belum tersedia ditandai dengan —.</AlertDescription></Alert>}
+    <section className="admin-stat-grid" aria-label="Ringkasan pekerjaan" aria-busy={loading}>
+      {loading ? <p role="status">Memuat ringkasan…</p> : metrics.map(({ key, title, href, tone, icon: Icon, count, failed: unavailable }) =>
+        <Link to={href} key={key} className={`admin-stat admin-tone-${tone}`}>
+          <span className="admin-stat__icon"><Icon size={20} /></span><span><span className="admin-stat__label">{title}</span><strong>{count ?? "—"}</strong>{unavailable && <small>Belum tersedia</small>}</span><ArrowRight size={16} />
+        </Link>)}
+    </section>
+    <div className="admin-dashboard-grid">
+      <Card><CardHeader><CardTitle>Perlu tindakan</CardTitle></CardHeader><CardContent>
+        {loading ? <p role="status">Memuat antrean…</p> : queue.length ? <ul className="admin-task-list">{queue.map((item) => <li key={item.key}><Link to={item.href}><span className={`admin-task-count admin-tone-${item.tone}`}>{item.count}</span><span>{item.title}</span><ArrowRight size={17} /></Link></li>)}</ul>
+          : <p className="admin-quiet-state">{failed ? "Antrean belum dapat dipastikan. Coba muat ulang." : metrics.length ? "Semua beres. Tidak ada antrean pada ringkasan ini." : "Buka modul Anda untuk melihat pekerjaan terbaru."}</p>}
+      </CardContent></Card>
+      <Card><CardHeader><CardTitle>Akses cepat</CardTitle></CardHeader><CardContent className="admin-shortcuts">
+        {menu.map(({ href, label, icon: Icon }) => <Link to={href} key={href}><Icon className="h-4 w-4" /><span>{label}</span><ArrowRight size={15} /></Link>)}
+      </CardContent></Card>
     </div>
-  );
+  </div>;
 }

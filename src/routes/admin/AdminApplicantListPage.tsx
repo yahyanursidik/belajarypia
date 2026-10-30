@@ -1,3 +1,5 @@
+import { PageHeader } from "../../components/admin/PageHeader";
+import { SectionNav } from "../../components/admin/SectionNav";
 import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -127,12 +129,11 @@ export function AdminApplicantListPage() {
   });
   
   const activeTabParam = searchParams.get("tab");
-  const activeTab = admissionTabs.some((tab) => tab.key === activeTabParam) ? activeTabParam as AdmissionTab : "overview";
+  const activeTab = admissionTabs.some((tab) => tab.key === activeTabParam) ? activeTabParam as AdmissionTab : "review";
   const changeTab = (tab: AdmissionTab) => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
-      if (tab === "overview") next.delete("tab");
-      else next.set("tab", tab);
+      next.set("tab", tab);
       return next;
     }, { replace: true });
   };
@@ -532,14 +533,7 @@ export function AdminApplicantListPage() {
 
   return (
     <div className="page-stack">
-      <section className="page-hero">
-        <Badge>Admisi</Badge>
-        <h2>Pendaftaran</h2>
-        <p>
-          Kelola funnel pendaftaran dari publikasi form, seleksi calon peserta,
-          placement awal, sampai peserta resmi masuk kelas.
-        </p>
-      </section>
+      <PageHeader title="Pendaftaran" />
 
       <div className="fixed top-24 right-8 z-50 flex flex-col gap-2 max-w-sm w-full">
         {errorMessage && (
@@ -566,29 +560,7 @@ export function AdminApplicantListPage() {
         )}
       </div>
 
-      <div className="grid gap-3 rounded-xl border bg-white p-2 shadow-sm md:grid-cols-3">
-        {admissionTabs.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.key;
-
-          return (
-            <button
-              key={item.key}
-              className={`flex items-start gap-3 rounded-lg p-4 text-left transition-colors ${
-                isActive ? "bg-primary text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
-              }`}
-              onClick={() => changeTab(item.key)}
-              type="button"
-            >
-              <Icon className={`mt-0.5 h-5 w-5 ${isActive ? "text-white" : "text-primary"}`} />
-              <span>
-                <span className="block text-sm font-bold">{item.label}</span>
-                <span className={`mt-0.5 block text-xs ${isActive ? "text-white/75" : "text-slate-500"}`}>{item.desc}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <SectionNav items={admissionTabs} value={activeTab} onChange={changeTab} label="Bagian halaman" />
 
       {activeTab === "overview" && (
         <div className="space-y-6">

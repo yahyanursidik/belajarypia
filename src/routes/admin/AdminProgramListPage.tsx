@@ -1,7 +1,9 @@
+import { PageHeader } from "../../components/admin/PageHeader";
+import { Dialog } from "../../components/ui/dialog";
+import { WizardSteps } from "../../components/ui/wizard-steps";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import {
-  AlertCircle,
   Archive,
   ArrowRight,
   BookOpen,
@@ -26,12 +28,11 @@ import {
   Trophy,
   Users,
   UserCheck,
-  X,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   allowedMvpFeatureFlags,
@@ -103,27 +104,38 @@ const programSections: Array<{ section: ProgramSection; label: string; icon: typ
 ];
 
 const getCurriculumLabel = (model: string) => (model === "angkatan" ? "Terjadwal (Angkatan)" : "Mandiri (Evergreen)");
-const getProgramSectionPath = (programId: string, section: ProgramSection) => `/system/program/${programId}/${section}`;
+
 const getVisibleProgramSections = (program: ProgramWithEnrollments) =>
   programSections.filter((item) => item.section !== "angkatan-kelas" || program.curriculum_model === "angkatan");
 
 export function AdminProgramListPage() {
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const basePath = location.pathname.startsWith("/system") ? "/system" : "/admin";
+  const getProgramSectionPath = (programId: string, section: ProgramSection) => `${basePath}/program/${programId}/${section}`;
+  const [wizardStep, setWizardStep] = useState(0);
   const [units, setUnits] = useState<Unit[]>([]);
   const [programs, setPrograms] = useState<ProgramWithEnrollments[]>([]);
   const [staff, setStaff] = useState<Array<{id: string, full_name: string | null, email: string}>>([]);
   const [form, setForm] = useState<ProgramFormState>(initialProgramForm);
-  
+
   // UI States
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
-  const [filterStatus, setFilterStatus] = useState("all");
+  const requestedStatus = searchParams.get("status");
+  const filterStatus = statusOptions.some((option) => option.value === requestedStatus) ? requestedStatus! : "all";
+  const setFilterStatus = (status: string) => setSearchParams((current) => {
+    const next = new URLSearchParams(current);
+    if (status === "all") next.delete("status"); else next.set("status", status);
+    return next;
+  });
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
   const [sortBy, setSortBy] = useState("name-asc");
-  
+
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -234,6 +246,8 @@ export function AdminProgramListPage() {
   const openCreateModal = () => {
     setForm(initialProgramForm);
     setEditingProgramId(null);
+    setWizardStep(0);
+    setErrorMessage(null);
     setIsModalOpen(true);
   };
 
@@ -251,6 +265,8 @@ export function AdminProgramListPage() {
       teacher_user_id: p.teacher_user_id || "",
     });
     setEditingProgramId(p.id);
+    setWizardStep(0);
+    setErrorMessage(null);
     setIsModalOpen(true);
   };
 
@@ -258,7 +274,7 @@ export function AdminProgramListPage() {
     const action = currentStatus === "archived" ? "mengaktifkan kembali" : "mengarsipkan";
     const newStatus = currentStatus === "archived" ? "draft" : "archived";
     if (!window.confirm(`Apakah Anda yakin ingin ${action} program ini?`)) return;
-    
+
     setIsLoading(true);
     const { error } = await supabase.from("programs").update({ status: newStatus }).eq("id", id);
     if (error) {
@@ -297,37 +313,11 @@ export function AdminProgramListPage() {
 
   return (
     <div className="page-stack pb-12">
-      <section className="page-hero">
-        <Badge className="relative z-10 bg-white/15 text-white hover:bg-white/20">Manajemen Program</Badge>
-        <div className="relative z-10 mt-4 flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <h2>Katalog Program</h2>
-            <p>
-              Kelola lifecycle program, kurikulum, peserta, bank soal, dan kelulusan dari satu pusat kendali yang mudah dipindai.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <Button
-              type="button"
-              onClick={() => void loadData(true)}
-              disabled={isRefreshing}
-              variant="outline"
-              className="h-10 border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-            >
-              <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
-              Muat Ulang
-            </Button>
-            <Button onClick={exportProgramsToCSV} disabled={filteredPrograms.length === 0} className="h-10 bg-white !text-primary hover:bg-white/90">
-              <Download className="h-4 w-4" />
-              Export CSV
-            </Button>
-            <Button onClick={openCreateModal} className="h-10 bg-amber-400 text-slate-950 hover:bg-amber-300">
-              <Plus className="h-4 w-4" />
-              Buat Program
-            </Button>
-          </div>
-        </div>
-      </section>
+      <PageHeader title="Program" actions={<>
+        <Button type="button" variant="outline" disabled={isRefreshing} onClick={() => void loadData(true)} aria-label="Muat ulang program"><RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} /></Button>
+        <Button type="button" variant="outline" onClick={exportProgramsToCSV} disabled={filteredPrograms.length === 0}><Download className="h-4 w-4" />Ekspor</Button>
+        <Button onClick={openCreateModal}><Plus className="h-4 w-4" />Buat program</Button>
+      </>} />
 
       {errorMessage && (
         <Alert className="animate-in fade-in slide-in-from-top-2 border-red-500 bg-red-50 text-red-900">
@@ -342,51 +332,20 @@ export function AdminProgramListPage() {
         </Alert>
       )}
 
-      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-        <ProgramMetricCard title="Total Program" value={stats.total} description="semua status" icon={BookOpen} />
+      <div className="grid gap-4 md:grid-cols-3">
         <ProgramMetricCard title="Aktif" value={stats.active} description="terlihat peserta" icon={CheckCircle2} />
         <ProgramMetricCard title="Draft" value={stats.draft} description="perlu dilengkapi" icon={ClipboardList} />
         <ProgramMetricCard title="Arsip" value={stats.archived} description="tidak aktif" icon={Archive} />
-        <ProgramMetricCard title="Angkatan" value={stats.scheduled} description="pakai batch kelas" icon={CalendarDays} />
-        <ProgramMetricCard title="Peserta" value={stats.totalParticipants} description="total enrollment" icon={Users} />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Workflow Pengelolaan Program</CardTitle>
-          <CardDescription>Gunakan daftar ini untuk menjaga program siap dipublikasikan, kurikulum lengkap, dan peserta mudah ditindaklanjuti.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 lg:grid-cols-3">
-          <ProgramWorkflowItem
-            done={stats.draft === 0}
-            title="Review program draft"
-            description={`${stats.draft} program belum aktif. Lengkapi detail, silabus, kurikulum, dan form pendaftaran sebelum dipublikasi.`}
-            action="Filter Draft"
-            onClick={() => setFilterStatus("draft")}
-          />
-          <ProgramWorkflowItem
-            done={stats.active > 0}
-            title="Pantau program aktif"
-            description={`${stats.active} program aktif. Masuk ke submenu Peserta, Bank Soal, atau Kelulusan untuk operasional harian.`}
-            action="Lihat Aktif"
-            onClick={() => setFilterStatus("active")}
-          />
-          <ProgramWorkflowItem
-            done={stats.archived === 0}
-            title="Bersihkan arsip"
-            description={`${stats.archived} program diarsipkan. Aktifkan kembali jika masih dipakai atau biarkan sebagai riwayat.`}
-            action="Lihat Arsip"
-            onClick={() => setFilterStatus("archived")}
-          />
-        </CardContent>
-      </Card>
+
 
       <Card>
         <CardHeader className="pb-4">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div>
               <CardTitle>Direktori Program</CardTitle>
-              <CardDescription>Cari, filter, sortir, lalu masuk langsung ke submenu yang dibutuhkan.</CardDescription>
+
             </div>
             <div className="flex border border-muted/40 rounded-lg overflow-hidden bg-white shrink-0 p-0.5 shadow-sm">
               <button
@@ -502,7 +461,7 @@ export function AdminProgramListPage() {
                         {program.code}
                       </Badge>
                       <div className="flex items-center gap-1 bg-muted/20 rounded-full p-1 border border-muted/40 transition-opacity opacity-80 group-hover:opacity-100">
-                        <Link to={`/system/program/${program.id}/report`} title="Laporan">
+                        <Link to={`${basePath}/program/${program.id}/report`} title="Laporan">
                           <Button variant="ghost" className="h-7 w-7 p-0 rounded-full text-slate-500 hover:text-primary hover:bg-primary/10">
                             <BookOpen className="h-3.5 w-3.5" />
                           </Button>
@@ -634,7 +593,7 @@ export function AdminProgramListPage() {
                               <Button variant="default" size="sm" className="h-8 min-w-[84px] text-xs px-4 rounded-full shadow-sm bg-primary/90 hover:bg-primary">Kelola</Button>
                             </Link>
                             <div className="w-px h-5 bg-border mx-1"></div>
-                            <Link to={`/system/program/${program.id}/report`} title="Laporan">
+                            <Link to={`${basePath}/program/${program.id}/report`} title="Laporan">
                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-full text-slate-400 hover:text-primary hover:bg-primary/10"><BookOpen className="h-4 w-4" /></Button>
                             </Link>
                             <Button variant="ghost" title="Edit" className="h-8 w-8 p-0 rounded-full text-slate-400 hover:text-blue-600 hover:bg-blue-50" onClick={() => openEditModal(program)}>
@@ -660,9 +619,9 @@ export function AdminProgramListPage() {
                 Menampilkan <span className="font-medium">{pageStartIndex}</span> hingga <span className="font-medium">{pageEndIndex}</span> dari <span className="font-medium">{filteredPrograms.length}</span> program
               </p>
               <div className="flex flex-wrap items-center justify-center gap-1">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   disabled={safeCurrentPage === 1}
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                   className="h-9 min-w-9 px-3"
@@ -671,7 +630,7 @@ export function AdminProgramListPage() {
                   <ChevronLeft className="h-4 w-4" />
                   <span className="hidden sm:inline">Sebelumnya</span>
                 </Button>
-                 
+
                 {Array.from({ length: totalPages }, (_, i) => i + 1)
                   .filter(p => p === 1 || p === totalPages || Math.abs(p - safeCurrentPage) <= 2)
                   .map((page, i, arr) => (
@@ -688,9 +647,9 @@ export function AdminProgramListPage() {
                     </div>
                 ))}
 
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   disabled={safeCurrentPage === totalPages}
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   className="h-9 min-w-9 px-3"
@@ -707,24 +666,25 @@ export function AdminProgramListPage() {
 
       {/* Creation Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-200">
-            <CardHeader className="sticky top-0 bg-background/95 backdrop-blur z-10 border-b flex flex-row items-center justify-between py-4">
-              <div>
-                <CardTitle className="text-2xl">{editingProgramId ? "Edit Program" : "Buat Program Baru"}</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">Konfigurasi dasar untuk program pembelajaran.</p>
-              </div>
-              <Button variant="ghost" className="h-10 w-10 p-0 rounded-full" onClick={() => setIsModalOpen(false)}>
-                <X className="h-5 w-5" />
-              </Button>
-            </CardHeader>
-            <CardContent className="p-6">
+        <Dialog title={editingProgramId ? "Edit program" : "Buat program"} busy={isSubmitting} onClose={() => setIsModalOpen(false)}>
+          <WizardSteps steps={["Identitas", "Pembelajaran", "Pengaturan", "Tinjau"]} current={wizardStep} />
+          {errorMessage && <Alert className="mb-4 border-red-200 text-red-700"><AlertTitle>Belum dapat disimpan</AlertTitle><AlertDescription>{errorMessage}</AlertDescription></Alert>}
               <form
                 className="space-y-6"
                 onSubmit={async (event) => {
                   event.preventDefault();
-                  setIsSubmitting(true);
                   setErrorMessage(null);
+                  if (wizardStep < 3) { setWizardStep((step) => step + 1); return; }
+                  if (!form.name.trim() || !form.code.trim()) {
+                    setErrorMessage("Nama dan kode program wajib diisi."); setWizardStep(0); return;
+                  }
+                  if (!(form.unit_id || units[0]?.id)) {
+                    setErrorMessage("Unit program belum tersedia. Hubungi pengelola unit."); return;
+                  }
+                  if (form.feature_flags.payment_type === "spp" && (!Number.isFinite(form.feature_flags.payment_amount) || Number(form.feature_flags.payment_amount) <= 0)) {
+                    setErrorMessage("Isi nominal SPP lebih dari 0."); setWizardStep(2); return;
+                  }
+                  setIsSubmitting(true);
                   setMessage(null);
 
                   const payload = {
@@ -735,12 +695,12 @@ export function AdminProgramListPage() {
                     program_type: form.program_type.trim() || "general",
                     curriculum_model: form.curriculum_model.trim() || "mandiri",
                     delivery_mode: form.delivery_mode.trim() || "online",
-                    status: form.status,
+                    status: editingProgramId ? form.status : "draft",
                     feature_flags: mergeWithDefaultFeatureFlags(form.feature_flags),
                     teacher_user_id: form.teacher_user_id || null,
                   };
 
-                  const request = editingProgramId 
+                  const request = editingProgramId
                     ? supabase.from("programs").update(payload).eq("id", editingProgramId)
                     : supabase.from("programs").insert(payload);
 
@@ -759,26 +719,29 @@ export function AdminProgramListPage() {
                   setIsSubmitting(false);
                 }}
               >
-                {/* Hidden Unit Field */}
-                <input type="hidden" value={form.unit_id || (units.length > 0 ? units[0].id : "")} />
-                
+                <fieldset hidden={wizardStep !== 0} disabled={isSubmitting || wizardStep !== 0} className="space-y-5">
+                  {units.length > 1 && <label className="block space-y-2"><span className="text-sm font-semibold">Unit</span><select className="field-control" value={form.unit_id || units[0]?.id || ""} onChange={(event) => setForm((current) => ({ ...current, unit_id: event.target.value }))}>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label>}
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold">Nama Program <span className="text-red-500">*</span></label>
-                    <Input
+                    <label htmlFor="program-name" className="text-sm font-semibold">Nama Program <span className="text-red-500">*</span></label>
+                    <Input id="program-name"
                       onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
                       placeholder="Contoh: Tahsin Lanjutan"
                       required
+                      onInvalid={(event) => event.currentTarget.setCustomValidity("Isi nama program.")}
+                      onInput={(event) => event.currentTarget.setCustomValidity("")}
                       value={form.name}
                       className="h-10"
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold">Kode Program <span className="text-red-500">*</span></label>
-                    <Input
+                    <label htmlFor="program-code" className="text-sm font-semibold">Kode Program <span className="text-red-500">*</span></label>
+                    <Input id="program-code"
                       onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}
                       placeholder="Contoh: THL-02"
                       required
+                      onInvalid={(event) => event.currentTarget.setCustomValidity("Isi kode program.")}
+                      onInput={(event) => event.currentTarget.setCustomValidity("")}
                       value={form.code}
                       className="h-10 uppercase"
                     />
@@ -786,8 +749,8 @@ export function AdminProgramListPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold">Deskripsi Singkat</label>
-                  <textarea
+                  <label htmlFor="program-description" className="text-sm font-semibold">Deskripsi Singkat</label>
+                  <textarea id="program-description"
                     className="field-control min-h-[80px]"
                     onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
                     placeholder="Jelaskan secara singkat apa yang dipelajari di program ini..."
@@ -795,12 +758,14 @@ export function AdminProgramListPage() {
                   />
                 </div>
 
+                </fieldset>
+                <fieldset hidden={wizardStep !== 1} disabled={isSubmitting || wizardStep !== 1} className="space-y-5">
                 <div className="grid gap-4 md:grid-cols-2 p-4 bg-slate-50 rounded-xl border border-slate-100">
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold flex items-center gap-2">
+                    <label htmlFor="program-model" className="text-sm font-semibold flex items-center gap-2">
                       <Settings className="h-4 w-4 text-slate-500" /> Sistem Pembelajaran
                     </label>
-                    <select
+                    <select id="program-model"
                       className="field-control bg-white h-10 shadow-sm"
                       onChange={(event) => setForm((current) => ({ ...current, curriculum_model: event.target.value }))}
                       value={form.curriculum_model}
@@ -810,27 +775,28 @@ export function AdminProgramListPage() {
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold">Status Awal</label>
-                    <select
+                    <label htmlFor="program-status" className="text-sm font-semibold">Status Awal</label>
+                    <select id="program-status"
                       className="field-control bg-white h-10 shadow-sm"
                       onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as ProgramStatus }))}
                       value={form.status}
                     >
-                      <option value="draft">Draft (Disembunyikan)</option>
-                      <option value="active">Active (Terlihat)</option>
+                      <option value="draft">Draf (belum ditampilkan)</option>
+                      {editingProgramId && <option value="active">Aktif (terlihat peserta)</option>}
+                      {form.status === "archived" && <option value="archived">Diarsipkan</option>}
                     </select>
                   </div>
                 </div>
 
                 <div className="p-5 bg-blue-50/50 rounded-xl border border-blue-100 mt-4">
                   <div className="space-y-3">
-                    <label className="text-sm font-semibold text-blue-900 flex items-center gap-2">
+                    <label htmlFor="program-teacher" className="text-sm font-semibold text-blue-900 flex items-center gap-2">
                       <UserCheck className="h-5 w-5 text-blue-600" /> Pengampu Program
                     </label>
                     <p className="text-xs text-blue-700/80 leading-relaxed max-w-full">
-                      Pilih staf pengajar yang bertanggung jawab secara penuh pada program ini. Anda bisa mengosongkannya jika pengajar ditugaskan secara terpisah di setiap Kelas.
+                      Opsional. Bisa ditentukan per kelas nanti.
                     </p>
-                    <select
+                    <select id="program-teacher"
                       className="field-control bg-white h-11 border-blue-200 focus:border-blue-400 focus:ring-blue-400/20 text-slate-700 font-medium w-full shadow-sm"
                       onChange={(event) => setForm((current) => ({ ...current, teacher_user_id: event.target.value }))}
                       value={form.teacher_user_id}
@@ -841,12 +807,14 @@ export function AdminProgramListPage() {
                   </div>
                 </div>
 
+                </fieldset>
+                <fieldset hidden={wizardStep !== 2} disabled={isSubmitting || wizardStep !== 2} className="space-y-5">
                 <div className="grid gap-4 md:grid-cols-2 p-4 bg-amber-50/50 rounded-xl border border-amber-100 mt-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold text-amber-900 flex items-center gap-2">
+                    <label htmlFor="program-payment" className="text-sm font-semibold text-amber-900 flex items-center gap-2">
                       Sistem Pembayaran / SPP
                     </label>
-                    <select
+                    <select id="program-payment"
                       className="field-control bg-white h-10 border-amber-200 focus:border-amber-400 focus:ring-amber-400/20"
                       onChange={(event) => setForm((current) => ({
                         ...current,
@@ -863,10 +831,13 @@ export function AdminProgramListPage() {
                   </div>
                   {form.feature_flags.payment_type === "spp" && (
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold text-amber-900">Nominal SPP (Rp)</label>
-                      <Input
+                      <label htmlFor="program-amount" className="text-sm font-semibold text-amber-900">Nominal SPP (Rp)</label>
+                      <Input id="program-amount"
                         type="number"
-                        min="0"
+                        required
+                        min="1"
+                        onInvalid={(event) => event.currentTarget.setCustomValidity("Isi nominal SPP lebih dari 0.")}
+                        onInput={(event) => event.currentTarget.setCustomValidity("")}
                         className="h-10 border-amber-200 focus:border-amber-400 focus:ring-amber-400/20"
                         placeholder="Contoh: 150000"
                         onChange={(event) => setForm((current) => ({
@@ -884,11 +855,11 @@ export function AdminProgramListPage() {
 
                 <div className="space-y-3 pt-6 border-t mt-6">
                   <label className="text-sm font-semibold flex items-center justify-between pb-2">
-                    <span>Fitur Tambahan (MVP)</span>
+                    <span>Fitur program</span>
                     <span className="text-xs text-muted-foreground font-normal">Pilih fitur yang ingin diaktifkan</span>
                   </label>
                   <div className="grid gap-3 md:grid-cols-2 max-h-[200px] overflow-y-auto pr-2 rounded-xl p-2 bg-muted/20 border border-muted-foreground/10">
-                    {allowedMvpFeatureFlags.map((flag) => {
+                    {allowedMvpFeatureFlags.filter((flag) => flag.startsWith("use_") && !["use_ai_assist", "use_audio_submission", "use_video_submission"].includes(flag)).map((flag) => {
                       const isForbidden = flag === "use_ai_assist" || flag === "use_audio_submission" || flag === "use_video_submission";
                       return (
                         <label key={flag} className={`flex items-start gap-3 p-3 rounded-lg border ${isForbidden ? 'opacity-50 bg-muted' : 'hover:bg-muted/50 cursor-pointer transition-colors'}`}>
@@ -909,18 +880,29 @@ export function AdminProgramListPage() {
                   </div>
                 </div>
 
-                <div className="pt-4 border-t flex justify-end gap-3 sticky bottom-0 bg-background py-4">
-                  <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
-                    Batal
+                </fieldset>
+                {wizardStep === 3 && <section className="program-review" aria-label="Ringkasan program">
+                  <h3>Siap disimpan?</h3>
+                  <dl>
+                    <div><dt>Nama</dt><dd>{form.name}</dd></div>
+                    <div><dt>Kode</dt><dd>{form.code}</dd></div>
+                    <div><dt>Model belajar</dt><dd>{getCurriculumLabel(form.curriculum_model)}</dd></div>
+                    <div><dt>Pengampu</dt><dd>{staff.find((item) => item.id === form.teacher_user_id)?.full_name || "Ditentukan nanti"}</dd></div>
+                    <div><dt>Biaya</dt><dd>{form.feature_flags.payment_type === "spp" ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(Number(form.feature_flags.payment_amount)) : "Gratis"}</dd></div>
+                    <div><dt>Status</dt><dd>{editingProgramId ? statusMeta[form.status].label : "Draf"}</dd></div>
+                  </dl>
+                </section>}
+                <div className="wizard-footer">
+                  <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => wizardStep > 0 ? setWizardStep((step) => step - 1) : setIsModalOpen(false)}>
+                    {wizardStep > 0 ? "Kembali" : "Batal"}
                   </Button>
-                  <Button disabled={isSubmitting} type="submit" className="px-8 shadow-md">
-                    {isSubmitting ? "Menyimpan..." : editingProgramId ? "Simpan Perubahan" : "Buat Program"}
+                  <span className="text-xs text-muted-foreground">{wizardStep + 1} dari 4</span>
+                  <Button disabled={isSubmitting} type="submit">
+                    {isSubmitting ? "Menyimpan…" : wizardStep < 3 ? "Lanjut" : editingProgramId ? "Simpan perubahan" : "Simpan draf"}
                   </Button>
                 </div>
               </form>
-            </CardContent>
-          </Card>
-        </div>
+        </Dialog>
       )}
     </div>
   );
@@ -948,35 +930,5 @@ function ProgramMetricCard({
         <p className="mt-1 text-xs text-muted-foreground">{description}</p>
       </CardContent>
     </Card>
-  );
-}
-
-function ProgramWorkflowItem({
-  done,
-  title,
-  description,
-  action,
-  onClick,
-}: {
-  done: boolean;
-  title: string;
-  description: string;
-  action: string;
-  onClick: () => void;
-}) {
-  return (
-    <div className="rounded-xl border bg-background p-4">
-      <div className="flex items-start gap-3">
-        {done ? <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-600" /> : <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />}
-        <div className="min-w-0">
-          <p className="font-semibold">{title}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-          <Button type="button" variant={done ? "outline" : "default"} size="sm" className="mt-3 h-9 whitespace-nowrap" onClick={onClick}>
-            <Filter className="h-4 w-4" />
-            {action}
-          </Button>
-        </div>
-      </div>
-    </div>
   );
 }

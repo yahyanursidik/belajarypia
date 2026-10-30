@@ -1,3 +1,5 @@
+import { PageHeader } from "../../components/admin/PageHeader";
+import { SectionNav } from "../../components/admin/SectionNav";
 import { type ComponentType, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
@@ -148,7 +150,6 @@ const getMaterialCategoryLabel = (category: DocumentFile["file_category"]) => {
   }
 };
 
-const getCurriculumLabel = (model: string) => model === "angkatan" ? "Terjadwal (Angkatan)" : "Mandiri (Evergreen)";
 
 const getProgramTabFromSegment = (segment?: string): ProgramTab => {
   if (!segment) return "info";
@@ -257,13 +258,13 @@ export function ProgramBuilderPage() {
     if (!managingBankId) return;
     setIsSubmitting(true);
     setErrorMessage(null);
-    
+
     const validQuestions = importPreview.filter(q => q.isValid);
     if (validQuestions.length === 0) {
       setIsSubmitting(false);
       return;
     }
-    
+
     const insertData = validQuestions.map(q => {
       const ops = q.options.map((opt) => opt.text);
       const correctAnswerText = q.options.find((opt) => opt.label === q.correct_answer)?.text || null;
@@ -278,7 +279,7 @@ export function ProgramBuilderPage() {
         points: q.points,
       };
     });
-    
+
     const { error } = await supabase.from("question_bank_items").insert(insertData);
     if (error) {
       setErrorMessage(error.message);
@@ -457,8 +458,8 @@ export function ProgramBuilderPage() {
 
   const openCreateLessonModal = (moduleId: string, mode: "materi" | "kuis") => {
     setLessonModalMode(mode);
-    setLessonForm({ 
-      ...emptyLesson, 
+    setLessonForm({
+      ...emptyLesson,
       module_id: moduleId,
       lesson_type: mode === "kuis" ? "quiz" : "content",
       duration_minutes: mode === "kuis" ? "" : "60",
@@ -601,7 +602,7 @@ export function ProgramBuilderPage() {
     if (!managingLesson) return;
     const selectedIds = Object.keys(selectedBankItems).filter(k => selectedBankItems[k]);
     if (selectedIds.length === 0) return setIsBankSelectModalOpen(false);
-    
+
     const itemsToImport = allBankItems.filter(i => selectedIds.includes(i.id));
     const startOrder = quizQuestions.length;
     const payloads = itemsToImport.map((item, idx) => ({
@@ -905,12 +906,6 @@ export function ProgramBuilderPage() {
     { key: "kelulusan", label: "Kelulusan", desc: "Kriteria, antrean, dan penetapan hasil", icon: Trophy },
   ];
   const activeProgramTab = programTabs.find((tab) => tab.key === activeTab) ?? programTabs[0];
-  const sectionStats = [
-    { label: "Modul", value: programSummary.modules },
-    { label: "Materi", value: programSummary.lessons },
-    { label: "Kelas", value: programSummary.classes },
-    { label: "Bank Soal", value: programSummary.questionBanks },
-  ];
   const selectedLessonModule = modules.find((module) => module.id === lessonForm.module_id);
   const lessonWorkflowSteps = lessonModalMode === "kuis"
     ? [
@@ -927,90 +922,12 @@ export function ProgramBuilderPage() {
   return (
     <div className="page-stack w-full max-w-none">
       {/* ── Header ── */}
-      <div className="page-hero flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className="border-white/35 bg-white/15 font-mono text-white">
-              {program.code}
-            </Badge>
-            <Badge variant="outline" className={statusMeta.className}>
-              {statusMeta.label}
-            </Badge>
-            <Badge variant="outline" className="border-white/35 bg-white/10 text-white">
-              {getCurriculumLabel(program.curriculum_model)}
-            </Badge>
-            <Badge variant="outline" className="border-white/35 bg-white/10 text-white capitalize">
-              {program.delivery_mode}
-            </Badge>
-          </div>
-          <h1 className="mt-3 text-3xl font-bold leading-tight text-white">{program.name}</h1>
-          <p className="mt-2 max-w-3xl text-sm text-white/80">
-            {program.description || "Kelola struktur program, materi, peserta, silabus, bank soal, dan kelulusan dari satu halaman detail."}
-          </p>
-        </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
-          <Button
-            variant="outline"
-            onClick={() => navigate(-1)}
-            className="h-10 min-w-[110px] whitespace-nowrap border-white/35 bg-white/15 !text-white hover:bg-white/25 hover:!text-white"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Kembali
-          </Button>
-          <Button
-            onClick={() => navigateToProgramTab("peserta")}
-            className="h-10 min-w-[140px] whitespace-nowrap bg-white !text-primary shadow-lg hover:bg-white/90"
-          >
-            <Users className="h-4 w-4" />
-            Kelola Peserta
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-[270px_minmax(0,1fr)] lg:items-start">
-        <aside className="lg:sticky lg:top-24">
-          <Card className="overflow-hidden">
-            <CardHeader className="border-b bg-muted/30 pb-3">
-              <CardTitle className="text-base">Menu Program</CardTitle>
-              <p className="text-xs text-muted-foreground">Pindah submenu tanpa meninggalkan detail program.</p>
-            </CardHeader>
-            <CardContent className="grid gap-1.5 p-2">
-              {programTabs.map((tab) => {
-                const Icon = tab.icon;
-                const isActive = activeTab === tab.key;
-
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => navigateToProgramTab(tab.key)}
-                    className={`flex min-h-12 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition ${
-                      isActive ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-muted"
-                    }`}
-                  >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <Icon className="h-4 w-4 shrink-0" />
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-semibold">{tab.label}</span>
-                        <span className={`block truncate text-[11px] ${isActive ? "text-primary-foreground/75" : "text-muted-foreground"}`}>
-                          {tab.desc}
-                        </span>
-                      </span>
-                    </span>
-                    {typeof tab.count === "number" && (
-                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${isActive ? "bg-white/20" : "bg-muted text-muted-foreground"}`}>
-                        {tab.count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </CardContent>
-          </Card>
-        </aside>
-
-        <main className="min-w-0 space-y-6">
-          <ProgramSectionHeader tab={activeProgramTab} stats={sectionStats} />
+      <nav aria-label="Jejak navigasi" className="admin-breadcrumb"><button type="button" onClick={() => navigate(programBasePath.split("/program/")[0] + "/program")}>Program</button><span aria-hidden="true">/</span><span>{program.name}</span></nav>
+      <PageHeader title={program.name} eyebrow={statusMeta.label} />
+      <SectionNav items={programTabs} value={activeTab} onChange={navigateToProgramTab} label="Bagian program" />
+      <div>
+        <div className="min-w-0 space-y-6">
+          <h2 className="text-lg font-semibold">{activeProgramTab.label}</h2>
 
       {/* ── Toast Notifications ── */}
       {(message || errorMessage) && (
@@ -1266,7 +1183,7 @@ export function ProgramBuilderPage() {
       )}
 
       {/* ═══════════════ MODALS ═══════════════ */}
-      
+
       {/* Modal Kelola Soal Kuis */}
       {isQuestionModalOpen && managingLesson && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -1829,7 +1746,7 @@ export function ProgramBuilderPage() {
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="mt-5 p-4 rounded-lg border border-primary/20 bg-background shadow-sm relative overflow-hidden">
                       <div className="absolute top-0 left-0 w-1 h-full bg-primary"></div>
                       <div className="flex items-start justify-between gap-4 mb-3">
@@ -1838,8 +1755,8 @@ export function ProgramBuilderPage() {
                           <p className="text-xs text-muted-foreground mt-0.5">Mencegah peserta pindah tab, copy-paste, dan membatasi aplikasi lain. Direkomendasikan untuk ujian kelulusan.</p>
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
-                          <input 
-                            type="checkbox" 
+                          <input
+                            type="checkbox"
                             className="sr-only peer"
                             checked={lessonForm.is_strict_mode}
                             onChange={(e) => setLessonForm(c => ({ ...c, is_strict_mode: e.target.checked }))}
@@ -1847,7 +1764,7 @@ export function ProgramBuilderPage() {
                           <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
                         </label>
                       </div>
-                      
+
                       {lessonForm.is_strict_mode && (
                         <div className="pt-3 border-t border-primary/10 flex flex-col gap-2">
                           <label className="text-xs font-medium text-foreground">Toleransi Pindah Layar / Tab</label>
@@ -2076,7 +1993,7 @@ export function ProgramBuilderPage() {
                   <label className="text-sm font-semibold mb-1 block">Teks Soal / Pertanyaan <span className="text-red-500">*</span></label>
                   <textarea className="field-control min-h-[100px]" required placeholder="Masukkan pertanyaan..." value={questionForm.question_text} onChange={e => setQuestionForm(c => ({ ...c, question_text: e.target.value }))} />
                 </div>
-                
+
                 {questionForm.question_type === "multiple_choice" ? <div className="space-y-3">
                   <label className="text-sm font-semibold block">Pilihan Jawaban</label>
                   <div className="grid gap-3">
@@ -2114,7 +2031,7 @@ export function ProgramBuilderPage() {
                   <label className="text-sm font-semibold mb-1 block">Penjelasan (Opsional)</label>
                   <textarea className="field-control min-h-[80px]" placeholder="Penjelasan kenapa jawaban tersebut benar..." value={questionForm.explanation} onChange={e => setQuestionForm(c => ({ ...c, explanation: e.target.value }))} />
                 </div>}
-                
+
                 <div>
                   <label className="text-sm font-semibold mb-1 block">Bobot Nilai (Points)</label>
                   <Input type="number" required value={questionForm.points} onChange={e => setQuestionForm(c => ({ ...c, points: Number(e.target.value) }))} className="w-32" />
@@ -2220,9 +2137,9 @@ export function ProgramBuilderPage() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm border mb-2">
                     <label className="flex items-center gap-3 cursor-pointer select-none">
-                      <input 
-                        type="checkbox" 
-                        className="w-5 h-5 shrink-0 accent-primary" 
+                      <input
+                        type="checkbox"
+                        className="w-5 h-5 shrink-0 accent-primary"
                         checked={allBankItems.length > 0 && Object.values(selectedBankItems).filter(Boolean).length === allBankItems.length}
                         onChange={(e) => {
                           if (e.target.checked) {
@@ -2244,8 +2161,8 @@ export function ProgramBuilderPage() {
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm text-foreground line-clamp-2">{q.question_text}</p>
                           <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                            <BookOpen className="h-3 w-3" /> {q.question_banks?.name} 
-                            <span className="opacity-50">•</span> 
+                            <BookOpen className="h-3 w-3" /> {q.question_banks?.name}
+                            <span className="opacity-50">•</span>
                             <span className="truncate">{q.question_banks?.programs?.name || "Program"}</span>
                           </p>
                         </div>
@@ -2317,8 +2234,8 @@ export function ProgramBuilderPage() {
                   ))}
                 </div>
                 <label className="text-sm font-semibold mb-2 block">Teks Sumber Soal</label>
-                <textarea 
-                  className="w-full h-[400px] p-4 text-sm border rounded-xl focus:ring-primary focus:border-primary font-mono text-slate-700 bg-slate-50" 
+                <textarea
+                  className="w-full h-[400px] p-4 text-sm border rounded-xl focus:ring-primary focus:border-primary font-mono text-slate-700 bg-slate-50"
                   placeholder={importQuestionType === "essay"
                     ? "1. Jelaskan makna ikhlas dalam menuntut ilmu.\nPanduan: Menjelaskan niat karena Allah dan contoh penerapannya.\nPoin: 20"
                     : "1. Apa tujuan manusia diciptakan?\nA. Mencari ilmu\nB. Beribadah\nKunci: B\nPoin: 10"}
@@ -2338,7 +2255,7 @@ export function ProgramBuilderPage() {
                     - Awali opsi dengan huruf (<code>A. </code>, <code>B. </code>)<br />
                     - Tambahkan <code>Kunci: [A/B/C/D]</code> dan <code>Poin: 10</code>
                   </>}
-                  
+
                   <div className="mt-3 pt-3 border-t border-blue-200/50">
                     <a href={importQuestionType === "essay" ? "/template-impor-soal-esai.txt" : "/template-impor-soal.txt"} download className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-blue-200 rounded text-blue-700 hover:bg-blue-50 transition-colors font-medium">
                       <FileText className="w-3.5 h-3.5" />
@@ -2361,7 +2278,7 @@ export function ProgramBuilderPage() {
                         <div className="space-y-1 mb-3">
                           {q.options.map((opt, oidx: number) => (
                             <div key={oidx} className="text-xs flex gap-2">
-                              <span className="font-bold text-slate-500">{opt.label}.</span> 
+                              <span className="font-bold text-slate-500">{opt.label}.</span>
                               <span className={opt.label === q.correct_answer ? "font-semibold text-emerald-700 bg-emerald-100 px-1 rounded" : "text-slate-600"}>
                                 {opt.text}
                               </span>
@@ -2392,37 +2309,8 @@ export function ProgramBuilderPage() {
         </div>
       )}
 
-        </main>
+        </div>
       </div>
     </div>
-  );
-}
-
-function ProgramSectionHeader({ tab, stats }: { tab: ProgramTabItem; stats: Array<{ label: string; value: number }> }) {
-  const Icon = tab.icon;
-
-  return (
-    <section className="rounded-xl border bg-card p-5 shadow-sm">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Icon className="h-5 w-5" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-xs font-medium uppercase text-muted-foreground">Halaman Program</p>
-            <h2 className="mt-1 text-2xl font-bold leading-tight">{tab.label}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{tab.desc}</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:min-w-[360px]">
-          {stats.map((stat) => (
-            <div key={stat.label} className="rounded-lg border bg-muted/30 px-3 py-2">
-              <p className="text-[11px] font-medium text-muted-foreground">{stat.label}</p>
-              <p className="mt-1 text-lg font-bold">{stat.value}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
   );
 }

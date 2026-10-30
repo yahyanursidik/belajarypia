@@ -1,5 +1,6 @@
+import { summarizeLearning, type LearningPrerequisite } from "../../lib/learningProgress";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 import {
   ArrowLeft,
   BookOpen,
@@ -82,11 +83,13 @@ function lessonIcon(type: string, isCompleted: boolean) {
 export function LearnerProgramDetailPage() {
   const { programId, section } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuthSession();
   const [program, setProgram] = useState<Program | null>(null);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [modules, setModules] = useState<ProgramModule[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [requirements, setRequirements] = useState<LearningPrerequisite[]>([]);
   const [progressRows, setProgressRows] = useState<LessonProgressRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -173,12 +176,18 @@ export function LearnerProgramDetailPage() {
             .eq("enrollment_id", activeEnrollment.id),
         ]);
 
-        if (lessonResult.error) {
-          setErrorMessage(lessonResult.error.message);
+        if (lessonResult.error || progressResult.error) {
+          setErrorMessage("Materi atau progres belum dapat dimuat. Silakan coba kembali.");
         } else {
           const nextLessons = (lessonResult.data ?? []) as Lesson[];
+          const requirementResult = nextLessons.length ? await supabase.from("lesson_prerequisites").select("lesson_id,prerequisite_lesson_id").in("lesson_id", nextLessons.map((lesson) => lesson.id)) : { data: [], error: null };
+          if (requirementResult.error) { setErrorMessage("Prasyarat materi belum dapat dimuat."); setIsLoading(false); return; }
+          setRequirements(requirementResult.data ?? []);
           setLessons(nextLessons);
-          const firstIncompleteModule = nextModules.find((module) => nextLessons.some((lesson) => lesson.module_id === module.id));
+          const orderedLessons = summarizeLearning(nextModules, nextLessons, progressResult.data ?? [], requirementResult.data ?? []).ordered;
+          setLessons(orderedLessons as Lesson[]);
+          const nextLesson = summarizeLearning(nextModules, nextLessons, progressResult.data ?? [], requirementResult.data ?? []).next;
+          const firstIncompleteModule = nextModules.find((module) => module.id === nextLesson?.module_id) ?? nextModules[0];
           if (firstIncompleteModule) setExpandedModules({ [firstIncompleteModule.id]: true });
         }
         setProgressRows((progressResult.data ?? []) as LessonProgressRow[]);
@@ -193,7 +202,8 @@ export function LearnerProgramDetailPage() {
   const progressByLesson = useMemo(() => new Map(progressRows.map((row) => [row.lesson_id, row])), [progressRows]);
   const completedCount = progressRows.filter((row) => row.status === "completed" && lessons.some((lesson) => lesson.id === row.lesson_id)).length;
   const completion = lessons.length ? Math.round((completedCount / lessons.length) * 100) : 0;
-  const nextLesson = lessons.find((lesson) => progressByLesson.get(lesson.id)?.status !== "completed") ?? lessons[0];
+  const learningSummary = summarizeLearning(modules, lessons, progressRows, requirements);
+  const nextLesson = learningSummary.next;
   const duration = lessons.reduce((total, lesson) => total + (lesson.duration_minutes ?? 0), 0);
   const isSyllabusTab = section === "silabus";
   const syllabusSections = useMemo(() => parseSyllabus(program?.syllabus), [program?.syllabus]);
@@ -228,7 +238,7 @@ export function LearnerProgramDetailPage() {
           <div className="max-w-2xl">
             <Badge variant="outline">{program.code}</Badge>
             <h1 className="mt-3 text-2xl font-bold sm:text-3xl">{program.name}</h1>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{program.description || "Lanjutkan pembelajaran sesuai urutan modul yang tersedia."}</p>
+            {isSyllabusTab && program.description && <p className="mt-2 text-sm leading-6 text-muted-foreground">{program.description}</p>}
           </div>
           <div className="w-full rounded-lg border bg-muted/20 p-4 xl:max-w-md">
             <div className="flex items-center justify-between"><span className="text-sm font-medium">Progres program</span><strong>{completion}%</strong></div>
@@ -238,11 +248,12 @@ export function LearnerProgramDetailPage() {
               <Button asChild className="mt-4 w-full">
                 <Link to={`/learner/lesson/${nextLesson.id}`}>{completion ? "Lanjutkan Belajar" : "Mulai Belajar"}<ChevronRight className="h-4 w-4" /></Link>
               </Button>
-            ) : null}
+            ) : learningSummary.finished ? <Button asChild className="mt-4 w-full"><Link to={`/learner/transkrip/${enrollment.id}`}>Lihat hasil belajar</Link></Button> : null}
           </div>
         </div>
       </section>
 
+      {location.state?.completedLesson && <p role="status" className="learner-success">Progres materi tersimpan.</p>}
       <LearnerProgramNav programId={programId} enrollmentId={enrollment.id} />
 
       {isSyllabusTab ? (
@@ -325,11 +336,12 @@ export function LearnerProgramDetailPage() {
                         {moduleLessons.map((lesson, index) => {
                           const progress = progressByLesson.get(lesson.id);
                           const isCompleted = progress?.status === "completed";
+                          const isLocked = !isCompleted && requirements.some((requirement) => requirement.lesson_id === lesson.id && progressByLesson.get(requirement.prerequisite_lesson_id)?.status !== "completed");
                           return (
                             <li key={lesson.id}>
-                              <Link to={`/learner/lesson/${lesson.id}`} className="group flex items-center gap-3 p-4 transition-colors hover:bg-primary/5">
+                              <Link to={`/learner/lesson/${lesson.id}`} aria-disabled={isLocked} onClick={(event) => { if (isLocked) event.preventDefault(); }} className={`group ${isLocked ? "opacity-60" : ""} flex items-center gap-3 p-4 transition-colors hover:bg-primary/5`}>
                                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted">{lessonIcon(lesson.lesson_type, isCompleted)}</span>
-                                <div className="min-w-0 flex-1"><p className="font-medium group-hover:text-primary">{index + 1}. {lesson.title}</p><div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span className="capitalize">{lesson.lesson_type.replaceAll("_", " ")}</span>{lesson.duration_minutes ? <span className="inline-flex items-center gap-1"><Clock3 className="h-3 w-3" /> {lesson.duration_minutes} menit</span> : null}{progress?.score != null ? <span>Nilai {Number(progress.score).toLocaleString("id-ID")}</span> : null}</div></div>
+                                <div className="min-w-0 flex-1"><p className="font-medium group-hover:text-primary">{index + 1}. {lesson.title}</p>{isLocked && <p className="text-xs text-amber-700">Selesaikan materi prasyarat terlebih dahulu</p>}<div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span className="capitalize">{lesson.lesson_type.replaceAll("_", " ")}</span>{lesson.duration_minutes ? <span className="inline-flex items-center gap-1"><Clock3 className="h-3 w-3" /> {lesson.duration_minutes} menit</span> : null}{progress?.score != null ? <span>Nilai {Number(progress.score).toLocaleString("id-ID")}</span> : null}</div></div>
                                 <Badge variant={isCompleted ? "secondary" : "outline"} className="hidden shrink-0 sm:inline-flex">{isCompleted ? "Selesai" : progress ? "Dilanjutkan" : "Belum mulai"}</Badge>
                                 {progress && !isCompleted ? <RotateCcw className="h-4 w-4 shrink-0 text-muted-foreground" /> : <Circle className="h-4 w-4 shrink-0 text-muted-foreground/50" />}
                               </Link>

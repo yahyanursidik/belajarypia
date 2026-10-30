@@ -28,7 +28,7 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
         {
           href: "/system/pendaftaran", label: "Admisi & Pendaftaran", description: "Pendaftar, verifikasi, form, dan undangan", group: "Akademik", icon: menuIcon.admission, keywords: ["calon peserta", "form", "undangan", "whatsapp"], mobilePriority: 2,
           children: [
-            { href: "/system/pendaftaran", label: "Ringkasan Admisi", description: "Kinerja dan alur pendaftaran" },
+            { href: "/system/pendaftaran?tab=overview", label: "Ringkasan Admisi", description: "Kinerja dan alur pendaftaran" },
             { href: "/system/pendaftaran?tab=review", label: "Verifikasi Pendaftar", description: "Review berkas dan keputusan" },
             { href: "/system/pendaftaran?tab=settings", label: "Form & Undangan", description: "Periode, form, dan grup WA" },
           ],
@@ -36,7 +36,7 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
         {
           href: "/system/peserta", label: "Peserta & Akademik", description: "Direktori, akun, dan transkrip", group: "Akademik", icon: menuIcon.user, keywords: ["siswa", "santri", "transkrip", "import"], mobilePriority: 3,
           children: [
-            { href: "/system/peserta", label: "Ringkasan Peserta" },
+            { href: "/system/peserta?tab=overview", label: "Ringkasan Peserta" },
             { href: "/system/peserta?tab=directory", label: "Direktori Peserta" },
             { href: "/system/peserta?tab=operations", label: "Operasional & Transkrip" },
           ],
@@ -85,53 +85,16 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
       ];
     case "admin":
       return [
-        { href: "/admin", label: "Dashboard", description: "Ringkasan operasional", group: "Ikhtisar", icon: menuIcon.dashboard, mobilePriority: 1 },
-        {
-          href: "/admin/pendaftaran", label: "Admisi & Pendaftaran", description: "Pendaftar, form, dan undangan", group: "Akademik", icon: menuIcon.admission, keywords: ["calon peserta", "verifikasi", "whatsapp"], mobilePriority: 2,
-          children: [
-            { href: "/admin/pendaftaran", label: "Ringkasan Admisi" },
-            { href: "/admin/pendaftaran?tab=review", label: "Verifikasi Pendaftar" },
-            { href: "/admin/pendaftaran?tab=settings", label: "Form & Undangan" },
-          ],
-        },
-        {
-          href: "/admin/peserta", label: "Peserta & Akademik", description: "Direktori, akun, dan transkrip", group: "Akademik", icon: menuIcon.user, keywords: ["siswa", "santri", "transkrip"], mobilePriority: 3,
-          children: [
-            { href: "/admin/peserta", label: "Ringkasan Peserta" },
-            { href: "/admin/peserta?tab=directory", label: "Direktori Peserta" },
-            { href: "/admin/peserta?tab=operations", label: "Operasional & Transkrip" },
-          ],
-        },
-        { href: "/admin/program", label: "Program & Kurikulum", description: "Kelas, materi, dan evaluasi", group: "Akademik", icon: menuIcon.book, keywords: ["silabus", "kelas", "bank soal"], mobilePriority: 4 },
-        { href: "/admin/penilaian", label: "Penilaian Ujian", description: "Koreksi esai dan umpan balik peserta", group: "Akademik", icon: menuIcon.review, keywords: ["esai", "nilai", "ujian", "koreksi"] },
-        {
-          href: "/admin/sertifikat", label: "Syahadah & Sertifikat", description: "Kelayakan dan penerbitan", group: "Akademik", icon: menuIcon.certificate,
-          children: [
-            { href: "/admin/sertifikat", label: "Template Syahadah" },
-            { href: "/admin/sertifikat/kelayakan", label: "Cek Kelayakan" },
-            { href: "/admin/sertifikat/antrean", label: "Antrean Penerbitan" },
-          ],
-        },
-        {
-          href: "/admin/pengumuman", label: "Pengumuman", description: "Publikasi dan komunikasi", group: "Operasional", icon: menuIcon.announcement,
-          children: [
-            { href: "/admin/pengumuman", label: "Ringkasan Kanal" },
-            { href: "/admin/pengumuman?tab=manage", label: "Daftar & Moderasi" },
-            { href: "/admin/pengumuman?tab=compose", label: "Buat Pengumuman" },
-          ],
-        },
-        {
-          href: "/admin/keuangan", label: "Keuangan & Akuntansi", description: "Pembayaran, donasi, dan jurnal", group: "Operasional", icon: menuIcon.finance, keywords: ["infaq", "wakaf", "donatur"],
-          children: [
-            { href: "/admin/keuangan", label: "Ringkasan Keuangan" },
-            { href: "/admin/keuangan?tab=transactions", label: "Transaksi" },
-            { href: "/admin/keuangan?tab=channels", label: "Kanal Pembayaran" },
-            { href: "/admin/keuangan?tab=recurring", label: "Donatur Rutin" },
-            { href: "/admin/keuangan?tab=accounting", label: "Akuntansi" },
-          ],
-        },
-        { href: "/admin/helpdesk", label: "Helpdesk", description: "Tiket dan layanan peserta", group: "Operasional", icon: menuIcon.helpdesk },
-        { href: "/admin/konten", label: "Review Konten", description: "Moderasi materi pembelajaran", group: "Tata Kelola", icon: menuIcon.contentReview },
+        { href: "/admin", label: "Dashboard", group: "Utama", icon: menuIcon.dashboard, mobilePriority: 1 },
+        { href: "/admin/pendaftaran", label: "Pendaftaran", group: "Akademik", icon: menuIcon.admission, keywords: ["admisi", "verifikasi", "form", "undangan"], mobilePriority: 2 },
+        { href: "/admin/peserta", label: "Peserta", group: "Akademik", icon: menuIcon.user, keywords: ["direktori", "transkrip", "impor"], mobilePriority: 3 },
+        { href: "/admin/program", label: "Program", group: "Akademik", icon: menuIcon.book, keywords: ["kurikulum", "kelas", "materi", "bank soal"], mobilePriority: 4 },
+        { href: "/admin/penilaian", label: "Penilaian", group: "Akademik", icon: menuIcon.review },
+        { href: "/admin/sertifikat", label: "Sertifikat", group: "Akademik", icon: menuIcon.certificate, activePathPrefixes: ["/admin/sertifikat"] },
+        { href: "/admin/keuangan", label: "Keuangan", group: "Operasional", icon: menuIcon.finance },
+        { href: "/admin/pengumuman", label: "Pengumuman", group: "Operasional", icon: menuIcon.announcement },
+        { href: "/admin/helpdesk", label: "Bantuan", group: "Operasional", icon: menuIcon.helpdesk },
+        { href: "/admin/konten", label: "Review Konten", group: "Operasional", icon: menuIcon.contentReview },
       ];
     case "finance":
       return [
@@ -184,18 +147,12 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
       ];
     case "participant":
       return [
-        { href: "/learner", label: "Dashboard", description: "Agenda dan progres belajar", group: "Ikhtisar", icon: menuIcon.dashboard, mobilePriority: 1 },
-        {
-          href: "/learner/program-saya", label: "Program Saya", description: "Materi, kuis, dan progres", group: "Pembelajaran", icon: menuIcon.book, mobilePriority: 2,
-          activePathPrefixes: ["/learner/program", "/learner/lesson", "/learner/transkrip"],
-        },
-        {
-          href: "/learner/cek-status", label: "Cek Pendaftaran", description: "Status admisi program", group: "Administrasi", icon: menuIcon.admission,
-          activePathPrefixes: ["/learner/pendaftaran"],
-        },
-        { href: "/learner/keuangan", label: "Keuangan", description: "Pembayaran dan riwayat transaksi", group: "Administrasi", icon: menuIcon.finance, mobilePriority: 3 },
-        { href: "/learner/profil", label: "Profil Saya", description: "Identitas dan keamanan akun", group: "Akun", icon: menuIcon.user, mobilePriority: 4 },
-        { href: "/learner/bantuan", label: "Bantuan", description: "Panduan dan layanan peserta", group: "Layanan", icon: menuIcon.helpdesk },
+        { href: "/learner", label: "Beranda", group: "Belajar", icon: menuIcon.dashboard, mobilePriority: 1 },
+        { href: "/learner/program-saya", label: "Program", group: "Belajar", icon: menuIcon.book, mobilePriority: 2, activePathPrefixes: ["/learner/program", "/learner/lesson", "/learner/transkrip"] },
+        { href: "/learner/keuangan", label: "Pembayaran", group: "Akun", icon: menuIcon.finance, mobilePriority: 3 },
+        { href: "/learner/profil", label: "Akun", group: "Akun", icon: menuIcon.user, mobilePriority: 4 },
+        { href: "/learner/cek-status", label: "Pendaftaran", group: "Akun", icon: menuIcon.admission, activePathPrefixes: ["/learner/pendaftaran"] },
+        { href: "/learner/bantuan", label: "Bantuan", group: "Akun", icon: menuIcon.helpdesk },
       ];
     default:
       return [

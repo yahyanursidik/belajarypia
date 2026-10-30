@@ -1,5 +1,8 @@
+import { EmptyState } from "../../components/ui/empty-state";
+import { PageHeader } from "../../components/admin/PageHeader";
+import { SectionNav } from "../../components/admin/SectionNav";
 import { useEffect, useMemo, useState, type ComponentType } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Plus, Search, User, Filter, MapPin, GraduationCap, Phone, Upload, Download, Users, UserCheck, PieChart, BadgeCheck, Settings, Key, X, Loader2, CheckCircle2, AlertCircle, FileText, AlertTriangle, FileUp, LayoutDashboard, ClipboardList, Database, RefreshCw, ArrowRight, Mail, Building2, Eye, ImageIcon, PenLine, RotateCcw, Save } from "lucide-react";
 import Papa from "papaparse";
 import { Button } from "../../components/ui/button";
@@ -55,27 +58,28 @@ function isTranscriptColumnError(message: string | null | undefined) {
 
 export function AdminParticipantListPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const basePath = location.pathname.startsWith("/system") ? "/system" : "/admin";
   const [searchParams, setSearchParams] = useSearchParams();
   const [participants, setParticipants] = useState<ParticipantRow[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const activeTabParam = searchParams.get("tab");
-  const activeTab = participantTabs.some((tab) => tab.key === activeTabParam) ? activeTabParam as ParticipantTab : "overview";
+  const activeTab = participantTabs.some((tab) => tab.key === activeTabParam) ? activeTabParam as ParticipantTab : "directory";
   const changeTab = (tab: ParticipantTab) => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
-      if (tab === "overview") next.delete("tab");
-      else next.set("tab", tab);
+      next.set("tab", tab);
       return next;
     }, { replace: true });
   };
   const [feedback, setFeedback] = useState<{ message: string; type: "success" | "error" } | null>(null);
-  
+
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [programFilter, setProgramFilter] = useState<string>("all");
-  
+
   // Pagination & Debounce
   const [page, setPage] = useState(1);
   const [perPage] = useState(20);
@@ -85,7 +89,7 @@ export function AdminParticipantListPage() {
 
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
-  
+
   type PreviewRow = {
     data: any;
     isValid: boolean;
@@ -98,7 +102,7 @@ export function AdminParticipantListPage() {
   const [previewData, setPreviewData] = useState<PreviewRow[]>([]);
   const [uploadStats, setUploadStats] = useState({ successNew: 0, successExisting: 0, fail: 0, total: 0, processed: 0 });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // Reset Password State
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [resetParticipant, setResetParticipant] = useState<ParticipantRow | null>(null);
@@ -198,7 +202,7 @@ export function AdminParticipantListPage() {
     e.preventDefault();
     setIsSavingTranscript(true);
     setTranscriptErrorMsg("");
-    
+
     try {
       if (!transcriptSettings.id) {
         throw new Error("Data system_settings belum tersedia. Buka Pengaturan Global terlebih dahulu atau jalankan seed system_settings.");
@@ -219,7 +223,7 @@ export function AdminParticipantListPage() {
       if (signatureFile) {
         const fileExt = signatureFile.name.split('.').pop();
         const fileName = `transcript_signature_${Date.now()}.${fileExt}`;
-        
+
         const { error: uploadError } = await supabase.storage
           .from("system_assets")
           .upload(fileName, signatureFile, { upsert: true });
@@ -271,26 +275,26 @@ export function AdminParticipantListPage() {
       setResetFeedback({ message: "Peserta ini belum tertaut ke akun login, jadi sandi belum bisa direset.", type: "error" });
       return;
     }
-    
+
     setIsResetting(true);
     setResetFeedback(null);
-    
+
     try {
       const { error } = await supabase.rpc('admin_reset_user_password', {
         target_user_id: resetParticipant.user_id,
         new_password: resetPassword
       });
-      
+
       if (error) throw error;
-      
+
       setResetFeedback({ message: "Kata sandi berhasil diubah secara paksa!", type: "success" });
       setResetPassword("");
-      
+
       // Auto close after 2.5 seconds
       setTimeout(() => {
         setIsResetModalOpen(false);
       }, 2500);
-      
+
     } catch (err: any) {
       setResetFeedback({ message: "Gagal mereset sandi: " + err.message, type: "error" });
     } finally {
@@ -339,7 +343,7 @@ export function AdminParticipantListPage() {
       supabase.from("participants").select('*', { count: 'exact', head: true }).eq('gender', 'Laki-laki'),
       supabase.from("participants").select('*', { count: 'exact', head: true }).eq('gender', 'Perempuan')
     ]);
-    
+
     setStats({
       total: total || 0,
       active: active || 0,
@@ -406,7 +410,7 @@ export function AdminParticipantListPage() {
   const handleCreateParticipant = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    
+
     const nis = form.global_participant_number.trim() || `NIS-${Date.now().toString().slice(-6)}`;
 
     const { data, error } = await supabase.rpc("admin_create_participant_with_user", {
@@ -448,7 +452,7 @@ export function AdminParticipantListPage() {
       void fetchInitialData();
       void fetchParticipants();
     }
-    
+
     setIsSubmitting(false);
   };
 
@@ -494,7 +498,7 @@ export function AdminParticipantListPage() {
           if (!row["Email"]) errors.push("Email kosong");
           if (!row["Password"] || row["Password"].length < 6) errors.push("Password tidak valid (min. 6 karakter)");
           if (!row["Kode Program"]) errors.push("Kode Program kosong");
-          
+
           if (errors.length > 0) isValid = false;
 
           return {
@@ -503,7 +507,7 @@ export function AdminParticipantListPage() {
             errorMsg: errors.join(", ")
           };
         });
-        
+
         setPreviewData(preview);
         setUploadStats({ successNew: 0, successExisting: 0, fail: 0, total: preview.length, processed: 0 });
         setMassUploadStep(2);
@@ -519,7 +523,7 @@ export function AdminParticipantListPage() {
   const executeUpload = async () => {
     setIsSubmitting(true);
     setMassUploadStep(3);
-    
+
     let successNewCount = 0;
     let successExistingCount = 0;
     let failCount = 0;
@@ -531,9 +535,9 @@ export function AdminParticipantListPage() {
       const row = validRows[i].data;
       processed++;
       setUploadStats(prev => ({ ...prev, processed }));
-      
+
       const nis = (row["Nomor Induk"]?.trim()) || `NIS-${Date.now().toString().slice(-4)}${i}`;
-      
+
       const { data, error } = await supabase.rpc("admin_create_participant_with_user", {
         p_email: row["Email"].trim(),
         p_password: row["Password"].trim(),
@@ -546,7 +550,7 @@ export function AdminParticipantListPage() {
         p_education: row["Pendidikan"] || "",
         p_program_code: row["Kode Program"].trim()
       });
-      
+
       if (error) {
         failCount++;
       } else {
@@ -558,7 +562,7 @@ export function AdminParticipantListPage() {
         }
       }
     }
-    
+
     setUploadStats(prev => ({ ...prev, successNew: successNewCount, successExisting: successExistingCount, fail: failCount }));
     setMassUploadStep(4);
     setIsSubmitting(false);
@@ -568,42 +572,25 @@ export function AdminParticipantListPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 max-w-7xl mx-auto pb-10">
-      <section className="page-hero">
-        <Badge variant="secondary" className="mb-4 bg-white/20 text-white border-white/30 backdrop-blur-sm shadow-sm">PESERTA & PROFIL</Badge>
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:flex h-16 w-16 rounded-2xl bg-white/10 items-center justify-center border border-white/20 backdrop-blur-sm shadow-inner">
-              <Users className="h-8 w-8 text-white" />
-            </div>
-            <div>
-              <h2 className="text-white text-3xl font-bold tracking-tight">Direktori Peserta</h2>
-              <p className="text-white/80 max-w-xl text-sm md:text-base mt-1">
-                Pusat manajemen profil, kontak, dan riwayat pendaftaran peserta.
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Button 
+      <PageHeader title="Peserta" actions={<>
+{activeTab === "operations" && (            <Button
               onClick={() => setIsTranscriptConfigOpen(true)}
-              className="border border-white/30 bg-white/15 !text-white shadow-sm hover:bg-white/25"
+              variant="outline"
             >
               <Settings className="w-4 h-4 mr-2" /> Konfigurasi Transkrip
-            </Button>
-            <Button 
+            </Button>)}
+            <Button
               onClick={() => setIsMassUploadOpen(true)}
-              className="border border-white/30 bg-white/15 !text-white shadow-sm hover:bg-white/25"
+              variant="outline"
             >
               <Upload className="w-4 h-4 mr-2" /> Upload Massal
             </Button>
-            <Button 
+            <Button
               onClick={() => setIsModalOpen(true)}
-              className="bg-white !text-primary shadow-lg hover:bg-white/90"
+
             >
               <Plus className="w-4 h-4 mr-2" /> Peserta Baru
-            </Button>
-          </div>
-        </div>
-      </section>
+            </Button> </>} />
 
       {feedback && (
         <div className={`flex items-start gap-3 rounded-xl border p-4 shadow-sm ${
@@ -626,29 +613,7 @@ export function AdminParticipantListPage() {
         </div>
       )}
 
-      <div className="grid gap-3 rounded-xl border bg-white p-2 shadow-sm md:grid-cols-3">
-        {participantTabs.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.key;
-
-          return (
-            <button
-              className={`flex items-start gap-3 rounded-lg p-4 text-left transition-colors ${
-                isActive ? "bg-primary text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
-              }`}
-              key={item.key}
-              onClick={() => changeTab(item.key)}
-              type="button"
-            >
-              <Icon className={`mt-0.5 h-5 w-5 ${isActive ? "text-white" : "text-primary"}`} />
-              <span>
-                <span className="block text-sm font-bold">{item.label}</span>
-                <span className={`mt-0.5 block text-xs ${isActive ? "text-white/75" : "text-slate-500"}`}>{item.desc}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <SectionNav items={participantTabs} value={activeTab} onChange={changeTab} label="Bagian halaman" />
 
       {activeTab === "overview" && (
         <>
@@ -789,7 +754,7 @@ export function AdminParticipantListPage() {
             </div>
             <div className="flex items-center gap-2 bg-muted/20 px-3 py-1.5 rounded-lg border border-muted/40 h-10">
               <Filter className="h-4 w-4 text-muted-foreground hidden sm:block" />
-              <select 
+              <select
                 className="bg-transparent border-none text-sm font-medium focus:ring-0 outline-none cursor-pointer text-slate-700"
                 value={programFilter}
                 onChange={(e) => setProgramFilter(e.target.value)}
@@ -800,7 +765,7 @@ export function AdminParticipantListPage() {
                 ))}
               </select>
               <div className="w-px h-4 bg-border mx-1"></div>
-              <select 
+              <select
                 className="bg-transparent border-none text-sm font-medium focus:ring-0 outline-none cursor-pointer text-slate-700"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
@@ -814,7 +779,7 @@ export function AdminParticipantListPage() {
         </CardHeader>
 
         <CardContent className="p-0">
-          <div className="overflow-x-auto min-h-[400px]">
+          {!isLoading && participants.length === 0 ? <EmptyState title="Tidak ada peserta" description="Tambah peserta atau sesuaikan filter pencarian." className="min-h-64 border-0" /> : <div className="overflow-x-auto min-h-[300px]">
             <table className="w-full text-sm text-left">
               <thead className="bg-slate-50/80 border-b border-border/50 text-slate-500 text-xs uppercase tracking-wider">
                 <tr>
@@ -891,8 +856,8 @@ export function AdminParticipantListPage() {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end items-center gap-1.5">
-                          <Button 
-                            variant="ghost" 
+                          <Button
+                            variant="ghost"
                             size="icon"
                             className="h-8 w-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-full shadow-sm border border-transparent hover:border-amber-200"
                             onClick={() => {
@@ -905,11 +870,11 @@ export function AdminParticipantListPage() {
                           >
                             <Key className="h-4 w-4" />
                           </Button>
-                          <Button 
-                            variant="ghost" 
+                          <Button
+                            variant="ghost"
                             size="sm"
                             className="hover:bg-primary/10 hover:text-primary rounded-full shadow-sm"
-                            onClick={() => navigate(`/system/peserta/${p.id}`)}
+                            onClick={() => navigate(`${basePath}/peserta/${p.id}`)}
                           >
                             Lihat Detail
                           </Button>
@@ -920,8 +885,8 @@ export function AdminParticipantListPage() {
                 )}
               </tbody>
             </table>
-          </div>
-          
+          </div>}
+
           {/* Pagination Controls */}
           {totalPages > 1 && (
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4 border-t bg-slate-50/50">
@@ -929,9 +894,9 @@ export function AdminParticipantListPage() {
                 Menampilkan <span className="font-medium text-slate-700">{(page - 1) * perPage + 1}</span> hingga <span className="font-medium text-slate-700">{Math.min(page * perPage, totalCount)}</span> dari <span className="font-medium text-slate-700">{totalCount}</span> peserta
               </span>
               <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
                   className="bg-white"
@@ -941,9 +906,9 @@ export function AdminParticipantListPage() {
                 <div className="flex items-center justify-center px-4 text-sm font-medium border rounded-md bg-white text-slate-700 min-w-[3rem]">
                   {page} / {totalPages}
                 </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages || totalPages === 0}
                   className="bg-white"
@@ -1040,59 +1005,59 @@ export function AdminParticipantListPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Nomor Induk (NIS) <span className="text-muted-foreground font-normal text-xs ml-1">(Kosongkan untuk otomatis)</span></label>
-                    <Input 
-                      placeholder="Contoh: NIS-2026001" 
+                    <Input
+                      placeholder="Contoh: NIS-2026001"
                       className="h-10"
-                      value={form.global_participant_number} 
-                      onChange={e => setForm({...form, global_participant_number: e.target.value})} 
+                      value={form.global_participant_number}
+                      onChange={e => setForm({...form, global_participant_number: e.target.value})}
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Nama Lengkap <span className="text-red-500">*</span></label>
-                    <Input 
-                      required 
-                      placeholder="Masukkan nama lengkap peserta" 
+                    <Input
+                      required
+                      placeholder="Masukkan nama lengkap peserta"
                       className="h-10"
-                      value={form.display_name} 
-                      onChange={e => setForm({...form, display_name: e.target.value})} 
+                      value={form.display_name}
+                      onChange={e => setForm({...form, display_name: e.target.value})}
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Email <span className="text-red-500">*</span></label>
-                    <Input 
-                      required 
+                    <Input
+                      required
                       type="email"
-                      placeholder="contoh@email.com" 
+                      placeholder="contoh@email.com"
                       className="h-10"
-                      value={form.email} 
-                      onChange={e => setForm({...form, email: e.target.value})} 
+                      value={form.email}
+                      onChange={e => setForm({...form, email: e.target.value})}
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Password <span className="text-red-500">*</span></label>
-                    <Input 
-                      required 
+                    <Input
+                      required
                       type="password"
-                      placeholder="Minimal 6 karakter" 
+                      placeholder="Minimal 6 karakter"
                       className="h-10"
-                      value={form.password} 
-                      onChange={e => setForm({...form, password: e.target.value})} 
+                      value={form.password}
+                      onChange={e => setForm({...form, password: e.target.value})}
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Kode Program <span className="text-muted-foreground font-normal text-xs ml-1">(Opsional)</span></label>
-                    <Input 
-                      placeholder="Contoh: PRG-2026" 
+                    <Input
+                      placeholder="Contoh: PRG-2026"
                       className="h-10"
-                      value={form.program_code} 
-                      onChange={e => setForm({...form, program_code: e.target.value})} 
+                      value={form.program_code}
+                      onChange={e => setForm({...form, program_code: e.target.value})}
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Jenis Kelamin</label>
-                    <select 
-                      className="w-full h-10 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" 
-                      value={form.gender} 
+                    <select
+                      className="w-full h-10 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      value={form.gender}
                       onChange={e => setForm({...form, gender: e.target.value})}
                     >
                       <option value="Laki-laki">Laki-laki</option>
@@ -1101,11 +1066,11 @@ export function AdminParticipantListPage() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Tanggal Lahir</label>
-                    <Input 
+                    <Input
                       type="date"
                       className="h-10"
-                      value={form.birth_date} 
-                      onChange={e => setForm({...form, birth_date: e.target.value})} 
+                      value={form.birth_date}
+                      onChange={e => setForm({...form, birth_date: e.target.value})}
                     />
                   </div>
                 </div>
@@ -1113,19 +1078,19 @@ export function AdminParticipantListPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2">
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">No. WhatsApp</label>
-                    <Input 
+                    <Input
                       type="tel"
                       placeholder="Contoh: 08123456789"
                       className="h-10"
-                      value={form.phone} 
-                      onChange={e => setForm({...form, phone: e.target.value})} 
+                      value={form.phone}
+                      onChange={e => setForm({...form, phone: e.target.value})}
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Pendidikan Terakhir</label>
-                    <select 
-                      className="w-full h-10 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" 
-                      value={form.education_level} 
+                    <select
+                      className="w-full h-10 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      value={form.education_level}
                       onChange={e => setForm({...form, education_level: e.target.value})}
                     >
                       <option value="">- Pilih -</option>
@@ -1142,11 +1107,11 @@ export function AdminParticipantListPage() {
 
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-slate-700">Kota / Domisili</label>
-                  <Input 
-                    placeholder="Contoh: Jakarta Selatan" 
+                  <Input
+                    placeholder="Contoh: Jakarta Selatan"
                     className="h-10"
-                    value={form.city} 
-                    onChange={e => setForm({...form, city: e.target.value})} 
+                    value={form.city}
+                    onChange={e => setForm({...form, city: e.target.value})}
                   />
                 </div>
 
@@ -1171,7 +1136,7 @@ export function AdminParticipantListPage() {
               <CardDescription className="text-white/80">Impor banyak data peserta sekaligus menggunakan file CSV.</CardDescription>
             </div>
             <CardContent className="p-6 bg-white max-h-[85vh] overflow-y-auto">
-              
+
               {massUploadStep === 1 && (
                 <div className="space-y-5 animate-in slide-in-from-right-4 duration-300">
                   <div className="bg-primary/5 text-primary p-4 rounded-lg text-sm border border-primary/20 shadow-sm">
@@ -1181,8 +1146,8 @@ export function AdminParticipantListPage() {
                       <li>Baris pertama harus berisi judul kolom (Header).</li>
                       <li>Kolom <strong>Nama Lengkap, No WhatsApp, Email, Password, dan Kode Program</strong> wajib diisi.</li>
                     </ul>
-                    <Button 
-                      variant="ghost" 
+                    <Button
+                      variant="ghost"
                       className="p-0 h-auto text-primary font-bold mt-3 hover:text-primary/80"
                       onClick={handleDownloadTemplate}
                     >
@@ -1192,9 +1157,9 @@ export function AdminParticipantListPage() {
 
                   <div className="space-y-2">
                     <label className="text-sm font-semibold block text-slate-700">Pilih File CSV</label>
-                    <Input 
-                      type="file" 
-                      accept=".csv" 
+                    <Input
+                      type="file"
+                      accept=".csv"
                       className="h-10 cursor-pointer"
                       onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
                       disabled={isSubmitting}
@@ -1224,7 +1189,7 @@ export function AdminParticipantListPage() {
                       </span>
                     </div>
                   </div>
-                  
+
                   <div className="border border-slate-200 rounded-xl overflow-hidden h-[400px] overflow-y-auto bg-slate-50 shadow-inner">
                     <table className="w-full text-sm text-left">
                       <thead className="bg-slate-100 sticky top-0 border-b border-slate-200 z-10">
@@ -1241,8 +1206,8 @@ export function AdminParticipantListPage() {
                         {previewData.map((row, idx) => (
                           <tr key={idx} className={row.isValid ? "hover:bg-emerald-50/30 transition-colors" : "bg-red-50/50 hover:bg-red-50 transition-colors"}>
                             <td className="px-4 py-3">
-                              {row.isValid ? 
-                                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200"><CheckCircle2 className="w-3 h-3 mr-1" /> Valid</Badge> : 
+                              {row.isValid ?
+                                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200"><CheckCircle2 className="w-3 h-3 mr-1" /> Valid</Badge> :
                                 <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200"><AlertTriangle className="w-3 h-3 mr-1" /> Error</Badge>
                               }
                             </td>
@@ -1259,9 +1224,9 @@ export function AdminParticipantListPage() {
 
                   <div className="pt-4 flex justify-between items-center border-t border-border/50 mt-6">
                     <Button type="button" variant="outline" className="px-6" onClick={() => setMassUploadStep(1)}>Kembali</Button>
-                    <Button 
-                      onClick={executeUpload} 
-                      disabled={previewData.filter(r => r.isValid).length === 0} 
+                    <Button
+                      onClick={executeUpload}
+                      disabled={previewData.filter(r => r.isValid).length === 0}
                       className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 shadow-md"
                     >
                       <Upload className="w-4 h-4 mr-2" />
@@ -1282,8 +1247,8 @@ export function AdminParticipantListPage() {
                     <p className="text-slate-500 mt-2">Sedang memproses {uploadStats.processed} dari {previewData.filter(r => r.isValid).length} data valid.</p>
                   </div>
                   <div className="w-full max-w-md bg-slate-100 h-3 rounded-full overflow-hidden mt-4 shadow-inner">
-                    <div 
-                      className="bg-primary h-full transition-all duration-300 ease-out relative" 
+                    <div
+                      className="bg-primary h-full transition-all duration-300 ease-out relative"
                       style={{ width: `${(uploadStats.processed / Math.max(1, previewData.filter(r => r.isValid).length)) * 100}%` }}
                     >
                       <div className="absolute inset-0 bg-white/20 w-full h-full animate-[shimmer_1s_infinite]"></div>
@@ -1301,7 +1266,7 @@ export function AdminParticipantListPage() {
                     <h3 className="text-2xl font-bold text-slate-800">Import Selesai!</h3>
                     <p className="text-slate-500 mt-2">Proses unggah massal telah selesai dijalankan.</p>
                   </div>
-                  
+
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-xl mt-6">
                     <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center shadow-sm flex flex-col justify-center">
                       <p className="text-4xl font-bold text-emerald-600">{uploadStats.successNew}</p>
@@ -1653,19 +1618,19 @@ export function AdminParticipantListPage() {
               <form onSubmit={handleResetPassword} className="space-y-5">
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-slate-700">Sandi Baru <span className="text-red-500">*</span></label>
-                  <Input 
-                    required 
+                  <Input
+                    required
                     type="text"
-                    placeholder="Minimal 6 karakter" 
+                    placeholder="Minimal 6 karakter"
                     className="h-10 text-lg tracking-wider font-mono"
-                    value={resetPassword} 
-                    onChange={e => setResetPassword(e.target.value)} 
+                    value={resetPassword}
+                    onChange={e => setResetPassword(e.target.value)}
                   />
                   <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
                     Sandi ini akan langsung menimpa sandi lama. Pastikan Anda menginformasikan kata sandi baru ini kepada peserta yang bersangkutan.
                   </p>
                 </div>
-                
+
                 <div className="flex items-center gap-3 justify-end pt-4 border-t mt-6">
                   <Button type="button" variant="ghost" onClick={() => setIsResetModalOpen(false)}>Batal</Button>
                   <Button type="submit" disabled={isResetting || resetPassword.length < 6} className="bg-amber-500 hover:bg-amber-600 min-w-[120px]">

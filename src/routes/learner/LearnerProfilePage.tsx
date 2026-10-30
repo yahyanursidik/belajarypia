@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthSession } from "../../app/providers/authSessionContext";
@@ -206,6 +207,7 @@ export function LearnerProfilePage() {
 
   return (
     <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6">
+      <nav className="learner-account-links" aria-label="Layanan akun"><Link to="/learner/cek-status">Status pendaftaran</Link><Link to="/learner/bantuan">Bantuan</Link></nav>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Profil Saya</h1>
