@@ -1,3 +1,4 @@
+import {getThemeStyles} from "../../lib/theme";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff, KeyRound, Loader2 } from "lucide-react";
@@ -52,7 +53,7 @@ export function UpdatePasswordPage() {
   const loginLogo = settings?.login_logo_url || settings?.logo_url;
 
   return (
-    <div className="portal-login portal-login--learner">
+    <div className="portal-login portal-login--learner" style={getThemeStyles(settings?.portal_themes?.public)}>
       <div className="portal-login__watermark" aria-hidden="true">
         <KeyRound />
       </div>

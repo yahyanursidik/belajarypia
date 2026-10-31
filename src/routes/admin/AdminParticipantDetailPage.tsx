@@ -1,5 +1,10 @@
-import { type ComponentType, type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { PageHeader } from "../../components/admin/PageHeader";
+import { SectionNav } from "../../components/admin/SectionNav";
+import { Dialog } from "../../components/ui/dialog";
+import { ParticipantAccessDialog } from "../../components/participants/ParticipantAccessDialog";
+import { ParticipantProgramPicker } from "../../components/participants/ParticipantProgramPicker";
+import { type ComponentType, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   ArrowLeft,
@@ -60,7 +65,7 @@ type GuardianRelation = GuardianParticipant & {
 };
 
 type EnrollmentRow = Enrollment & {
-  programs?: { code: string | null; name: string | null } | null;
+  programs?: { code: string | null; name: string | null; curriculum_model?: string } | null;
   batches?: { code: string | null; name: string | null } | null;
   classes?: { name: string | null; teacher_user_id: string | null; profiles?: { full_name: string | null } | null } | null;
   halaqahs?: { name: string | null; mentor_user_id: string | null } | null;
@@ -133,15 +138,24 @@ export function AdminParticipantDetailPage() {
   const location = useLocation();
   const basePath = location.pathname.startsWith("/system") ? "/system" : "/admin";
 
-  const [activeTab, setActiveTab] = useState<DetailTab>("overview");
+  const [searchParams,setSearchParams] = useSearchParams();
+  const activeTab: DetailTab = detailTabs.some((tab) => tab.key === searchParams.get("tab")) ? searchParams.get("tab") as DetailTab : "overview";
+  const setActiveTab = (tab: DetailTab) => setSearchParams((current) => { const next=new URLSearchParams(current);next.set("tab",tab);return next; });
+  const [isAccessOpen,setIsAccessOpen] = useState(false);
+  const [isProgramPickerOpen,setIsProgramPickerOpen] = useState(false);
+  const requestedReturn = searchParams.get("returnTo") ?? "";
+  const directoryPath = requestedReturn === `${basePath}/peserta` || requestedReturn.startsWith(`${basePath}/peserta?`) ? requestedReturn : `${basePath}/peserta`;
+  const openAccount = () => participant?.user_id ? setIsAccessOpen(true) : navigate(basePath === "/system" ? "/system/pengguna" : "/admin/helpdesk");
   const [participant, setParticipant] = useState<ParticipantDetail | null>(null);
   const [guardianRels, setGuardianRels] = useState<GuardianRelation[]>([]);
   const [enrollments, setEnrollments] = useState<EnrollmentRow[]>([]);
   const [lastLoginAt, setLastLoginAt] = useState<string | null>(null);
+  const [loginActivityAvailable,setLoginActivityAvailable] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
 
+  const [guardianToRemove, setGuardianToRemove] = useState<string | null>(null);
   const [isGuardianModalOpen, setIsGuardianModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<ProfileLite[]>([]);
   const [profileSearch, setProfileSearch] = useState("");
@@ -154,7 +168,10 @@ export function AdminParticipantDetailPage() {
   const completedEnrollments = enrollments.filter((item) => item.enrollment_status === "completed").length;
   const pendingEnrollments = enrollments.filter((item) => item.enrollment_status === "pending").length;
   const primaryGuardian = guardianRels.find((item) => item.is_primary);
-  const hasClassPlacement = enrollments.some((item) => Boolean(item.class_id || item.classes?.name));
+  const scheduled = enrollments.filter((item) => item.enrollment_status === "active" && item.programs?.curriculum_model === "angkatan");
+  const hasClassPlacement = scheduled.length > 0 && scheduled.every((item) => Boolean(item.class_id || item.halaqah_id));
+  const needsGuardian = participant?.participant_type === "child";
+  const needsPlacement = scheduled.length > 0;
 
   const completionItems = useMemo(
     () => [
@@ -162,11 +179,11 @@ export function AdminParticipantDetailPage() {
       { label: "Email kontak", done: Boolean(profileData?.email), icon: Mail },
       { label: "Nomor telepon", done: Boolean(profileData?.phone || participant?.phone), icon: Phone },
       { label: "Domisili", done: Boolean(participant?.city), icon: MapPin },
-      { label: "Wali utama", done: Boolean(primaryGuardian), icon: Users },
+      ...(needsGuardian ? [{ label: "Wali utama", done: Boolean(primaryGuardian), icon: Users }] : []),
       { label: "Program aktif", done: activeEnrollments > 0, icon: BookOpen },
-      { label: "Penempatan kelas", done: hasClassPlacement, icon: GraduationCap },
+      ...(needsPlacement ? [{ label: "Penempatan kelas", done: hasClassPlacement, icon: GraduationCap }] : []),
     ],
-    [activeEnrollments, hasClassPlacement, participant, primaryGuardian, profileData],
+    [activeEnrollments, hasClassPlacement, participant, primaryGuardian, profileData, needsGuardian, needsPlacement],
   );
 
   const completionPercent = Math.round((completionItems.filter((item) => item.done).length / completionItems.length) * 100);
@@ -176,8 +193,15 @@ export function AdminParticipantDetailPage() {
       title: "Validasi akun peserta",
       description: participant?.user_id ? "Peserta sudah terhubung dengan akun login." : "Tautkan peserta ke akun login agar dapat mengakses portal.",
       done: Boolean(participant?.user_id),
-      action: "Kelola akun",
-      onClick: () => navigate(`${basePath}/pengguna`),
+      action: participant?.user_id ? "Kelola akses" : basePath === "/system" ? "Kelola pengguna" : "Bantuan akun",
+      onClick: () => openAccount(),
+    },
+    {
+      title: "Program belajar",
+      description: activeEnrollments > 0 ? "Peserta memiliki program aktif." : "Pilih program untuk mulai belajar.",
+      done: activeEnrollments > 0,
+      action: activeEnrollments > 0 ? "Lihat akademik" : "Pilih program",
+      onClick: () => activeEnrollments > 0 ? setActiveTab("academic") : participant?.status === "active" ? setIsProgramPickerOpen(true) : notify("Peserta harus aktif sebelum ditambahkan ke program.", "info"),
     },
     {
       title: "Pastikan wali utama",
@@ -193,14 +217,14 @@ export function AdminParticipantDetailPage() {
       action: "Lihat akademik",
       onClick: () => setActiveTab("academic"),
     },
-  ];
+  ].filter((item) => item.title !== "Pastikan wali utama" || needsGuardian).filter((item) => item.title !== "Cek penempatan belajar" || needsPlacement);
 
   const availableProfiles = useMemo(() => {
     const linkedIds = new Set(guardianRels.map((rel) => rel.guardians?.user_id).filter(Boolean));
     const query = profileSearch.trim().toLowerCase();
 
     return profiles.filter((profile) => {
-      if (profile.id === participant?.user_id || linkedIds.has(profile.id)) return false;
+      if (profile.status !== "active" || profile.id === participant?.user_id || linkedIds.has(profile.id)) return false;
       if (!query) return true;
       return [profile.full_name, profile.email, profile.phone].some((value) => value?.toLowerCase().includes(query));
     });
@@ -210,12 +234,15 @@ export function AdminParticipantDetailPage() {
     setFeedback({ message, type });
   }, []);
 
+  const fetchRevision = useRef(0);
   const fetchData = useCallback(async (silent = false) => {
     if (!participantId) return;
+    const revision = ++fetchRevision.current;
 
     if (silent) {
       setIsRefreshing(true);
     } else {
+      setParticipant(null);
       setIsLoading(true);
     }
 
@@ -233,12 +260,13 @@ export function AdminParticipantDetailPage() {
           .order("is_primary", { ascending: false }),
         supabase
           .from("enrollments")
-          .select("*, programs(code, name), batches(code, name), classes(name, teacher_user_id, profiles(full_name)), halaqahs(name, mentor_user_id)")
+          .select("*, programs(code, name, curriculum_model), batches(code, name), classes(name, teacher_user_id, profiles(full_name)), halaqahs(name, mentor_user_id)")
           .eq("participant_id", participantId)
           .order("created_at", { ascending: false }),
         supabase.rpc("get_participant_login_activity", { p_participant_ids: [participantId] }),
       ]);
 
+      if (revision !== fetchRevision.current) return;
       if (participantResult.error) throw participantResult.error;
       if (guardiansResult.error) throw guardiansResult.error;
       if (enrollmentsResult.error) throw enrollmentsResult.error;
@@ -246,6 +274,7 @@ export function AdminParticipantDetailPage() {
       setParticipant((participantResult.data as ParticipantDetail | null) ?? null);
       setGuardianRels((guardiansResult.data ?? []) as GuardianRelation[]);
       setEnrollments((enrollmentsResult.data ?? []) as EnrollmentRow[]);
+      setLoginActivityAvailable(!loginActivityResult.error);
       if (loginActivityResult.error) {
         console.warn("Gagal memuat login terakhir peserta:", loginActivityResult.error.message);
         setLastLoginAt(null);
@@ -254,16 +283,20 @@ export function AdminParticipantDetailPage() {
         setLastLoginAt(activity[0]?.last_login_at ?? null);
       }
     } catch (err: unknown) {
+      if (revision !== fetchRevision.current) return;
       const message = err instanceof Error ? err.message : "Gagal memuat detail peserta.";
       notify(`Gagal memuat detail peserta: ${message}`, "error");
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      if (revision === fetchRevision.current) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, [notify, participantId]);
 
   useEffect(() => {
     void fetchData();
+    return () => { fetchRevision.current += 1; };
   }, [fetchData]);
 
   useEffect(() => {
@@ -276,6 +309,7 @@ export function AdminParticipantDetailPage() {
     setIsGuardianModalOpen(true);
     setSelectedProfileId("");
     setProfileSearch("");
+    setProfiles([]);
 
     const { data, error } = await supabase
       .from("profiles")
@@ -301,42 +335,18 @@ export function AdminParticipantDetailPage() {
     setIsSubmitting(true);
 
     try {
-      const { data: existingGuardian, error: existingError } = await supabase
-        .from("guardians")
-        .select("id")
-        .eq("user_id", selectedProfileId)
-        .maybeSingle();
-
-      if (existingError) throw existingError;
-
-      let guardianId = existingGuardian?.id as string | undefined;
-
-      if (!guardianId) {
-        const { data: newGuardian, error: guardianError } = await supabase
-          .from("guardians")
-          .insert([{ user_id: selectedProfileId }])
-          .select("id")
-          .single();
-
-        if (guardianError) throw guardianError;
-        guardianId = newGuardian.id as string;
-      }
-
-      const { error: linkError } = await supabase.from("guardian_participants").insert([
-        {
-          guardian_id: guardianId,
-          participant_id: participantId,
-          is_primary: guardianRels.length === 0,
-        },
-      ]);
-
-      if (linkError) throw linkError;
+      const { error } = await supabase.rpc("admin_manage_participant_guardian", {
+        p_participant_id: participantId,
+        p_action: "attach",
+        p_profile_id: selectedProfileId,
+      });
+      if (error) throw error;
 
       notify("Wali berhasil ditautkan.");
       setIsGuardianModalOpen(false);
       await fetchData(true);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Wali sudah tertaut atau terjadi kesalahan.";
+      const message = (err as {message?: string})?.message || "Wali belum dapat ditautkan.";
       notify(`Gagal menautkan wali: ${message}`, "error");
     } finally {
       setIsSubmitting(false);
@@ -348,24 +358,17 @@ export function AdminParticipantDetailPage() {
     setIsSubmitting(true);
 
     try {
-      const { error: resetError } = await supabase
-        .from("guardian_participants")
-        .update({ is_primary: false })
-        .eq("participant_id", participantId);
-
-      if (resetError) throw resetError;
-
-      const { error: primaryError } = await supabase
-        .from("guardian_participants")
-        .update({ is_primary: true })
-        .eq("id", relationId);
-
-      if (primaryError) throw primaryError;
+      const { error } = await supabase.rpc("admin_manage_participant_guardian", {
+        p_participant_id: participantId,
+        p_action: "primary",
+        p_relation_id: relationId,
+      });
+      if (error) throw error;
 
       notify("Wali utama berhasil diperbarui.");
       await fetchData(true);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Gagal mengubah wali utama.";
+      const message = (err as {message?: string})?.message || "Gagal mengubah wali utama.";
       notify(message, "error");
     } finally {
       setIsSubmitting(false);
@@ -373,15 +376,20 @@ export function AdminParticipantDetailPage() {
   };
 
   const handleRemoveGuardian = async (relationId: string) => {
-    if (!window.confirm("Hapus tautan wali dari peserta ini?")) return;
+    if (!participantId || isSubmitting) return;
 
     setIsSubmitting(true);
-    const { error } = await supabase.from("guardian_participants").delete().eq("id", relationId);
+    const { error } = await supabase.rpc("admin_manage_participant_guardian", {
+      p_participant_id: participantId,
+      p_action: "detach",
+      p_relation_id: relationId,
+    });
 
     if (error) {
       notify(`Gagal menghapus wali: ${error.message}`, "error");
     } else {
-      notify("Tautan wali berhasil dihapus.");
+      setGuardianToRemove(null);
+      notify("Tautan wali dilepas. Wali utama diperbarui jika diperlukan.");
       await fetchData(true);
     }
 
@@ -408,7 +416,7 @@ export function AdminParticipantDetailPage() {
             Peserta tidak ditemukan atau tidak dapat diakses. Pastikan data peserta belum dihapus dan ID URL valid.
           </AlertDescription>
         </Alert>
-        <Button variant="outline" onClick={() => navigate(`${basePath}/peserta`)} className="h-10 whitespace-nowrap !text-foreground">
+        <Button variant="outline" onClick={() => navigate(directoryPath)} className="h-10 whitespace-nowrap !text-foreground">
           <ArrowLeft className="h-4 w-4" />
           Kembali ke Direktori Peserta
         </Button>
@@ -418,59 +426,8 @@ export function AdminParticipantDetailPage() {
 
   return (
     <div className="page-stack max-w-7xl pb-12">
-      <div className="page-hero flex flex-col gap-6 overflow-hidden lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 flex-col gap-5 lg:flex-row lg:items-center">
-          <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-2xl border border-white/30 bg-white text-4xl font-bold text-primary shadow-sm">
-            {getInitial(participant.display_name)}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/75">Detail Peserta</p>
-            <h1 className="mt-2 text-3xl font-bold leading-tight text-white">{participant.display_name}</h1>
-            <div className="mt-3 flex flex-wrap gap-2 leading-none">
-              <Badge variant="outline" className="border-white/30 bg-white/15 font-mono text-white">
-                {participant.global_participant_number}
-              </Badge>
-              <Badge variant="outline" className="border-white/30 bg-white/10 text-white">
-                {getParticipantTypeLabel(participant.participant_type)}
-              </Badge>
-              <Badge variant="outline" className={statusInfo.className}>
-                {statusInfo.label}
-              </Badge>
-              {activeEnrollments > 0 && (
-                <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
-                  {activeEnrollments} Program Aktif
-                </Badge>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
-          <Button
-            variant="outline"
-            onClick={() => navigate(`${basePath}/peserta`)}
-            className="h-10 min-w-[120px] whitespace-nowrap border-white/35 bg-white/15 !text-white hover:bg-white/25 hover:!text-white"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Direktori
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => void fetchData(true)}
-            disabled={isRefreshing}
-            className="h-10 min-w-[130px] whitespace-nowrap border-white/35 bg-white/15 !text-white hover:bg-white/25 hover:!text-white disabled:!text-white"
-          >
-            <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
-            Muat Ulang
-          </Button>
-          <Button
-            onClick={() => setActiveTab("academic")}
-            className="h-10 min-w-[140px] whitespace-nowrap bg-white !text-primary shadow-lg hover:bg-white/90"
-          >
-            <FileText className="h-4 w-4" />
-            Cek Transkrip
-          </Button>
-        </div>
-      </div>
+      <nav className="admin-breadcrumb" aria-label="Jejak navigasi"><button onClick={()=>navigate(directoryPath)}>Peserta</button><span>/</span><span>{participant.global_participant_number}</span></nav>
+      <PageHeader title={participant.display_name} eyebrow={`${participant.global_participant_number} · ${getParticipantTypeLabel(participant.participant_type)} · ${statusInfo.label}`} actions={<><Button variant="outline" onClick={()=>navigate(directoryPath)}><ArrowLeft size={16}/>Kembali</Button><Button variant="outline" disabled={isRefreshing} onClick={()=>void fetchData(true)}><RefreshCw className={isRefreshing?"h-4 w-4 animate-spin":"h-4 w-4"}/>Muat ulang</Button><Button onClick={()=>setActiveTab("academic")}><FileText size={16}/>Akademik & transkrip</Button></>} />
 
       {feedback && (
         <Alert
@@ -487,68 +444,9 @@ export function AdminParticipantDetailPage() {
         </Alert>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Menu Detail</CardTitle>
-              <CardDescription>Navigasi subfitur peserta.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {detailTabs.map((tab) => {
-                const Icon = tab.icon;
-                const isActive = activeTab === tab.key;
-                const count = tab.key === "guardians" ? guardianRels.length : tab.key === "academic" ? enrollments.length : undefined;
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setActiveTab(tab.key)}
-                    className={`min-h-[76px] w-full rounded-lg border p-3 text-left transition ${
-                      isActive ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-background hover:bg-muted"
-                    }`}
-                  >
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="flex min-w-0 items-center gap-2 text-sm font-semibold leading-tight">
-                        <Icon className="h-4 w-4 shrink-0" />
-                        {tab.label}
-                      </span>
-                      {typeof count === "number" && (
-                        <span className={`min-w-6 rounded-full px-2 py-0.5 text-center text-xs ${isActive ? "bg-white/20" : "bg-muted text-muted-foreground"}`}>{count}</span>
-                      )}
-                    </span>
-                    <span className={`mt-1 block text-xs leading-snug ${isActive ? "text-primary-foreground/80" : "text-muted-foreground"}`}>{tab.desc}</span>
-                  </button>
-                );
-              })}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Kelengkapan Data</CardTitle>
-              <CardDescription>{completionPercent}% siap operasional.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="h-2 rounded-full bg-muted">
-                <div className="h-2 rounded-full bg-primary transition-all" style={{ width: `${completionPercent}%` }} />
-              </div>
-              {completionItems.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <div key={item.label} className="flex items-center justify-between gap-2 text-xs">
-                    <span className="flex items-center gap-2 text-muted-foreground">
-                      <Icon className="h-3.5 w-3.5" />
-                      {item.label}
-                    </span>
-                    {item.done ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <AlertCircle className="h-4 w-4 text-amber-600" />}
-                  </div>
-                );
-              })}
-            </CardContent>
-          </Card>
-        </aside>
-
+      <SectionNav items={detailTabs} value={activeTab} onChange={setActiveTab} label="Bagian detail peserta" />
+      <details className="participant-completeness"><summary>Kelengkapan data <strong>{completionPercent}%</strong></summary><div>{completionItems.map((item)=><span key={item.label} className={item.done?"text-emerald-700":"text-amber-700"}>{item.done?"✓":"○"} {item.label}</span>)}</div></details>
+      <div>
         <main className="min-w-0 space-y-6">
           {activeTab === "overview" && (
             <div className="grid gap-6">
@@ -566,7 +464,7 @@ export function AdminParticipantDetailPage() {
                     <CardTitle className="text-sm text-muted-foreground">Login Terakhir</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-sm font-bold leading-snug">{formatDateTime(lastLoginAt)}</p>
+                    <p className="text-sm font-bold leading-snug">{!participant.user_id ? "Belum ada akun" : loginActivityAvailable ? formatDateTime(lastLoginAt) : "Belum tersedia"}</p>
                   </CardContent>
                 </Card>
                 <Card>
@@ -597,8 +495,8 @@ export function AdminParticipantDetailPage() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Workflow Tindak Lanjut</CardTitle>
-                  <CardDescription>Prioritas operasional agar peserta siap belajar dan terdokumentasi dengan baik.</CardDescription>
+                  <CardTitle>Tindak lanjut</CardTitle>
+
                 </CardHeader>
                 <CardContent className="grid gap-3 md:grid-cols-3">
                   {workflowItems.map((item) => (
@@ -626,8 +524,8 @@ export function AdminParticipantDetailPage() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Snapshot Peserta</CardTitle>
-                  <CardDescription>Informasi cepat untuk admin sebelum melakukan tindakan.</CardDescription>
+                  <CardTitle>Kontak & identitas</CardTitle>
+
                 </CardHeader>
                 <CardContent className="grid gap-4 md:grid-cols-2">
                   <InfoRow icon={Mail} label="Email" value={profileData?.email} />
@@ -635,7 +533,7 @@ export function AdminParticipantDetailPage() {
                   <InfoRow icon={MapPin} label="Domisili" value={participant.city} />
                   <InfoRow icon={GraduationCap} label="Pendidikan" value={participant.education_level} />
                   <InfoRow icon={Calendar} label="Tanggal Bergabung" value={formatDate(participant.joined_at, { day: "numeric", month: "long", year: "numeric" })} />
-                  <InfoRow icon={Clock3} label="Login Terakhir" value={formatDateTime(lastLoginAt)} />
+                  <InfoRow icon={Clock3} label="Login Terakhir" value={!participant.user_id ? "Belum ada akun" : loginActivityAvailable ? formatDateTime(lastLoginAt) : "Belum tersedia"} />
                   <InfoRow icon={Users} label="Wali Utama" value={primaryGuardian?.guardians?.profiles?.full_name} />
                 </CardContent>
               </Card>
@@ -666,7 +564,7 @@ export function AdminParticipantDetailPage() {
                   <InfoRow icon={MapPin} label="Kota / Domisili" value={participant.city} />
                   <InfoRow icon={GraduationCap} label="Pendidikan Terakhir" value={participant.education_level} />
                   <InfoRow icon={Calendar} label="Tanggal Bergabung" value={formatDate(participant.joined_at, { day: "numeric", month: "long", year: "numeric" })} />
-                  <InfoRow icon={Clock3} label="Login Terakhir" value={formatDateTime(lastLoginAt)} />
+                  <InfoRow icon={Clock3} label="Login Terakhir" value={!participant.user_id ? "Belum ada akun" : loginActivityAvailable ? formatDateTime(lastLoginAt) : "Belum tersedia"} />
                 </CardContent>
               </Card>
 
@@ -691,7 +589,7 @@ export function AdminParticipantDetailPage() {
                           {profileData.status || "active"}
                         </Badge>
                       </div>
-                      <Button variant="outline" className="h-10 w-full whitespace-nowrap !text-foreground" onClick={() => navigate(`${basePath}/pengguna`)}>
+                      <Button variant="outline" className="h-10 w-full whitespace-nowrap !text-foreground" onClick={() => openAccount()}>
                         <KeyRound className="h-4 w-4" />
                         Kelola Akun & Akses
                       </Button>
@@ -701,8 +599,8 @@ export function AdminParticipantDetailPage() {
                       <User className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
                       <p className="font-semibold">Belum Ada Akun Login</p>
                       <p className="mt-1 text-sm text-muted-foreground">Peserta belum dapat masuk ke portal learner.</p>
-                      <Button className="mt-4 h-10 w-full whitespace-nowrap bg-primary !text-white hover:bg-primary/90" onClick={() => navigate(`${basePath}/pengguna`)}>
-                        Kelola Pengguna
+                      <Button className="mt-4 h-10 w-full whitespace-nowrap bg-primary !text-white hover:bg-primary/90" onClick={() => openAccount()}>
+                        {basePath === "/system" ? "Kelola pengguna" : "Bantuan akun"}
                       </Button>
                     </div>
                   )}
@@ -758,7 +656,7 @@ export function AdminParticipantDetailPage() {
                               variant="ghost"
                               size="icon"
                               className="h-9 w-9 shrink-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                              onClick={() => void handleRemoveGuardian(rel.id)}
+                              onClick={() => setGuardianToRemove(rel.id)}
                               disabled={isSubmitting}
                               aria-label="Hapus tautan wali"
                             >
@@ -790,7 +688,8 @@ export function AdminParticipantDetailPage() {
           {activeTab === "academic" && (
             <Card className="overflow-hidden">
               <CardHeader>
-                <CardTitle>Riwayat Pendaftaran & Akademik</CardTitle>
+                <CardTitle>Program & transkrip</CardTitle>
+                <Button className="w-fit" disabled={participant.status !== "active"} title={participant.status !== "active" ? "Peserta harus berstatus aktif" : undefined} onClick={()=>setIsProgramPickerOpen(true)}><Plus size={16}/>Pilih program baru</Button>
                 <CardDescription>Program yang diikuti peserta, status belajar, penempatan kelas, dan akses transkrip.</CardDescription>
               </CardHeader>
               <CardContent className="p-0">
@@ -823,7 +722,7 @@ export function AdminParticipantDetailPage() {
                                     <BookOpen className="h-4 w-4" />
                                   </div>
                                   <div>
-                                    <p className="font-bold">{enrollment.programs?.name || "Program tanpa nama"}</p>
+                                    <button className="participant-name" onClick={()=>navigate(`${basePath}/program/${enrollment.program_id}/peserta`)}>{enrollment.programs?.name || "Buka program"}</button>
                                     <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
                                       <span className="font-mono">{enrollment.enrollment_number}</span>
                                       <span>{enrollment.batches?.name || "Angkatan belum diatur"}</span>
@@ -841,9 +740,7 @@ export function AdminParticipantDetailPage() {
                                     )}
                                   </div>
                                 ) : (
-                                  <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
-                                    Belum ditempatkan
-                                  </Badge>
+                                  enrollment.programs?.curriculum_model === "angkatan" ? <Button variant="outline" size="sm" onClick={()=>navigate(`${basePath}/program/${enrollment.program_id}/angkatan-kelas?placeEnrollment=${enrollment.id}`)}>Atur kelas / halaqah</Button> : <span className="text-muted-foreground">Tidak memerlukan kelas</span>
                                 )}
                               </td>
                               <td className="px-6 py-4">
@@ -860,11 +757,12 @@ export function AdminParticipantDetailPage() {
                                   variant="outline"
                                   size="sm"
                                   className="h-9 whitespace-nowrap border-primary/30 !text-primary hover:bg-primary/5"
-                                  onClick={() => navigate(`${basePath}/peserta/${participantId}/transkrip/${enrollment.id}`)}
+                                  onClick={() => navigate(`${basePath}/peserta/${participantId}/transkrip/${enrollment.id}?directory=${encodeURIComponent(directoryPath)}`)}
                                 >
                                   <FileText className="h-4 w-4" />
                                   Transkrip
                                 </Button>
+                                <Button variant="ghost" size="sm" className="mt-2" onClick={()=>navigate(`${basePath}/keuangan?tab=invoices&program=${enrollment.program_id}&participant=${participantId}`)}>Tagihan & pembayaran</Button>
                               </td>
                             </tr>
                           );
@@ -879,14 +777,14 @@ export function AdminParticipantDetailPage() {
         </main>
       </div>
 
+      {isAccessOpen && <ParticipantAccessDialog participant={participant} onClose={()=>setIsAccessOpen(false)}/>}
+      {isProgramPickerOpen && <ParticipantProgramPicker basePath={basePath} participantNumber={participant.global_participant_number} existingIds={enrollments.map((item)=>item.program_id)} onClose={()=>setIsProgramPickerOpen(false)}/>}
+      {guardianToRemove && <Dialog title="Lepas tautan wali?" busy={isSubmitting} onClose={()=>setGuardianToRemove(null)}>
+        <p className="text-sm text-muted-foreground">Akun wali tetap tersedia. Jika wali utama dilepas, wali lain akan menjadi utama.</p>
+        <div className="wizard-footer"><Button variant="outline" disabled={isSubmitting} onClick={()=>setGuardianToRemove(null)}>Batal</Button><Button variant="outline" className="border-red-200 text-red-700" disabled={isSubmitting} onClick={()=>void handleRemoveGuardian(guardianToRemove)}>{isSubmitting ? "Melepas…" : "Lepas tautan"}</Button></div>
+      </Dialog>}
       {isGuardianModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
-          <Card className="w-full max-w-lg shadow-2xl">
-            <CardHeader className="border-b">
-              <CardTitle>Tautkan Wali / Orang Tua</CardTitle>
-              <CardDescription>Pilih profil pengguna yang akan menjadi wali peserta.</CardDescription>
-            </CardHeader>
-            <CardContent className="p-6">
+        <Dialog title="Tautkan wali" busy={isSubmitting} onClose={()=>setIsGuardianModalOpen(false)}>
               <form onSubmit={handleAddGuardian} className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-sm font-semibold">Cari Profil</label>
@@ -936,9 +834,7 @@ export function AdminParticipantDetailPage() {
                   </Button>
                 </div>
               </form>
-            </CardContent>
-          </Card>
-        </div>
+        </Dialog>
       )}
     </div>
   );

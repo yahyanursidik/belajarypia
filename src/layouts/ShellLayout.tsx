@@ -1,3 +1,4 @@
+import {BrandMark} from "../components/BrandMark";
 import { isHrefActive, isNavigationItemActive } from "../lib/navigationMatching";
 import {
   BookOpen,
@@ -380,7 +381,7 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
       <aside className="app-shell__sider print:hidden">
           <div className="app-shell__sidebar-top">
             <Link to={homeByVariant[variant]} className="app-shell__brand" aria-label={appName} title={sidebarTitle}>
-              <span className="app-shell__brand-icon"><BrandIcon className="h-6 w-6 text-white" /></span>
+              <span className="app-shell__brand-icon"><BrandMark src={settings?.logo_url} fallback={<BrandIcon className="h-6 w-6 text-white" />}/></span>
               <span className="app-shell__brand-copy min-w-0">
                 <span className="app-shell__brand-title">{sidebarTitle}</span>
                 <span className="app-shell__brand-subtitle">{sidebarSubtitle}</span>
@@ -483,7 +484,7 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
           <dialog ref={mobileDialogRef} className="app-shell__mobile-panel" aria-label="Menu navigasi" onCancel={(event) => { event.preventDefault(); setMobileMenuOpen(false); }}>
             <div className="app-shell__mobile-panel-header">
               <Link to={homeByVariant[variant]} className="app-shell__mobile-brand" onClick={() => setMobileMenuOpen(false)}>
-                <span className="app-shell__brand-icon"><BrandIcon className="h-5 w-5 text-white" /></span>
+                <span className="app-shell__brand-icon"><BrandMark src={settings?.logo_url} fallback={<BrandIcon className="h-5 w-5 text-white" />}/></span>
                 <span className="min-w-0">
                   <strong>{sidebarTitle}</strong>
                   <small>{sidebarSubtitle}</small>

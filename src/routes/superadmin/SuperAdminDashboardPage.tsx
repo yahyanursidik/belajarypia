@@ -338,7 +338,7 @@ export function SuperAdminDashboardPage() {
             tone: "bg-cyan-50 text-cyan-700",
             links: [
               { label: "Semua Pengumuman", href: "/system/pengumuman" },
-              { label: "Buat Baru", href: "/system/pengumuman" },
+              { label: "Buat Baru", href: "/system/pengumuman?tab=compose" },
             ],
           },
           {
@@ -462,7 +462,7 @@ export function SuperAdminDashboardPage() {
               </Badge>
               <h1 className="text-3xl font-bold tracking-tight text-white">{dashboardTitle}</h1>
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/80">
-                Pantau prioritas operasional, masuk ke modul penting, dan cek kesehatan LMS dari satu halaman kerja.
+                {settings?.system_header_subtitle || "Tata Kelola & Pemantauan LMS"}
               </p>
             </div>
           </div>

@@ -1,0 +1,15 @@
+create role service_role;
+alter table public.programs add column name text default 'Program uji';
+create function auth.jwt() returns jsonb language sql stable as $$ select '{}'::jsonb; $$;
+alter table public.profiles add column phone text,add column updated_at timestamptz;
+alter table public.participants add column birth_date date;
+alter table public.classes add column capacity integer;
+alter table public.halaqahs add column capacity integer;
+create function public.next_participant_number() returns text language sql as $$ select 'NIS-'||gen_random_uuid()::text; $$;
+create table public.applicants(id uuid primary key default gen_random_uuid(),full_name text not null,email text not null,phone text not null,city text,gender text,birth_date date,source_channel text,status text default 'submitted',submitted_by_user_id uuid,submitted_at timestamptz default now(),created_at timestamptz default now());
+create table public.applicant_program_choices(id uuid primary key default gen_random_uuid(),applicant_id uuid references applicants,program_id uuid references programs,preferred_schedule text,notes text,created_at timestamptz default now());
+create table public.applicant_answers(id uuid primary key default gen_random_uuid(),applicant_id uuid references applicants,form_field_key text,value_text text,value_json jsonb,created_at timestamptz default now());
+create table public.registration_forms(id uuid primary key default gen_random_uuid(),program_id uuid references programs,title text not null,description text,status text default 'draft',registration_open_at timestamptz,registration_close_at timestamptz,group_settings jsonb default '{}',created_at timestamptz default now(),updated_at timestamptz default now());
+create table public.registration_form_fields(id uuid primary key default gen_random_uuid(),form_id uuid references registration_forms,field_key text not null,label text,field_type text,is_required boolean,options_json jsonb,order_no integer,unique(form_id,field_key));
+create table public.registration_group_link_claims(id uuid primary key default gen_random_uuid(),form_id uuid references registration_forms,group_bucket text,group_index integer,applicant_id uuid references applicants,group_name text,group_link text);
+create function public.normalize_admission_phone(value text) returns text language plpgsql as $$ declare digits text:=regexp_replace(value,'[^0-9]','','g');begin if left(digits,1)='0' then digits:='62'||substring(digits from 2);end if;if digits !~ '^62[0-9]{8,13}$' then raise exception 'Nomor WhatsApp tidak valid';end if;return '+'||digits;end; $$;

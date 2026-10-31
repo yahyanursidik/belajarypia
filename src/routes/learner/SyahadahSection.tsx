@@ -1,98 +1,116 @@
 import { useEffect, useState } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { FileBadge, Loader2 } from "lucide-react";
+import { Download, FileBadge, RefreshCw } from "lucide-react";
+import { Button } from "../../components/ui/button";
 import { supabase } from "../../lib/supabase";
-
+import { openCertificateDocument } from "../../lib/certificateData";
+import type { IssuedCertificate } from "../../lib/certificateWorkspace";
 export function SyahadahSection({ enrollmentId }: { enrollmentId: string }) {
-  const [cert, setCert] = useState<any>(null);
-  const [job, setJob] = useState<any>(null);
+  const [cert, setCert] = useState<Pick<
+    IssuedCertificate,
+    "id" | "certificate_number" | "object_key"
+  > | null>(null);
+  const [job, setJob] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
-
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
-    async function fetchSyahadah() {
-      // Check certificate first
-      const { data: certData } = await supabase
-        .from("certificates")
-        .select("*")
-        .eq("enrollment_id", enrollmentId)
-        .maybeSingle();
-
-      if (certData) {
-        setCert(certData);
-      } else {
-        // Check queue
-        const { data: jobData } = await supabase
-          .from("certificate_generation_jobs")
-          .select("*")
-          .eq("enrollment_id", enrollmentId)
-          .in("status", ["pending", "processing"])
-          .maybeSingle();
-          
-        if (jobData) {
-          setJob(jobData);
-        }
+    const controller = new AbortController();
+    setCert(null);
+    setJob(null);
+    setError("");
+    setLoading(true);
+    void (async () => {
+      try {
+        const [certificateResult, jobResult] = await Promise.all([
+          supabase
+            .from("certificates")
+            .select("id,certificate_number,object_key")
+            .eq("enrollment_id", enrollmentId)
+            .eq("status", "issued")
+            .order("issued_at", { ascending: false })
+            .limit(1)
+            .abortSignal(controller.signal)
+            .maybeSingle(),
+          supabase
+            .from("certificate_generation_jobs")
+            .select("status")
+            .eq("enrollment_id", enrollmentId)
+            .in("status", ["pending", "processing", "failed"])
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .abortSignal(controller.signal)
+            .maybeSingle(),
+        ]);
+        if (controller.signal.aborted) return;
+        if (certificateResult.error || jobResult.error) throw new Error();
+        setCert(certificateResult.data);
+        setJob(jobResult.data?.status ?? null);
+      } catch {
+        if (!controller.signal.aborted)
+          setError("Status syahadah belum dapat dimuat.");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
       }
-      setLoading(false);
-    }
-    fetchSyahadah();
-  }, [enrollmentId]);
-
-  const handleDownload = async () => {
+    })();
+    return () => controller.abort();
+  }, [enrollmentId, retry]);
+  async function download() {
     if (!cert) return;
     setDownloading(true);
+    setError("");
     try {
-      const { data, error } = await supabase.functions.invoke("create-certificate-download-url", {
-        body: { certificate_id: cert.id }
-      });
-      if (error) throw error;
-      window.open(data.signedUrl, "_blank");
-    } catch (err: any) {
-      alert("Gagal mengunduh: " + err.message);
+      await openCertificateDocument(cert.id);
+    } catch {
+      setError("Dokumen belum dapat dibuka. Coba lagi.");
+    } finally {
+      setDownloading(false);
     }
-    setDownloading(false);
-  };
-
-  if (loading) return <div className="text-sm text-gray-500">Memeriksa status Syahadah...</div>;
-
-  if (cert) {
-    return (
-      <Alert className="mt-4 bg-green-50 border-green-200">
-        <FileBadge className="h-4 w-4 text-green-600" />
-        <AlertTitle className="text-green-800">Syahadah Tersedia</AlertTitle>
-        <AlertDescription className="text-green-700 mt-2 flex flex-col items-start gap-3">
-          <div>
-            <p><strong>Nomor:</strong> {cert.certificate_number}</p>
-            <p><strong>Tanggal Terbit:</strong> {new Date(cert.issued_at).toLocaleDateString("id-ID")}</p>
-          </div>
-          <Button onClick={handleDownload} disabled={downloading} size="sm" className="bg-green-600 hover:bg-green-700 text-white">
-            {downloading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Download Syahadah
-          </Button>
-        </AlertDescription>
-      </Alert>
-    );
   }
-
-  if (job) {
-    return (
-      <Alert className="mt-4 bg-yellow-50 border-yellow-200">
-        <AlertTitle className="text-yellow-800">Syahadah Sedang Diproses</AlertTitle>
-        <AlertDescription className="text-yellow-700">
-          Status: Dalam Antrean<br/>
-          Estimasi: Akan diterbitkan bertahap oleh sistem.
-        </AlertDescription>
-      </Alert>
-    );
-  }
-
   return (
-    <Alert className="mt-4 bg-gray-50">
-      <AlertTitle>Syahadah Belum Tersedia</AlertTitle>
-      <AlertDescription className="text-gray-500 text-sm">
-        Syahadah akan tersedia setelah program selesai dan kelayakan terpenuhi.
-      </AlertDescription>
-    </Alert>
+    <section className="program-panel space-y-3 mt-4">
+      <div className="flex items-center gap-2">
+        <FileBadge size={20} />
+        <h3 className="font-semibold">Syahadah</h3>
+      </div>
+      {error && (
+        <p role="alert" className="program-error">
+          {error}
+        </p>
+      )}
+      {loading ? (
+        <p role="status" className="text-sm">
+          Memeriksa syahadah…
+        </p>
+      ) : cert ? (
+        <>
+          <p className="text-sm">{cert.certificate_number}</p>
+          <Button
+            disabled={downloading || !cert.object_key}
+            onClick={() => void download()}
+          >
+            <Download size={15} />
+            {downloading ? "Membuka…" : "Unduh syahadah"}
+          </Button>
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          {job === "failed"
+            ? "Penerbitan perlu ditindaklanjuti admin."
+            : job
+              ? "Syahadah sedang dalam antrean penerbitan."
+              : "Syahadah belum diterbitkan."}
+        </p>
+      )}
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={loading}
+        onClick={() => setRetry((n) => n + 1)}
+      >
+        <RefreshCw size={14} />
+        Perbarui status
+      </Button>
+    </section>
   );
 }

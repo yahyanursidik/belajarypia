@@ -1,3 +1,5 @@
+import Papa from "papaparse";
+import { ProgramDialog } from "../../components/programs/ProgramDialog";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -23,12 +25,11 @@ import {
   UserCheck,
   UserPlus,
   Users,
-  X,
 } from "lucide-react";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { supabase } from "../../lib/supabase";
 
@@ -51,6 +52,9 @@ type ProgramParticipantRow = {
   id: string;
   enrollment_number: string;
   enrollment_status: string;
+  classes?:{name:string}|null;
+  halaqahs?:{name:string}|null;
+  batches?:{name:string}|null;
   created_at: string | null;
   participants: {
     id: string;
@@ -88,12 +92,14 @@ function formatDate(value?: string | null) {
   return new Date(value).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
 }
 
-export function ProgramParticipants({ programId }: { programId: string }) {
+export function ProgramParticipants({ programId,onPlace,reloadToken=0 }: { programId: string;onPlace?:(enrollmentId:string)=>void;reloadToken?:number }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const requestedParticipant = new URLSearchParams(location.search).get("addParticipant") ?? "";
   const basePath = location.pathname.startsWith("/system") ? "/system" : "/admin";
 
   const [rows, setRows] = useState<ProgramParticipantRow[]>([]);
+  const [loadError,setLoadError]=useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
@@ -109,7 +115,7 @@ export function ProgramParticipants({ programId }: { programId: string }) {
   const [isFetchingAvailable, setIsFetchingAvailable] = useState(false);
   const [isEnrolling, setIsEnrolling] = useState(false);
   const [enrollStep, setEnrollStep] = useState<EnrollStep>(1);
-  const [enrollStats, setEnrollStats] = useState({ success: 0, fail: 0, processed: 0, total: 0 });
+  const [enrollStats, setEnrollStats] = useState({ success: 0, unchanged: 0, fail: 0, processed: 0, total: 0 });
 
   const notify = useCallback((message: string, type: NonNullable<Feedback>["type"] = "success") => {
     setFeedback({ message, type });
@@ -123,10 +129,11 @@ export function ProgramParticipants({ programId }: { programId: string }) {
         setIsLoading(true);
       }
 
+      setLoadError(false);
       const { data, error } = await supabase
         .from("enrollments")
         .select(`
-          id, enrollment_number, enrollment_status, created_at,
+          id, enrollment_number, enrollment_status, created_at, classes(name),halaqahs(name),batches(name),
           participants!inner (
             id, display_name, global_participant_number, city, gender, education_level, status,
             profiles ( email, phone )
@@ -136,6 +143,7 @@ export function ProgramParticipants({ programId }: { programId: string }) {
         .order("created_at", { ascending: false });
 
       if (error) {
+        setLoadError(true);
         notify(`Gagal memuat peserta program: ${error.message}`, "error");
       } else {
         setRows((data ?? []) as unknown as ProgramParticipantRow[]);
@@ -148,8 +156,8 @@ export function ProgramParticipants({ programId }: { programId: string }) {
   );
 
   useEffect(() => {
-    void fetchParticipants();
-  }, [fetchParticipants]);
+    void fetchParticipants(reloadToken>0);
+  }, [fetchParticipants,reloadToken]);
 
   useEffect(() => {
     if (!feedback) return;
@@ -171,7 +179,6 @@ export function ProgramParticipants({ programId }: { programId: string }) {
       completed,
       missingPhone,
       missingCity,
-      readyPercent: rows.length ? Math.round(((rows.length - missingPhone - missingCity / 2) / rows.length) * 100) : 0,
     };
   }, [rows]);
 
@@ -256,7 +263,7 @@ export function ProgramParticipants({ programId }: { programId: string }) {
   const openAddModal = () => {
     setIsAddModalOpen(true);
     setEnrollStep(1);
-    setEnrollStats({ success: 0, fail: 0, processed: 0, total: 0 });
+    setEnrollStats({ success: 0, unchanged: 0, fail: 0, processed: 0, total: 0 });
     setAddSearchQuery("");
     setSelectedParticipantIds(new Set());
     void fetchAvailableParticipants();
@@ -290,30 +297,30 @@ export function ProgramParticipants({ programId }: { programId: string }) {
 
     setIsEnrolling(true);
     setEnrollStep(2);
-    setEnrollStats({ success: 0, fail: 0, processed: 0, total: selectedParticipantIds.size });
+    setEnrollStats({ success: 0, unchanged: 0, fail: 0, processed: 0, total: selectedParticipantIds.size });
 
     const idsToEnroll = Array.from(selectedParticipantIds);
     let successCount = 0;
+    let unchangedCount = 0;
     let failCount = 0;
     let processed = 0;
 
     for (const participantId of idsToEnroll) {
-      processed += 1;
-      setEnrollStats((current) => ({ ...current, processed }));
-
-      const { error } = await supabase.rpc("direct_enroll_participant", {
-        target_participant_id: participantId,
-        target_program_id: programId,
-      });
-
-      if (error) {
+      try {
+        const { data, error } = await supabase.rpc("direct_enroll_participant", {
+          target_participant_id: participantId,
+          target_program_id: programId,
+        });
+        if (error || !data?.enrollment_id) failCount += 1;
+        else if (data.enrollment_action === "unchanged") unchangedCount += 1;
+        else successCount += 1;
+      } catch {
         failCount += 1;
-      } else {
-        successCount += 1;
       }
+      processed += 1;
+      setEnrollStats((current) => ({ ...current, processed, success: successCount, unchanged: unchangedCount, fail: failCount }));
     }
 
-    setEnrollStats((current) => ({ ...current, success: successCount, fail: failCount }));
     setEnrollStep(3);
     setIsEnrolling(false);
     await fetchParticipants(true);
@@ -340,9 +347,7 @@ export function ProgramParticipants({ programId }: { programId: string }) {
       ]);
     }
 
-    const csvString = csvRows
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
+    const csvString = Papa.unparse(csvRows, { escapeFormulae: true });
     const blob = new Blob([`\uFEFF${csvString}`], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -356,6 +361,7 @@ export function ProgramParticipants({ programId }: { programId: string }) {
 
   return (
     <div className="space-y-6">
+      {requestedParticipant && <div className="participant-result"><span>Lanjutkan pendaftaran peserta: {requestedParticipant}</span><Button variant="outline" onClick={()=>{openAddModal();setAddSearchQuery(requestedParticipant);}}>Pilih peserta</Button></div>}
       {feedback && (
         <Alert
           className={
@@ -371,50 +377,18 @@ export function ProgramParticipants({ programId }: { programId: string }) {
         </Alert>
       )}
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <MetricCard title="Total Peserta" value={stats.total} description="terdaftar di program ini" icon={Users} />
-        <MetricCard title="Aktif Belajar" value={stats.active} description="status enrollment aktif" icon={UserCheck} />
-        <MetricCard title="Menunggu" value={stats.pending} description="perlu tindak lanjut admin" icon={ClipboardList} />
-        <MetricCard title="Selesai" value={stats.completed} description="sudah menyelesaikan program" icon={GraduationCap} />
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Workflow Peserta Program</CardTitle>
-          <CardDescription>Prioritas harian untuk menjaga peserta program tetap siap belajar.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3">
-          <WorkflowItem
-            done={stats.pending === 0}
-            title="Review status menunggu"
-            description={stats.pending ? `${stats.pending} peserta masih menunggu aktivasi atau validasi.` : "Tidak ada peserta berstatus menunggu."}
-            action="Filter Menunggu"
-            onClick={() => setStatusFilter("pending")}
-          />
-          <WorkflowItem
-            done={stats.missingPhone === 0}
-            title="Lengkapi kontak"
-            description={stats.missingPhone ? `${stats.missingPhone} peserta belum memiliki nomor telepon.` : "Kontak telepon peserta sudah lengkap."}
-            action="Cek Direktori"
-            onClick={() => navigate(`${basePath}/peserta`)}
-          />
-          <WorkflowItem
-            done={stats.total > 0}
-            title="Tambah peserta"
-            description={stats.total ? "Program sudah memiliki peserta. Tambahkan lagi jika diperlukan." : "Program belum memiliki peserta aktif."}
-            action="Tambah Peserta"
-            onClick={openAddModal}
-          />
-        </CardContent>
-      </Card>
+      <div className="program-metrics">{[
+        {label:'Semua peserta',value:stats.total,tone:'blue',status:'all',icon:Users},
+        {label:'Aktif belajar',value:stats.active,tone:'emerald',status:'active',icon:UserCheck},
+        {label:'Menunggu',value:stats.pending,tone:'amber',status:'pending',icon:ClipboardList},
+        {label:'Selesai',value:stats.completed,tone:'violet',status:'completed',icon:GraduationCap},
+      ].map(({label,value,tone,status,icon:Icon})=><button key={label} className={`admin-stat admin-tone-${tone}`} onClick={()=>setStatusFilter(status)}><span className="admin-stat__icon"><Icon size={18}/></span><span><span className="admin-stat__label">{label}</span><strong>{isLoading||loadError?'—':value}</strong></span></button>)}</div>
 
       <Card className="w-full max-w-none overflow-hidden">
         <CardHeader className="gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <CardTitle>Direktori Peserta Program</CardTitle>
-            <CardDescription>
-              Cari peserta, pantau status enrollment, buka detail peserta, ekspor data, dan gunakan pagination untuk data besar.
-            </CardDescription>
+
           </div>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <Button
@@ -428,7 +402,7 @@ export function ProgramParticipants({ programId }: { programId: string }) {
             </Button>
             <Button variant="outline" onClick={exportToCSV} disabled={filteredRows.length === 0} className="h-10 whitespace-nowrap !text-foreground">
               <Download className="h-4 w-4" />
-              Export CSV
+              Ekspor hasil
             </Button>
             <Button onClick={openAddModal} className="h-10 whitespace-nowrap bg-primary !text-white hover:bg-primary/90">
               <Plus className="h-4 w-4" />
@@ -493,7 +467,7 @@ export function ProgramParticipants({ programId }: { programId: string }) {
                   <tr>
                     <th className="w-[310px] px-5 py-4 font-semibold">Peserta</th>
                     <th className="w-[360px] px-5 py-4 font-semibold">Kontak</th>
-                    <th className="w-[190px] px-5 py-4 font-semibold">Akademik</th>
+                    <th className="w-[190px] px-5 py-4 font-semibold">{onPlace?'Penempatan':'Pendaftaran'}</th>
                     <th className="w-[150px] px-5 py-4 text-center font-semibold">Status</th>
                     <th className="sticky right-0 z-10 w-[130px] border-l bg-muted/40 px-4 py-4 text-center font-semibold">Aksi</th>
                   </tr>
@@ -506,7 +480,7 @@ export function ProgramParticipants({ programId }: { programId: string }) {
                         <p className="font-medium">Memuat peserta program...</p>
                       </td>
                     </tr>
-                  ) : filteredRows.length === 0 ? (
+                  ) : loadError ? <tr><td colSpan={5} className="p-6 text-center"><p className="program-error" role="alert">Peserta belum dapat dimuat.</p><Button variant="outline" onClick={()=>void fetchParticipants()}>Coba lagi</Button></td></tr> : filteredRows.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="px-5 py-16 text-center text-muted-foreground">
                         <User className="mx-auto mb-3 h-12 w-12 text-muted-foreground/50" />
@@ -551,16 +525,7 @@ export function ProgramParticipants({ programId }: { programId: string }) {
                               </p>
                             </div>
                           </td>
-                          <td className="px-5 py-4">
-                            <div className="space-y-1 text-sm">
-                              <p className="flex items-center gap-2 text-muted-foreground">
-                                <GraduationCap className="h-3.5 w-3.5" />
-                                {participant.education_level || "Pendidikan belum diisi"}
-                              </p>
-                              <p className="text-xs text-muted-foreground">{participant.gender || "Gender belum diisi"}</p>
-                              <p className="text-xs text-muted-foreground">Daftar: {formatDate(row.created_at)}</p>
-                            </div>
-                          </td>
+                          <td className="px-5 py-4"><div className="space-y-1 text-sm">{onPlace?<><p className="font-medium">{row.classes?.name??'Belum ditempatkan'}</p>{row.halaqahs?.name&&<p>{row.halaqahs.name}</p>}<p className="text-xs text-muted-foreground">{row.batches?.name??'Tanpa angkatan'}</p></>:<p className="text-xs text-muted-foreground">Terdaftar {formatDate(row.created_at)}</p>}</div></td>
                           <td className="px-5 py-4 text-center align-middle">
                             <Badge variant="outline" className={`min-w-[96px] justify-center whitespace-nowrap ${statusInfo.className}`}>
                               {statusInfo.label}
@@ -568,6 +533,7 @@ export function ProgramParticipants({ programId }: { programId: string }) {
                           </td>
                           <td className="sticky right-0 z-10 border-l bg-background px-4 py-4 align-middle group-hover:bg-muted/30">
                             <div className="flex items-center justify-center gap-2">
+                              {onPlace&&['active','pending','hold'].includes(row.enrollment_status)&&<Button variant="outline" size="sm" onClick={()=>onPlace(row.id)}>Atur kelas</Button>}
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -598,9 +564,7 @@ export function ProgramParticipants({ programId }: { programId: string }) {
               </table>
             </div>
             <div className="flex flex-col gap-3 border-t bg-muted/30 px-5 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-xs text-muted-foreground">
-                Kelengkapan operasional: <span className="font-semibold text-foreground">{stats.readyPercent}%</span>
-              </div>
+
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
@@ -634,26 +598,7 @@ export function ProgramParticipants({ programId }: { programId: string }) {
       </Card>
 
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
-          <Card className={`flex max-h-[90vh] w-full flex-col overflow-hidden shadow-2xl ${enrollStep === 1 ? "max-w-5xl" : "max-w-lg"}`}>
-            <CardHeader className="border-b bg-primary text-primary-foreground">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <CardTitle className="text-xl text-white">Tambah Peserta ke Program</CardTitle>
-                  <CardDescription className="mt-1 text-white/80">Pilih peserta aktif dari direktori pusat.</CardDescription>
-                </div>
-                {enrollStep !== 2 && (
-                  <button
-                    type="button"
-                    onClick={() => setIsAddModalOpen(false)}
-                    className="flex h-9 w-9 items-center justify-center rounded-full text-white/80 transition hover:bg-white/10 hover:text-white"
-                    aria-label="Tutup modal"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                )}
-              </div>
-            </CardHeader>
+        <ProgramDialog title="Tambah peserta ke program" busy={isEnrolling} error={feedback?.type==='error'?feedback.message:null} wide onClose={()=>setIsAddModalOpen(false)}>
 
             {enrollStep === 1 && (
               <>
@@ -779,7 +724,7 @@ export function ProgramParticipants({ programId }: { programId: string }) {
             )}
 
             {enrollStep === 2 && (
-              <div className="flex min-h-[360px] flex-col items-center justify-center space-y-6 bg-background p-10">
+              <div className="flex flex-col items-center justify-center space-y-6 bg-background p-10">
                 <Loader2 className="h-16 w-16 animate-spin text-primary" />
                 <div className="text-center">
                   <h3 className="text-2xl font-bold">Mendaftarkan Peserta</h3>
@@ -797,8 +742,8 @@ export function ProgramParticipants({ programId }: { programId: string }) {
             )}
 
             {enrollStep === 3 && (
-              <div className="flex min-h-[360px] flex-col items-center justify-center space-y-6 bg-background p-10">
-                <div className="flex h-24 w-24 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+              <div className="flex flex-col items-center justify-center space-y-6 bg-background p-10">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
                   <CheckCircle2 className="h-12 w-12" />
                 </div>
                 <div className="text-center">
@@ -808,8 +753,9 @@ export function ProgramParticipants({ programId }: { programId: string }) {
                 <div className="grid w-full max-w-sm grid-cols-2 gap-3">
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-center">
                     <p className="text-3xl font-bold text-emerald-700">{enrollStats.success}</p>
-                    <p className="text-xs font-semibold uppercase text-emerald-700">Berhasil</p>
+                    <p className="text-xs font-semibold uppercase text-emerald-700">Ditambahkan</p>
                   </div>
+                  {enrollStats.unchanged > 0 && <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-center"><p className="text-3xl font-bold text-sky-700">{enrollStats.unchanged}</p><p className="text-xs font-semibold text-sky-700">Sudah terdaftar</p></div>}
                   <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-center">
                     <p className="text-3xl font-bold text-red-700">{enrollStats.fail}</p>
                     <p className="text-xs font-semibold uppercase text-red-700">Gagal</p>
@@ -818,7 +764,7 @@ export function ProgramParticipants({ programId }: { programId: string }) {
                 <Button
                   onClick={() => {
                     setIsAddModalOpen(false);
-                    notify(`${enrollStats.success} peserta berhasil ditambahkan.`, enrollStats.fail ? "info" : "success");
+                    notify(`${enrollStats.success} ditambahkan · ${enrollStats.unchanged} sudah terdaftar · ${enrollStats.fail} gagal.`, enrollStats.fail ? "info" : "success");
                   }}
                   className="h-11 w-full max-w-sm whitespace-nowrap bg-primary !text-white hover:bg-primary/90"
                 >
@@ -827,69 +773,8 @@ export function ProgramParticipants({ programId }: { programId: string }) {
                 </Button>
               </div>
             )}
-          </Card>
-        </div>
+          </ProgramDialog>
       )}
-    </div>
-  );
-}
-
-function MetricCard({
-  title,
-  value,
-  description,
-  icon: Icon,
-}: {
-  title: string;
-  value: number;
-  description: string;
-  icon: typeof Users;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <Icon className="h-4 w-4 text-primary" />
-      </CardHeader>
-      <CardContent>
-        <p className="text-3xl font-bold">{value}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function WorkflowItem({
-  done,
-  title,
-  description,
-  action,
-  onClick,
-}: {
-  done: boolean;
-  title: string;
-  description: string;
-  action: string;
-  onClick: () => void;
-}) {
-  return (
-    <div className="rounded-xl border bg-background p-4">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <p className="font-semibold">{title}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-        </div>
-        {done ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" /> : <AlertCircle className="h-5 w-5 shrink-0 text-amber-600" />}
-      </div>
-      <Button
-        type="button"
-        variant={done ? "outline" : "default"}
-        size="sm"
-        onClick={onClick}
-        className={done ? "h-9 whitespace-nowrap !text-foreground" : "h-9 whitespace-nowrap bg-primary !text-white hover:bg-primary/90"}
-      >
-        {action}
-      </Button>
     </div>
   );
 }

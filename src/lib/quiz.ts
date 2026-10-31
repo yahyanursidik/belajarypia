@@ -49,7 +49,7 @@ export function parseQuizImport(text: string, type: QuizQuestionType): ParsedImp
       correct_answer: correctAnswer,
       grading_guide: "",
       points,
-      isValid: questionText.length > 0 && options.length >= 2 && correctAnswer !== "" && Number.isFinite(points) && points > 0,
+      isValid: questionText.length > 0 && options.length >= 2 && options.every(option=>option.text.length>0) && new Set(options.map(option=>option.text)).size===options.length && new Set(options.map(option=>option.label)).size===options.length && options.some(option=>option.label===correctAnswer) && Number.isFinite(points) && points > 0,
     };
   });
 }

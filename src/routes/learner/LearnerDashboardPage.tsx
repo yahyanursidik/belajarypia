@@ -1,3 +1,4 @@
+import {AnnouncementHighlights} from "../shared/AnnouncementInboxPage";
 import { LearningCards } from "../../components/learner/LearningCards";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -7,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FullPageLoader } from "@/components/ui/full-page-loader";
-import { Megaphone, CalendarClock, ClipboardCheck, ArrowRight } from "lucide-react";
+import { CalendarClock, ClipboardCheck, ArrowRight } from "lucide-react";
 import type { Enrollment, OnboardingProgress, Participant } from "../../lib/enrollment";
 import {
   formatRegistrationDateTime,
@@ -32,7 +33,6 @@ export function LearnerDashboardPage() {
   const [participant, setParticipant] = useState<Participant | null>(null);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [onboarding, setOnboarding] = useState<OnboardingProgress[]>([]);
-  const [announcements, setAnnouncements] = useState<any[]>([]);
   const [availablePrograms, setAvailablePrograms] = useState<AvailableProgram[]>([]);
   const [registrationFormsByProgramId, setRegistrationFormsByProgramId] = useState<Record<string, RegistrationForm>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -99,24 +99,6 @@ export function LearnerDashboardPage() {
         setOnboarding((onboardingRows ?? []) as OnboardingProgress[]);
       }
 
-      // Fetch Announcements
-      const { data: annRows } = await supabase
-        .from("announcements")
-        .select("*")
-        .eq("status", "published")
-        .in("target_role", ["all", "participant"])
-        .order("created_at", { ascending: false });
-
-      if (annRows) {
-        const enrolledProgramIds = nextEnrollments.map(e => e.program_id);
-        const filteredAnns = annRows.filter(a => {
-           if (!a.target_program_id) return true;
-           return enrolledProgramIds.includes(a.target_program_id);
-        });
-        setAnnouncements(filteredAnns);
-      }
-
-
       const { data: allProgramsData } = await supabase
         .from("programs")
         .select("id, name, code, description, feature_flags")
@@ -178,31 +160,6 @@ export function LearnerDashboardPage() {
 
     void loadLearnerData();
   }, [user]);
-
-  useEffect(() => {
-    const enrolledProgramIds = new Set(enrollments.map((enrollment) => enrollment.program_id));
-    const channel = supabase
-      .channel("learner-learning-updates")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "announcements" },
-        (payload) => {
-          const announcement = payload.new as Record<string, unknown>;
-          const targetRole = String(announcement.target_role || "");
-          const targetProgramId = typeof announcement.target_program_id === "string" ? announcement.target_program_id : null;
-          const isEligible = (targetRole === "all" || targetRole === "participant")
-            && (!targetProgramId || enrolledProgramIds.has(targetProgramId));
-
-          if (!isEligible) return;
-          setAnnouncements((current) => current.some((item) => item.id === announcement.id) ? current : [announcement, ...current]);
-        },
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [enrollments]);
 
   const handleDirectEnroll = async (programId: string) => {
     
@@ -301,7 +258,7 @@ export function LearnerDashboardPage() {
       <header className="learner-home-header"><div><p>Assalamu’alaikum,</p><h1>{participant.display_name}</h1></div><Link className="learner-text-link" to="/learner/profil">Akun saya</Link></header>
       <section aria-labelledby="continue-heading" className="learner-section"><div className="learner-section-heading"><h2 id="continue-heading">Belajar hari ini</h2><Link className="learner-text-link" to="/learner/program-saya">Semua program</Link></div><LearningCards enrollments={activeEnrollments} /></section>
       {onboarding.some((item) => item.status !== "completed") && <p className="learner-notice">Persiapan belajar belum lengkap. <Link to="/learner/program-saya">Buka program Anda</Link></p>}
-      {announcements.length > 0 && <section className="learner-section" aria-labelledby="updates-heading"><h2 id="updates-heading">Pengumuman terbaru</h2><div className="learner-announcements">{announcements.slice(0, 3).map((item) => <details key={item.id}><summary><Megaphone size={17} /><span>{item.title}</span><time>{new Date(item.created_at).toLocaleDateString("id-ID")}</time></summary><p>{item.content}</p></details>)}</div>{announcements.length > 3 && <details className="learner-more-updates"><summary>{announcements.length - 3} pengumuman lainnya</summary>{announcements.slice(3).map((item) => <details key={item.id}><summary>{item.title}</summary><p>{item.content}</p></details>)}</details>}</section>}
+      <AnnouncementHighlights/>
       <details className="learner-catalog"><summary>Temukan program baru <span>{availablePrograms.length} program</span></summary>
       <Card className="mt-6">
         <CardHeader>

@@ -272,6 +272,8 @@ const LessonBoardEditorPage = lazy(() =>
   })),
 );
 
+const AnnouncementInboxPage=lazy(()=>import('./shared/AnnouncementInboxPage').then(m=>({default:m.AnnouncementInboxPage})));
+
 function RouteFallback() {
   return <FullPageLoader message="Memuat halaman..." />;
 }
@@ -355,6 +357,8 @@ export function AppRoutes() {
             }
           />
           <Route path="profil" element={<AdminProfilePage />} />
+          <Route path="informasi" element={<AnnouncementInboxPage/>}/>
+
           <Route path="penilaian" element={<ProtectedRoute allowedRoles={["admin"]}><TeacherReviewPage /></ProtectedRoute>} />
           <Route path="penilaian/:attemptId" element={<ProtectedRoute allowedRoles={["admin"]}><QuizEssayReviewPage /></ProtectedRoute>} />
           <Route
@@ -402,7 +406,7 @@ export function AppRoutes() {
           <Route
             path="helpdesk"
             element={
-              <ProtectedRoute allowedRoles={["admin", "helpdesk"]}>
+              <ProtectedRoute allowedRoles={["admin", "helpdesk", "finance"]}>
                 <SystemHelpdeskPage />
               </ProtectedRoute>
             }
@@ -457,6 +461,8 @@ export function AppRoutes() {
           <Route path="konten" element={<TeacherContentPage />} />
           <Route path="review" element={<TeacherReviewPage />} />
           <Route path="review/quiz/:attemptId" element={<QuizEssayReviewPage />} />
+          <Route path="pengumuman" element={<AnnouncementInboxPage/>}/>
+          <Route path="bantuan" element={<LearnerHelpPage />} />
           <Route path="profil" element={<TeacherProfilePage />} />
           <Route path="*" element={<TeacherPlaceholderPage />} />
         </Route>
@@ -483,6 +489,7 @@ export function AppRoutes() {
           <Route path="keuangan" element={<LearnerFinancePage />} />
           <Route path="pendaftaran/:programId" element={<AdmissionPortalPage />} />
           <Route path="cek-status" element={<AdmissionStatusPage />} />
+          <Route path="pengumuman" element={<AnnouncementInboxPage/>}/>
           <Route path="bantuan" element={<LearnerHelpPage />} />
           <Route path="*" element={<LearnerPlaceholderPage />} />
         </Route>
@@ -520,6 +527,7 @@ export function AppRoutes() {
           <Route path="keuangan" element={<AdminFinancePage />} />
           <Route path="profil" element={<AdminProfilePage />} />
           <Route path="pengumuman" element={<AdminAnnouncementsPage />} />
+          <Route path="informasi" element={<AnnouncementInboxPage/>}/>
           <Route path="pengaturan" element={<GlobalSettingsPage />} />
           <Route path="sertifikat" element={<CertificateTemplatesPage />} />
           <Route path="sertifikat/kelayakan" element={<CertificateEligibilityPage />} />

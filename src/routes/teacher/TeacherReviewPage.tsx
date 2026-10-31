@@ -1,510 +1,529 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
+import Papa from "papaparse";
 import {
-  AlertCircle,
+  ArrowRight,
   BarChart3,
   CheckCircle2,
   ClipboardCheck,
-  FileQuestion,
-  Filter,
-  GraduationCap,
+  Download,
   RefreshCw,
   Search,
-  UserCheck,
+  Clock3,
 } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FullPageLoader } from "@/components/ui/full-page-loader";
-import { Input } from "@/components/ui/input";
-import { useAuthSession } from "../../app/providers/authSessionContext";
-import { cn } from "../../lib/utils";
-import { supabase } from "../../lib/supabase";
-
-type TeacherProgram = {
-  id: string;
-  name: string;
-  code: string | null;
+import { PageHeader } from "../../components/admin/PageHeader";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import {
+  assessmentStatus,
+  assessmentStatusLabels,
+  assessmentSummary,
+  filterAssessments,
+  finiteScore,
+  type AssessmentItem,
+  type AssessmentProgram,
+} from "../../lib/assessmentWorkspace";
+import { loadAssessmentQueue } from "../../lib/assessmentData";
+import { formatRegistrationDateTime } from "../../lib/admission";
+const tones = {
+  pending: "amber",
+  below: "rose",
+  passed: "emerald",
+  graded: "blue",
+  recorded: "violet",
+  unavailable: "slate",
 };
-
-type TeacherModule = {
-  id: string;
-  program_id: string;
-  title: string;
-  code: string | null;
-};
-
-type TeacherLesson = {
-  id: string;
-  module_id: string;
-  title: string;
-  code: string | null;
-  lesson_type: string;
-  passing_grade: number | null;
-};
-
-type EnrollmentRow = {
-  id: string;
-  participant_id: string;
-  program_id: string;
-  enrollment_number: string | null;
-};
-
-type ParticipantRow = {
-  id: string;
-  display_name: string | null;
-  global_participant_number: string | null;
-};
-
-type QuizAttemptRow = {
-  id: string;
-  enrollment_id: string;
-  lesson_id: string;
-  attempt_number: number;
-  score: number | null;
-  status: "ongoing" | "submitted" | "pending_review" | "graded" | "abandoned";
-  submitted_at: string | null;
-  started_at: string;
-};
-
-type LessonProgressRow = {
-  id: string;
-  enrollment_id: string;
-  participant_id: string;
-  lesson_id: string;
-  status: "started" | "completed";
-  score: number | null;
-  completed_at: string | null;
-  started_at: string;
-};
-
-type ReviewItem = {
-  id: string;
-  source: "quiz_attempt" | "assignment_progress";
-  lesson: TeacherLesson | null;
-  module: TeacherModule | null;
-  program: TeacherProgram | null;
-  enrollment: EnrollmentRow | null;
-  participant: ParticipantRow | null;
-  score: number | null;
-  submittedAt: string | null;
-  status: "pending_review" | "passed" | "needs_attention";
-  attemptNumber?: number;
-  attemptStatus?: QuizAttemptRow["status"];
-};
-
-type ReviewFilter = "all" | "pending_review" | "needs_attention" | "quiz" | "assignment";
-
-function formatDate(value: string | null) {
-  if (!value) return "-";
-  return new Date(value).toLocaleString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
-function lessonTypeLabel(type: string) {
-  const labels: Record<string, string> = {
-    quiz: "Kuis",
-    exam: "Ujian",
-    assignment: "Tugas",
-  };
-  return labels[type] ?? type;
-}
-
-function reviewBadge(status: ReviewItem["status"]) {
-  if (status === "passed") {
-    return <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">Tuntas</Badge>;
-  }
-  if (status === "needs_attention") {
-    return <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700">Perlu Perhatian</Badge>;
-  }
-  return <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">Perlu Review</Badge>;
-}
-
-function getErrorMessage(error: unknown) {
-  if (!error || typeof error !== "object" || !("message" in error)) return "Terjadi kendala saat memuat data review.";
-  return String((error as { message?: string }).message ?? "Terjadi kendala saat memuat data review.");
-}
-
 export function TeacherReviewPage() {
-  const { user } = useAuthSession();
   const location = useLocation();
-  const [programs, setPrograms] = useState<TeacherProgram[]>([]);
-  const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filter, setFilter] = useState<ReviewFilter>("all");
-
-  const loadReviewData = useCallback(async () => {
-    if (!user) {
-      setIsLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    setErrorMessage(null);
-
-    const { data: programRows, error: programError } = await supabase
-      .from("programs")
-      .select("id, name, code")
-      .order("name");
-
-    if (programError) {
-      setErrorMessage(programError.message);
-      setIsLoading(false);
-      return;
-    }
-
-    const nextPrograms = (programRows ?? []) as TeacherProgram[];
-    setPrograms(nextPrograms);
-
-    const programIds = nextPrograms.map((program) => program.id);
-    if (programIds.length === 0) {
-      setReviewItems([]);
-      setIsLoading(false);
-      return;
-    }
-
-    const { data: moduleRows, error: moduleError } = await supabase
-      .from("program_modules")
-      .select("id, program_id, title, code")
-      .in("program_id", programIds);
-
-    if (moduleError) {
-      setErrorMessage(moduleError.message);
-      setIsLoading(false);
-      return;
-    }
-
-    const nextModules = (moduleRows ?? []) as TeacherModule[];
-    const moduleIds = nextModules.map((module) => module.id);
-    if (moduleIds.length === 0) {
-      setReviewItems([]);
-      setIsLoading(false);
-      return;
-    }
-
-    const { data: lessonRows, error: lessonError } = await supabase
-      .from("lessons")
-      .select("id, module_id, title, code, lesson_type, passing_grade")
-      .in("module_id", moduleIds)
-      .in("lesson_type", ["quiz", "exam", "assignment"]);
-
-    if (lessonError) {
-      setErrorMessage(lessonError.message);
-      setIsLoading(false);
-      return;
-    }
-
-    const nextLessons = (lessonRows ?? []) as TeacherLesson[];
-    const lessonIds = nextLessons.map((lesson) => lesson.id);
-    if (lessonIds.length === 0) {
-      setReviewItems([]);
-      setIsLoading(false);
-      return;
-    }
-
-    const [attemptRes, progressRes] = await Promise.all([
-      supabase
-        .from("quiz_attempts")
-        .select("id, enrollment_id, lesson_id, attempt_number, score, status, submitted_at, started_at")
-        .in("lesson_id", lessonIds)
-        .in("status", ["submitted", "pending_review", "graded"])
-        .order("submitted_at", { ascending: false }),
-      supabase
-        .from("lesson_progresses")
-        .select("id, enrollment_id, participant_id, lesson_id, status, score, completed_at, started_at")
-        .in("lesson_id", lessonIds)
-        .eq("status", "completed")
-        .order("completed_at", { ascending: false }),
-    ]);
-
-    if (attemptRes.error || progressRes.error) {
-      setErrorMessage(getErrorMessage(attemptRes.error ?? progressRes.error));
-      setIsLoading(false);
-      return;
-    }
-
-    const attemptRows = (attemptRes.data ?? []) as QuizAttemptRow[];
-    const progressRows = (progressRes.data ?? []) as LessonProgressRow[];
-    const enrollmentIds = Array.from(new Set([...attemptRows.map((row) => row.enrollment_id), ...progressRows.map((row) => row.enrollment_id)]));
-
-    let enrollmentRows: EnrollmentRow[] = [];
-    let participantRows: ParticipantRow[] = [];
-    if (enrollmentIds.length > 0) {
-      const { data: enrollments } = await supabase
-        .from("enrollments")
-        .select("id, participant_id, program_id, enrollment_number")
-        .in("id", enrollmentIds);
-
-      enrollmentRows = (enrollments ?? []) as EnrollmentRow[];
-      const participantIds = Array.from(new Set(enrollmentRows.map((enrollment) => enrollment.participant_id)));
-      if (participantIds.length > 0) {
-        const { data: participants } = await supabase
-          .from("participants")
-          .select("id, display_name, global_participant_number")
-          .in("id", participantIds);
-        participantRows = (participants ?? []) as ParticipantRow[];
+  const [params, setParams] = useSearchParams();
+  const root = location.pathname.startsWith("/system")
+    ? "/system"
+    : location.pathname.startsWith("/admin")
+      ? "/admin"
+      : "/teacher";
+  const home = root === "/teacher" ? "/teacher/review" : `${root}/penilaian`;
+  const detailBase = root === "/teacher" ? "/teacher/review/quiz" : home;
+  const [data, setData] = useState<{
+    programs: AssessmentProgram[];
+    items: AssessmentItem[];
+  }>({ programs: [], items: [] });
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+  const requestRef = useRef<AbortController | null>(null);
+  const load = useCallback(async (silent = false) => {
+    requestRef.current?.abort();
+    const request = new AbortController();
+    requestRef.current = request;
+    setError("");
+    if (silent) setRefreshing(true);
+    else setLoading(true);
+    try {
+      const next = await loadAssessmentQueue(request.signal);
+      if (!request.signal.aborted) setData(next);
+    } catch {
+      if (!request.signal.aborted)
+        setError("Antrean penilaian belum dapat dimuat. Coba lagi.");
+    } finally {
+      if (!request.signal.aborted) {
+        setLoading(false);
+        setRefreshing(false);
       }
     }
-
-    const programMap = new Map(nextPrograms.map((program) => [program.id, program]));
-    const moduleMap = new Map(nextModules.map((module) => [module.id, module]));
-    const lessonMap = new Map(nextLessons.map((lesson) => [lesson.id, lesson]));
-    const enrollmentMap = new Map(enrollmentRows.map((enrollment) => [enrollment.id, enrollment]));
-    const participantMap = new Map(participantRows.map((participant) => [participant.id, participant]));
-
-    const attemptItems = attemptRows.map((attempt): ReviewItem => {
-      const lesson = lessonMap.get(attempt.lesson_id) ?? null;
-      const module = lesson ? moduleMap.get(lesson.module_id) ?? null : null;
-      const enrollment = enrollmentMap.get(attempt.enrollment_id) ?? null;
-      const participant = enrollment ? participantMap.get(enrollment.participant_id) ?? null : null;
-      const passingGrade = lesson?.passing_grade ?? 70;
-      const status: ReviewItem["status"] =
-        attempt.score === null ? "pending_review" : attempt.score >= passingGrade ? "passed" : "needs_attention";
-
-      return {
-        id: attempt.id,
-        source: "quiz_attempt",
-        lesson,
-        module,
-        program: module ? programMap.get(module.program_id) ?? null : null,
-        enrollment,
-        participant,
-        score: attempt.score,
-        submittedAt: attempt.submitted_at ?? attempt.started_at,
-        status,
-        attemptNumber: attempt.attempt_number,
-        attemptStatus: attempt.status,
-      };
-    });
-
-    const assignmentItems = progressRows
-      .filter((progress) => lessonMap.get(progress.lesson_id)?.lesson_type === "assignment")
-      .map((progress): ReviewItem => {
-        const lesson = lessonMap.get(progress.lesson_id) ?? null;
-        const module = lesson ? moduleMap.get(lesson.module_id) ?? null : null;
-        const enrollment = enrollmentMap.get(progress.enrollment_id) ?? null;
-        const participant = participantMap.get(progress.participant_id) ?? (enrollment ? participantMap.get(enrollment.participant_id) ?? null : null);
-        return {
-          id: progress.id,
-          source: "assignment_progress",
-          lesson,
-          module,
-          program: module ? programMap.get(module.program_id) ?? null : null,
-          enrollment,
-          participant,
-          score: progress.score,
-          submittedAt: progress.completed_at ?? progress.started_at,
-          status: progress.score === null ? "pending_review" : progress.score >= 70 ? "passed" : "needs_attention",
-        };
-      });
-
-    setReviewItems([...attemptItems, ...assignmentItems].sort((a, b) => new Date(b.submittedAt ?? 0).getTime() - new Date(a.submittedAt ?? 0).getTime()));
-    setIsLoading(false);
-  }, [user]);
-
+  }, []);
   useEffect(() => {
-    void loadReviewData();
-  }, [loadReviewData]);
-
-  const filteredItems = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    return reviewItems.filter((item) => {
-      const matchesSearch =
-        !query ||
-        (item.participant?.display_name ?? "").toLowerCase().includes(query) ||
-        (item.participant?.global_participant_number ?? "").toLowerCase().includes(query) ||
-        (item.lesson?.title ?? "").toLowerCase().includes(query) ||
-        (item.program?.name ?? "").toLowerCase().includes(query);
-      const matchesFilter =
-        filter === "all" ||
-        item.status === filter ||
-        (filter === "quiz" && ["quiz", "exam"].includes(item.lesson?.lesson_type ?? "")) ||
-        (filter === "assignment" && item.lesson?.lesson_type === "assignment");
-      return matchesSearch && matchesFilter;
-    });
-  }, [filter, reviewItems, searchQuery]);
-
-  const pendingCount = reviewItems.filter((item) => item.status === "pending_review").length;
-  const attentionCount = reviewItems.filter((item) => item.status === "needs_attention").length;
-  const scoredItems = reviewItems.filter((item) => typeof item.score === "number");
-  const averageScore = scoredItems.length ? Math.round(scoredItems.reduce((sum, item) => sum + Number(item.score), 0) / scoredItems.length) : 0;
-
-  if (isLoading) return <FullPageLoader message="Memuat antrean review..." />;
-
+    void load();
+    return () => requestRef.current?.abort();
+  }, [load]);
+  const filters = {
+    program: params.get("program") || "all",
+    lesson: params.get("lesson") || "all",
+    status: params.get("status") || "all",
+    kind: params.get("kind") || "all",
+    q: params.get("q") || "",
+    sort: params.get("sort") || "oldest",
+  };
+  function update(values: Record<string, string | null>, reset = true) {
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        for (const [key, value] of Object.entries(values)) {
+          if (!value || value === "all") next.delete(key);
+          else next.set(key, value);
+        }
+        if (reset) next.delete("page");
+        return next;
+      },
+      { replace: true },
+    );
+  }
+  const scoped = data.items.filter(
+    (item) =>
+      filters.program === "all" ||
+      item.lesson.program_modules.program_id === filters.program,
+  );
+  const metrics = assessmentSummary(scoped);
+  const filtered = filterAssessments(data.items, filters);
+  const pageValue = Number(params.get("page"));
+  const page = Number.isSafeInteger(pageValue) && pageValue > 0 ? pageValue : 1;
+  const size = [10, 25, 50].includes(Number(params.get("size")))
+    ? Number(params.get("size"))
+    : 10;
+  const pages = Math.max(1, Math.ceil(filtered.length / size));
+  const safePage = Math.min(page, pages);
+  const visible = filtered.slice((safePage - 1) * size, safePage * size);
+  const lessons = useMemo(
+    () => [
+      ...new Map(
+        data.items
+          .filter(
+            (item) =>
+              filters.program === "all" ||
+              item.lesson.program_modules.program_id === filters.program,
+          )
+          .map((item) => [item.lesson.id, item.lesson]),
+      ).values(),
+    ],
+    [data.items, filters.program],
+  );
+  const queuePath = home + (params.size ? `?${params}` : "");
+  const participantPath = (item: AssessmentItem) =>
+    root === "/teacher"
+      ? `/teacher/kelas/program/${item.lesson.program_modules.program_id}/peserta`
+      : `${root}/peserta/${item.enrollment.participant_id}?tab=academic`;
+  const firstPending = filterAssessments(scoped, {
+    ...filters,
+    program: "all",
+    status: "pending",
+    kind: "quiz",
+    sort: "oldest",
+  })[0];
+  function exportCsv() {
+    const rows = [
+      [
+        "Peserta",
+        "Nomor induk",
+        "Program",
+        "Materi",
+        "Jenis",
+        "Percobaan",
+        "Status",
+        "Nilai final",
+        "Dikumpulkan",
+      ],
+      ...filtered.map((item) => [
+        item.enrollment.participants.display_name,
+        item.enrollment.participants.global_participant_number,
+        item.lesson.program_modules.programs.name,
+        item.lesson.title,
+        item.kind === "quiz" ? "Ujian/kuis" : "Progres tugas",
+        String(item.attemptNumber),
+        assessmentStatusLabels[assessmentStatus(item)],
+        item.status === "graded" || item.kind === "assignment"
+          ? (finiteScore(item.score) ?? "")
+          : "",
+        formatRegistrationDateTime(item.submittedAt),
+      ]),
+    ];
+    const url = URL.createObjectURL(
+      new Blob(["\uFEFF" + Papa.unparse(rows, { escapeFormulae: true })], {
+        type: "text/csv;charset=utf-8",
+      }),
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `penilaian-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
   return (
-    <div className="page-stack pb-12">
-      <section className="page-hero">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <Badge variant="secondary" className="mb-3 border-white/30 bg-white/20 text-white">TUGAS & REVIEW</Badge>
-            <h1 className="text-3xl font-bold text-white">Antrean Penilaian</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/80">
-              Pantau hasil kuis, ujian, dan tugas peserta dari program yang Anda ampu.
-            </p>
-          </div>
-          <Button type="button" variant="secondary" className="bg-white !text-primary hover:bg-white/90" onClick={() => void loadReviewData()}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Muat Ulang
-          </Button>
-        </div>
-      </section>
-
-      {errorMessage && (
-        <Alert className="border-amber-200 bg-amber-50 text-amber-900">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Review belum bisa dimuat</AlertTitle>
-          <AlertDescription>
-            {errorMessage}. Jika ini terkait permission, jalankan migrasi 202607140007_teacher_learning_review_rls.sql.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div className="page-stack assessment-workspace">
+      <PageHeader
+        title="Penilaian"
+        actions={
+          <>
+            <Button
+              variant="outline"
+              disabled={loading || refreshing}
+              aria-label="Muat ulang penilaian"
+              onClick={() => void load(true)}
+            >
+              <RefreshCw
+                size={16}
+                className={refreshing ? "animate-spin" : ""}
+              />
+            </Button>
+            <Button
+              variant="outline"
+              disabled={loading || !!error || !filtered.length}
+              onClick={exportCsv}
+            >
+              <Download size={16} />
+              Ekspor hasil
+            </Button>
+            {firstPending ? (
+              <Button asChild>
+                <Link
+                  to={`${detailBase}/${firstPending.id}?returnTo=${encodeURIComponent(queuePath)}`}
+                >
+                  Mulai koreksi
+                  <ArrowRight size={15} />
+                </Link>
+              </Button>
+            ) : (
+              <Button disabled>
+                Mulai koreksi
+                <ArrowRight size={15} />
+              </Button>
+            )}
+          </>
+        }
+      />
+      <div className="program-metrics">
         {[
-          { label: "Item Review", value: reviewItems.length, desc: "Kuis, ujian, dan tugas terkumpul.", icon: ClipboardCheck, tone: "bg-sky-50 text-sky-700 border-sky-200" },
-          { label: "Perlu Review", value: pendingCount, desc: "Belum memiliki skor final.", icon: FileQuestion, tone: "bg-amber-50 text-amber-700 border-amber-200" },
-          { label: "Perlu Perhatian", value: attentionCount, desc: "Skor di bawah batas lulus.", icon: AlertCircle, tone: "bg-red-50 text-red-700 border-red-200" },
-          { label: "Rata-rata Skor", value: averageScore, desc: "Dari item yang sudah memiliki skor.", icon: BarChart3, tone: "bg-primary/10 text-primary border-primary/20" },
+          {
+            label: "Semua hasil",
+            value: metrics.total,
+            icon: ClipboardCheck,
+            tone: "blue",
+            action: () =>
+              update({ status: null, kind: null, q: null, lesson: null }),
+          },
+          {
+            label: "Perlu dinilai",
+            value: metrics.pending,
+            icon: Clock3,
+            tone: "amber",
+            action: () =>
+              update({
+                status: "pending",
+                kind: "quiz",
+                q: null,
+                lesson: null,
+              }),
+          },
+          {
+            label: "Di bawah batas",
+            value: metrics.below,
+            icon: CheckCircle2,
+            tone: "rose",
+            action: () =>
+              update({ status: "below", kind: "quiz", q: null, lesson: null }),
+          },
         ].map((item) => (
-          <Card key={item.label} className="border-border/60 shadow-sm">
-            <CardContent className="p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">{item.label}</p>
-                  <p className="mt-2 text-2xl font-bold text-foreground">{item.value.toLocaleString("id-ID")}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{item.desc}</p>
-                </div>
-                <div className={cn("rounded-xl border p-2", item.tone)}>
-                  <item.icon className="h-5 w-5" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <button
+            key={item.label}
+            className={`admin-stat admin-tone-${item.tone}`}
+            onClick={item.action}
+          >
+            <span className="admin-stat__icon">
+              <item.icon size={19} />
+            </span>
+            <span>
+              <span className="admin-stat__label">{item.label}</span>
+              <strong>{loading || error ? "—" : item.value}</strong>
+            </span>
+            <ArrowRight size={14} />
+          </button>
         ))}
+        <div className="admin-stat admin-tone-violet">
+          <span className="admin-stat__icon">
+            <BarChart3 size={19} />
+          </span>
+          <span>
+            <span className="admin-stat__label">Rerata final terbaru</span>
+            <strong>
+              {loading || error || metrics.average === null
+                ? "—"
+                : metrics.average.toLocaleString("id-ID", {
+                    maximumFractionDigits: 1,
+                  })}
+            </strong>
+          </span>
+        </div>
       </div>
-
-      <Card className="border-border/60 shadow-sm">
-        <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <CardTitle>Daftar Review Peserta</CardTitle>
-            <CardDescription>Cari peserta, filter status, dan buka materi untuk tindak lanjut.</CardDescription>
+      <section className="program-panel">
+        <div className="assessment-filters">
+          <div className="admission-search">
+            <Search size={16} />
+            <Input
+              aria-label="Cari penilaian"
+              placeholder="Peserta, nomor induk, atau materi…"
+              value={filters.q}
+              onChange={(event) => update({ q: event.target.value })}
+            />
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <div className="relative min-w-0 sm:w-72">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input className="pl-9" placeholder="Cari peserta, materi, program..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
-            </div>
-            <div className="flex items-center gap-2 rounded-md border bg-background px-3">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <select className="h-10 bg-transparent text-sm outline-none" value={filter} onChange={(event) => setFilter(event.target.value as ReviewFilter)}>
-                <option value="all">Semua</option>
-                <option value="pending_review">Perlu Review</option>
-                <option value="needs_attention">Perlu Perhatian</option>
-                <option value="quiz">Kuis/Ujian</option>
-                <option value="assignment">Tugas</option>
-              </select>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {programs.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border p-10 text-center">
-              <GraduationCap className="mx-auto h-10 w-10 text-muted-foreground" />
-              <p className="mt-3 font-medium">Belum ada program diampu</p>
-              <p className="mt-1 text-sm text-muted-foreground">Hubungi admin untuk penugasan program atau kelas.</p>
-            </div>
-          ) : filteredItems.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border p-10 text-center">
-              <CheckCircle2 className="mx-auto h-10 w-10 text-primary/70" />
-              <p className="mt-3 font-medium">Antrean review kosong</p>
-              <p className="mt-1 text-sm text-muted-foreground">Tidak ada item yang cocok dengan filter saat ini.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-lg border border-border/60">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3 font-semibold">Peserta</th>
-                    <th className="px-4 py-3 font-semibold">Materi</th>
-                    <th className="px-4 py-3 font-semibold">Program</th>
-                    <th className="px-4 py-3 font-semibold">Skor</th>
-                    <th className="px-4 py-3 font-semibold">Status</th>
-                    <th className="px-4 py-3 text-right font-semibold">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {filteredItems.map((item) => (
-                    <tr key={`${item.source}-${item.id}`} className="hover:bg-muted/30">
-                      <td className="min-w-56 px-4 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
-                            <UserCheck className="h-4 w-4" />
-                          </div>
-                          <div>
-                            <p className="font-semibold text-foreground">{item.participant?.display_name ?? "Peserta"}</p>
-                            <p className="text-xs text-muted-foreground">{item.participant?.global_participant_number ?? item.enrollment?.enrollment_number ?? "-"}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="min-w-60 px-4 py-4">
-                        <p className="font-medium text-foreground">{item.lesson?.title ?? "-"}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {lessonTypeLabel(item.lesson?.lesson_type ?? "")}
-                          {item.attemptNumber ? ` - Percobaan ${item.attemptNumber}` : ""}
-                        </p>
-                      </td>
-                      <td className="min-w-52 px-4 py-4">
-                        <p className="font-medium text-foreground">{item.program?.name ?? "-"}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{item.module?.title ?? "-"} - {formatDate(item.submittedAt)}</p>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-4 font-semibold">
-                        {item.score === null ? "-" : item.score.toLocaleString("id-ID")}
-                      </td>
-                      <td className="px-4 py-4">{reviewBadge(item.status)}</td>
-                      <td className="px-4 py-4 text-right">
-                        {item.source === "quiz_attempt" ? (
-                          <Button asChild size="sm" variant={item.attemptStatus === "pending_review" ? "default" : "outline"}>
-                            <Link to={`${location.pathname.startsWith("/admin") ? "/admin/penilaian" : location.pathname.startsWith("/system") ? "/system/penilaian" : "/teacher/review/quiz"}/${item.id}`}>
-                              {item.attemptStatus === "pending_review" ? "Nilai Esai" : "Lihat Nilai"}
-                            </Link>
-                          </Button>
-                        ) : (
-                          <Button asChild size="sm" variant="outline">
-                            <Link to={`/teacher/kelas/program/${item.program?.id}/peserta`}>Buka Peserta</Link>
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <select
+            aria-label="Program penilaian"
+            className="field-control"
+            value={filters.program}
+            onChange={(event) =>
+              update({ program: event.target.value, lesson: null })
+            }
+          >
+            <option value="all">Semua program</option>
+            {data.programs.map((program) => (
+              <option key={program.id} value={program.id}>
+                {program.name}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Materi penilaian"
+            className="field-control"
+            value={filters.lesson}
+            onChange={(event) => update({ lesson: event.target.value })}
+          >
+            <option value="all">Semua materi</option>
+            {lessons.map((lesson) => (
+              <option key={lesson.id} value={lesson.id}>
+                {lesson.title}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Jenis penilaian"
+            className="field-control"
+            value={filters.kind}
+            onChange={(event) => update({ kind: event.target.value })}
+          >
+            <option value="all">Semua jenis</option>
+            <option value="quiz">Ujian & kuis</option>
+            <option value="assignment">Progres tugas</option>
+          </select>
+          <select
+            aria-label="Status penilaian"
+            className="field-control"
+            value={filters.status}
+            onChange={(event) => update({ status: event.target.value })}
+          >
+            <option value="all">Semua status</option>
+            {Object.entries(assessmentStatusLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Urutan penilaian"
+            className="field-control"
+            value={filters.sort}
+            onChange={(event) => update({ sort: event.target.value })}
+          >
+            <option value="oldest">Terlama dahulu</option>
+            <option value="newest">Terbaru dahulu</option>
+          </select>
+          {Object.values(filters).some(
+            (value) => !["all", "oldest", ""].includes(value),
+          ) && (
+            <Button variant="ghost" onClick={() => setParams({})}>
+              Hapus filter
+            </Button>
           )}
-        </CardContent>
-      </Card>
-
-      <Card className="border-border/60 shadow-sm">
-        <CardHeader>
-          <CardTitle>Workflow Review</CardTitle>
-          <CardDescription>Gunakan alur ini untuk menjaga tindak lanjut akademik tetap rapi.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-4">
-          {[
-            { title: "1. Cek Antrean", desc: "Filter item yang belum punya skor atau perlu perhatian.", icon: ClipboardCheck },
-            { title: "2. Buka Peserta", desc: "Lihat konteks peserta, program, dan transkrip bila perlu.", icon: UserCheck },
-            { title: "3. Beri Tindak Lanjut", desc: "Catat arahan remedial, pengulangan, atau penguatan materi.", icon: FileQuestion },
-            { title: "4. Pantau Tren", desc: "Gunakan rata-rata skor untuk mengevaluasi materi dan soal.", icon: BarChart3 },
-          ].map((step) => (
-            <div key={step.title} className="rounded-lg border border-border/60 p-4">
-              <step.icon className="h-5 w-5 text-primary" />
-              <p className="mt-2 font-semibold text-foreground">{step.title}</p>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{step.desc}</p>
+        </div>
+        {filters.kind === "assignment" && (
+          <p className="program-notice mb-4">
+            Data ini mencatat progres tugas. Koreksi jawaban esai tersedia pada
+            Ujian & kuis.
+          </p>
+        )}
+        {error ? (
+          <div className="admission-empty">
+            <p className="program-error" role="alert">
+              {error}
+            </p>
+            <Button variant="outline" onClick={() => void load()}>
+              Coba lagi
+            </Button>
+          </div>
+        ) : loading ? (
+          <p role="status" className="program-loading">
+            Memuat penilaian…
+          </p>
+        ) : (
+          <>
+            <div className="admission-results">
+              <span>{filtered.length} hasil</span>
+              <label>
+                Baris
+                <select
+                  className="field-control"
+                  aria-label="Hasil per halaman"
+                  value={size}
+                  onChange={(event) => update({ size: event.target.value })}
+                >
+                  {[10, 25, 50].map((value) => (
+                    <option key={value}>{value}</option>
+                  ))}
+                </select>
+              </label>
             </div>
-          ))}
-        </CardContent>
-      </Card>
+            {!visible.length ? (
+              <div className="admission-empty">
+                <ClipboardCheck size={30} />
+                <h3>Tidak ada hasil penilaian</h3>
+                <Button variant="outline" onClick={() => setParams({})}>
+                  Tampilkan semua
+                </Button>
+              </div>
+            ) : (
+              <div className="admission-table-wrap">
+                <table className="admission-table">
+                  <thead>
+                    <tr>
+                      <th>Peserta</th>
+                      <th>Materi & program</th>
+                      <th>Nilai</th>
+                      <th>Status</th>
+                      <th>Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map((item) => {
+                      const status = assessmentStatus(item);
+                      return (
+                        <tr key={`${item.kind}-${item.id}`}>
+                          <td data-label="Peserta">
+                            <Link
+                              className="admission-name"
+                              to={participantPath(item)}
+                            >
+                              {item.enrollment.participants.display_name}
+                            </Link>
+                            <small>
+                              {
+                                item.enrollment.participants
+                                  .global_participant_number
+                              }{" "}
+                              · {item.enrollment.enrollment_number}
+                            </small>
+                          </td>
+                          <td data-label="Materi">
+                            <strong>{item.lesson.title}</strong>
+                            <small>
+                              {item.lesson.program_modules.programs.name} ·{" "}
+                              {item.kind === "quiz"
+                                ? `Percobaan ${item.attemptNumber}`
+                                : "Tugas"}
+                              <br />
+                              {formatRegistrationDateTime(item.submittedAt)}
+                            </small>
+                          </td>
+                          <td data-label="Nilai">
+                            <strong>
+                              {status === "pending" ||
+                              finiteScore(item.score) === null
+                                ? "—"
+                                : item.score}
+                            </strong>
+                            <small>
+                              {item.lesson.passing_grade !== null
+                                ? `Batas ${item.lesson.passing_grade}`
+                                : "Tanpa batas nilai"}
+                            </small>
+                          </td>
+                          <td data-label="Status">
+                            <span
+                              className={`admission-badge admission-tone-${tones[status]}`}
+                            >
+                              {assessmentStatusLabels[status]}
+                            </span>
+                          </td>
+                          <td data-label="Aksi">
+                            <Button
+                              variant={
+                                status === "pending" ? "default" : "outline"
+                              }
+                              size="sm"
+                              asChild
+                            >
+                              <Link
+                                to={
+                                  item.kind === "quiz"
+                                    ? `${detailBase}/${item.id}?returnTo=${encodeURIComponent(queuePath)}`
+                                    : participantPath(item)
+                                }
+                              >
+                                {item.kind === "assignment"
+                                  ? "Lihat progres"
+                                  : status === "pending"
+                                    ? "Nilai esai"
+                                    : "Lihat hasil"}
+                                <ArrowRight size={14} />
+                              </Link>
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="admission-pagination">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={safePage === 1}
+                onClick={() => update({ page: String(safePage - 1) }, false)}
+              >
+                Sebelumnya
+              </Button>
+              <span>
+                {safePage} / {pages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={safePage === pages}
+                onClick={() => update({ page: String(safePage + 1) }, false)}
+              >
+                Berikutnya
+              </Button>
+            </div>
+          </>
+        )}
+      </section>
     </div>
   );
 }
