@@ -1,0 +1,16 @@
+alter table public.programs add column name text;
+alter table public.programs add column created_at timestamptz default now();
+alter table public.enrollments add column created_at timestamptz default now();
+alter table public.audit_logs add column created_at timestamptz default now();
+create table public.units(id uuid primary key default gen_random_uuid(),name text);
+create table public.program_modules(id uuid primary key default gen_random_uuid(),program_id uuid references programs);
+create table public.lessons(id uuid primary key default gen_random_uuid(),module_id uuid references program_modules,visibility_status text,release_at timestamptz,lesson_type text);
+create table public.lesson_progresses(id uuid primary key default gen_random_uuid(),enrollment_id uuid references enrollments,participant_id uuid references participants,lesson_id uuid references lessons,status text,unique(enrollment_id,lesson_id));
+create table public.applicant_program_choices(id uuid primary key default gen_random_uuid(),applicant_id uuid,program_id uuid references programs,review_status text,created_at timestamptz default now());
+create table public.transactions(id uuid primary key default gen_random_uuid(),program_id uuid references programs,amount numeric,status text,paid_at date,created_at timestamptz default now());
+create table public.finance_invoices(id uuid primary key default gen_random_uuid(),program_id uuid references programs,status text,due_date date);
+create table public.quiz_attempts(id uuid primary key default gen_random_uuid(),enrollment_id uuid references enrollments,lesson_id uuid references lessons,status text);
+create table public.certificate_issuance_batches(id uuid primary key default gen_random_uuid(),program_id uuid references programs,status text);
+create table public.helpdesk_tickets(id uuid primary key default gen_random_uuid(),reporter_id uuid,target_program_id uuid references programs,status text,follow_up_at timestamptz);
+create table public.helpdesk_messages(id uuid primary key default gen_random_uuid(),ticket_id uuid references helpdesk_tickets,sender_id uuid,is_internal_note boolean default false,created_at timestamptz default now());
+create table public.notification_logs(id uuid primary key default gen_random_uuid(),event_type text,status text,error_message text,created_at timestamptz default now());

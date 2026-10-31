@@ -1,3 +1,4 @@
+import { inWibDateRange, validDateKey } from "../../lib/dateRange";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import Papa from "papaparse";
@@ -89,6 +90,8 @@ export function AdminApplicantListPage() {
   const program = params.get("program") || "all";
   const status = params.get("status") || "all";
   const query = params.get("q") || "";
+  const from = validDateKey(params.get("from") ?? "") ? params.get("from")! : "";
+  const to = validDateKey(params.get("to") ?? "") ? params.get("to")! : "";
   const page = admissionPage(params.get("page"));
   const size = [10, 25, 50].includes(Number(params.get("size")))
     ? Number(params.get("size"))
@@ -127,8 +130,11 @@ export function AdminApplicantListPage() {
       programAdmissionState(row, formMap.get(row.id), data.forms) === "open",
   ).length;
   const filtered = useMemo(
-    () => filterApplications(data.applications, program, status, query),
-    [data.applications, program, status, query],
+    () =>
+      filterApplications(data.applications, program, status, query).filter((row) =>
+        inWibDateRange(row.created_at, from, to),
+      ),
+    [data.applications, program, status, query, from, to],
   );
   const pages = Math.max(1, Math.ceil(filtered.length / size));
   const safePage = Math.min(page, pages);
@@ -555,10 +561,20 @@ export function AdminApplicantListPage() {
                     ),
                   )}
                 </select>
-                {(query || status !== "all") && (
+                <label className="dashboard-date-field">
+                  Pengajuan mulai (WIB)
+                  <Input type="date" value={from} onChange={(e) => update({ from: e.target.value })} />
+                </label>
+                <label className="dashboard-date-field">
+                  Sampai (WIB)
+                  <Input type="date" value={to} min={from || undefined} onChange={(e) => update({ to: e.target.value })} />
+                </label>
+                {(query || status !== "all" || from || to) && (
                   <Button
                     variant="ghost"
-                    onClick={() => update({ q: null, status: null })}
+                    onClick={() =>
+                      update({ q: null, status: null, from: null, to: null })
+                    }
                   >
                     Hapus filter
                   </Button>

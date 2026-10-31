@@ -1,3 +1,5 @@
+import { useSearchParams } from "react-router-dom";
+import { validDateKey } from "../../lib/dateRange";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import {
@@ -109,6 +111,7 @@ function formatDateTime(value: string) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "Asia/Jakarta",
   });
 }
 
@@ -120,6 +123,7 @@ function summarizeDetails(details: AuditDetails | null) {
 }
 
 export function SystemAuditPage() {
+  const [entryParams] = useSearchParams();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -129,10 +133,10 @@ export function SystemAuditPage() {
   const [pageSize, setPageSize] = useState(20);
   const [filterAction, setFilterAction] = useState("all");
   const [filterEntity, setFilterEntity] = useState("all");
-  const [filterCategory, setFilterCategory] = useState<AuditActionCategory>("all");
+  const [filterCategory, setFilterCategory] = useState<AuditActionCategory>(()=>["create","update","delete","auth","other"].includes(entryParams.get("category")??"") ? entryParams.get("category") as AuditActionCategory : "all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(()=>validDateKey(entryParams.get("from")??"") ? entryParams.get("from")! : "");
+  const [dateTo, setDateTo] = useState(()=>validDateKey(entryParams.get("to")??"") ? entryParams.get("to")! : "");
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
   const [actionOptions, setActionOptions] = useState<string[]>([]);
   const [entityOptions, setEntityOptions] = useState<string[]>([]);
@@ -183,8 +187,8 @@ export function SystemAuditPage() {
         query = query.not("action", "ilike", `%${term}%`);
       });
     }
-    if (dateFrom) query = query.gte("created_at", new Date(`${dateFrom}T00:00:00`).toISOString());
-    if (dateTo) query = query.lte("created_at", new Date(`${dateTo}T23:59:59`).toISOString());
+    if (dateFrom) query = query.gte("created_at", new Date(`${dateFrom}T00:00:00+07:00`).toISOString());
+    if (dateTo) query = query.lt("created_at", new Date(new Date(`${dateTo}T00:00:00+07:00`).getTime()+86400000).toISOString());
 
     const trimmedSearch = searchQuery.trim();
     const safeSearch = trimmedSearch.replace(/[,%()]/g, " ").trim();
