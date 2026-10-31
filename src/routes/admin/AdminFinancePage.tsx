@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { inWibDateRange } from "../../lib/dateRange";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import {
   ArrowRight,
@@ -66,6 +67,15 @@ export function AdminFinancePage() {
   const [form, setForm] = useState<
     "invoice" | "payment" | "channel" | "commitment" | null
   >(null);
+  useEffect(() => {
+    if (params.get("action") !== "invoice") return;
+    setForm("invoice");
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete("action");
+      return next;
+    }, { replace: true });
+  }, [params, setParams]);
   const [editChannel, setEditChannel] = useState<PaymentChannel>();
   const [editCommitment, setEditCommitment] = useState<DonorCommitment>();
   const [payInvoice, setPayInvoice] = useState("");
@@ -148,9 +158,7 @@ export function AdminFinancePage() {
   };
   const inProgram = (id: string | null | undefined) =>
     program === "all" || id === program;
-  const inDate = (date: string) =>
-    (!from && !to) ||
-    ((!from || date.slice(0, 10) >= from) && (!to || date.slice(0, 10) <= to));
+  const inDate = (date: string) => inWibDateRange(date, from, to);
   const matches = (...values: unknown[]) =>
     !q || values.join(" ").toLowerCase().includes(q.toLowerCase());
   const scopedInvoices = data.invoices.filter(

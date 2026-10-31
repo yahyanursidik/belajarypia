@@ -1000,3 +1000,10 @@ Lanjutkan review dan implementasi halaman peserta, termasuk pemeriksaan integras
 - Kode frontend tidak berubah dari snapshot PR #2 yang telah lulus 23 berkas tes. Lint/typecheck/build diperiksa kembali untuk paket dokumentasi/maintenance; hasil akhir disimpan di workspace.
 - Receipt dan audit lokal: `../backups/ypia-migration-audit-before-20261031.json`, `../backups/ypia-all-modules-verify-20261031.json`, `../backups/ypia-baseline-history-20261031.json`, `../backups/ypia-migrations-final-verify-20261031.json`, `../backups/ypia-helpdesk-verify-20261031.json`. Tidak dipublikasikan ke Git.
 - Bukti: `../ypia-helpdesk-migration-success.png`, `../ypia-helpdesk-verification.png`, `../ypia-migrations-reconciled.png`, `../ypia-migrations-final-verification.png`, `../system-helpdesk-live.png`.
+
+
+## 2026-10-31 — Revamp dashboard sistem
+
+Permintaan: review hubungan fitur/subfitur beranda `/system`, ringkas dan ramah pengguna, wizard mudah, lalu push dan merge.
+
+Implementasi: snapshot RPC superadmin, KPI dengan definisi akurat, antrean lintas modul, grafik 7/30/90 hari WIB, progres program, status pilihan program, onboarding, audit global, launcher dua langkah. Filter tujuan diselaraskan pada Pendaftaran, Keuangan dan Audit. Angka gagal muat tidak ditampilkan sebagai nol; progres tanpa denominator memakai `—`. Migration 015 sudah diterapkan dan riwayat menjadi 70 versi; data bisnis sebelum/sesudah sama. Rincian dan batas verifikasi: `DASHBOARD_WORKSPACE.md`.
