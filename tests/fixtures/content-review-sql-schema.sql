@@ -1,0 +1,10 @@
+alter table public.programs add column name text;
+alter table public.audit_logs add column created_at timestamptz default now();
+create table public.program_modules(id uuid primary key default gen_random_uuid(),program_id uuid references programs,title text);
+create table public.lessons(id uuid primary key default gen_random_uuid(),module_id uuid references program_modules,code text,title text,lesson_type text default 'content',visibility_status text default 'draft',content_body text,content_format text default 'plain_text',external_url text,release_at timestamptz,due_at timestamptz,passing_grade int,duration_minutes int,max_attempts int,randomized_questions_count int,updated_at timestamptz default now());
+create table public.document_files(id uuid primary key default gen_random_uuid(),lesson_id uuid references lessons,source_type text,status text default 'active',access_level text default 'enrolled',mime_type text,file_category text default 'document',bucket_name text,object_key text,external_url text,display_name text,updated_at timestamptz default now());
+create table public.quiz_questions(id uuid primary key default gen_random_uuid(),lesson_id uuid references lessons,question_type text,question_text text,options jsonb,correct_answer text,grading_guide text,points numeric,order_no int default 0,updated_at timestamptz default now());
+create table public.lesson_boards(id uuid primary key default gen_random_uuid(),lesson_id uuid references lessons,layout text,title text);
+create table public.lesson_board_columns(id uuid primary key default gen_random_uuid(),board_id uuid references lesson_boards,title text,order_no int default 0);
+create table public.lesson_board_posts(id uuid primary key default gen_random_uuid(),board_id uuid references lesson_boards,column_id uuid,title text,body text,image_object_key text,order_no int default 0);
+create table public.lesson_prerequisites(id uuid primary key default gen_random_uuid(),lesson_id uuid references lessons,prerequisite_lesson_id uuid references lessons);

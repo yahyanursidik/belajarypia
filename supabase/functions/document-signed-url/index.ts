@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.118.0";
 
 type SignedUrlRequest =
   | {
@@ -414,9 +414,10 @@ async function sha256Hex(value: string) {
 }
 
 async function hmac(key: ArrayBuffer | Uint8Array, value: string) {
+  const keyData = key instanceof ArrayBuffer ? key : Uint8Array.from(key).buffer;
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
-    key,
+    keyData,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],

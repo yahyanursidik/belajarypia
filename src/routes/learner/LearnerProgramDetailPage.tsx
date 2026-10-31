@@ -1,4 +1,7 @@
-import { summarizeLearning, type LearningPrerequisite } from "../../lib/learningProgress";
+import {
+  summarizeLearning,
+  type LearningPrerequisite,
+} from "../../lib/learningProgress";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 import {
@@ -23,7 +26,11 @@ import { useAuthSession } from "../../app/providers/authSessionContext";
 import type { Lesson, ProgramModule } from "../../lib/academic";
 import type { Enrollment } from "../../lib/enrollment";
 import type { Program } from "../../lib/organization";
-import { supabase } from "../../lib/supabase";
+import { loadLearnerOutline } from "../../lib/learnerData";
+import {
+  learnerLessonLabels,
+  type LearnerOutline,
+} from "../../lib/learnerWorkspace";
 import { LearnerProgramNav } from "./LearnerProgramNav";
 import { SyahadahSection } from "./SyahadahSection";
 
@@ -40,7 +47,10 @@ type SyllabusSection = {
 };
 
 function slugifySyllabus(value: string, index: number) {
-  const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
   return slug || `bagian-${index + 1}`;
 }
 
@@ -53,16 +63,24 @@ function parseSyllabus(value: string | null | undefined): SyllabusSection[] {
   const pushSection = () => {
     const content = body.join("\n").trim();
     if (content || sections.length === 0) {
-      sections.push({ id: slugifySyllabus(title, sections.length), title, content });
+      sections.push({
+        id: slugifySyllabus(title, sections.length),
+        title,
+        content,
+      });
     }
     body = [];
   };
 
   for (const line of lines) {
     const trimmed = line.trim();
-    const isHeading = trimmed.length >= 4 && trimmed.length <= 80 && /^[A-Z0-9][A-Z0-9\s/&().,-]+$/.test(trimmed);
+    const isHeading =
+      trimmed.length >= 4 &&
+      trimmed.length <= 80 &&
+      /^[A-Z0-9][A-Z0-9\s/&().,-]+$/.test(trimmed);
     if (isHeading) {
-      if (body.some((item) => item.trim()) || sections.length > 0) pushSection();
+      if (body.some((item) => item.trim()) || sections.length > 0)
+        pushSection();
       title = trimmed.replace(/\s+/g, " ");
     } else {
       body.push(line);
@@ -70,13 +88,16 @@ function parseSyllabus(value: string | null | undefined): SyllabusSection[] {
   }
   pushSection();
 
-  return sections.filter((section) => section.content || section.title !== "Gambaran Umum");
+  return sections.filter(
+    (section) => section.content || section.title !== "Gambaran Umum",
+  );
 }
 
 function lessonIcon(type: string, isCompleted: boolean) {
   if (isCompleted) return <CheckCircle2 className="h-4 w-4 text-emerald-600" />;
   if (type === "video") return <PlayCircle className="h-4 w-4 text-primary" />;
-  if (type === "quiz" || type === "exam") return <CheckCircle2 className="h-4 w-4 text-amber-600" />;
+  if (type === "quiz" || type === "exam")
+    return <CheckCircle2 className="h-4 w-4 text-amber-600" />;
   return <FileText className="h-4 w-4 text-primary" />;
 }
 
@@ -90,185 +111,212 @@ export function LearnerProgramDetailPage() {
   const [modules, setModules] = useState<ProgramModule[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [requirements, setRequirements] = useState<LearningPrerequisite[]>([]);
+  const [latestAttempts, setLatestAttempts] = useState<
+    LearnerOutline["attempts"]
+  >([]);
   const [progressRows, setProgressRows] = useState<LessonProgressRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
+  const [expandedModules, setExpandedModules] = useState<
+    Record<string, boolean>
+  >({});
 
   useEffect(() => {
-    async function loadProgram() {
-      if (!user || !programId) {
-        setIsLoading(false);
-        return;
-      }
-
-      setIsLoading(true);
-      setErrorMessage(null);
-      const { data: participant, error: participantError } = await supabase
-        .from("participants")
-        .select("id")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (participantError || !participant) {
-        setErrorMessage(participantError?.message ?? "Akun belum terhubung dengan data peserta.");
-        setIsLoading(false);
-        return;
-      }
-
-      let enrollmentResult = await supabase
-        .from("enrollments")
-        .select("id, participant_id, program_id, batch_id, class_id, halaqah_id, enrollment_number, enrollment_status, payment_status, programs(id, unit_id, code, name, description, syllabus, program_type, curriculum_model, delivery_mode, status, feature_flags, grading_rubric, graduation_settings)")
-        .eq("participant_id", participant.id)
-        .eq("program_id", programId)
-        .eq("enrollment_status", "active")
-        .maybeSingle();
-
-      if (enrollmentResult.error?.message.includes("graduation_settings")) {
-        enrollmentResult = await supabase
-          .from("enrollments")
-          .select("id, participant_id, program_id, batch_id, class_id, halaqah_id, enrollment_number, enrollment_status, payment_status, programs(id, unit_id, code, name, description, syllabus, program_type, curriculum_model, delivery_mode, status, feature_flags, grading_rubric)")
-          .eq("participant_id", participant.id)
-          .eq("program_id", programId)
-          .eq("enrollment_status", "active")
-          .maybeSingle();
-      }
-
-      const { data: enrollmentRow, error: enrollmentError } = enrollmentResult;
-
-      if (enrollmentError || !enrollmentRow) {
-        setErrorMessage(enrollmentError?.message ?? "Anda belum terdaftar aktif pada program ini.");
-        setIsLoading(false);
-        return;
-      }
-
-      const activeEnrollment = enrollmentRow as unknown as Enrollment;
-      setEnrollment(activeEnrollment);
-      setProgram(enrollmentRow.programs as unknown as Program | null);
-
-      const { data: moduleRows, error: moduleError } = await supabase
-        .from("program_modules")
-        .select("id, program_id, parent_module_id, level_id, code, title, module_type, order_no, is_required, levels(name, code)")
-        .eq("program_id", programId)
-        .order("order_no");
-
-      if (moduleError) {
-        setErrorMessage(moduleError.message);
-        setIsLoading(false);
-        return;
-      }
-
-      const nextModules = (moduleRows ?? []) as unknown as ProgramModule[];
-      setModules(nextModules);
-      const moduleIds = nextModules.map((module) => module.id);
-      if (moduleIds.length > 0) {
-        const [lessonResult, progressResult] = await Promise.all([
-          supabase
-            .from("lessons")
-            .select("id, module_id, code, title, lesson_type, order_no, release_at, due_at, visibility_status, duration_minutes, passing_grade")
-            .in("module_id", moduleIds)
-            .eq("visibility_status", "published")
-            .or(`release_at.lte.${new Date().toISOString()},release_at.is.null`)
-            .order("order_no"),
-          supabase
-            .from("lesson_progresses")
-            .select("lesson_id, status, score")
-            .eq("enrollment_id", activeEnrollment.id),
-        ]);
-
-        if (lessonResult.error || progressResult.error) {
-          setErrorMessage("Materi atau progres belum dapat dimuat. Silakan coba kembali.");
-        } else {
-          const nextLessons = (lessonResult.data ?? []) as Lesson[];
-          const requirementResult = nextLessons.length ? await supabase.from("lesson_prerequisites").select("lesson_id,prerequisite_lesson_id").in("lesson_id", nextLessons.map((lesson) => lesson.id)) : { data: [], error: null };
-          if (requirementResult.error) { setErrorMessage("Prasyarat materi belum dapat dimuat."); setIsLoading(false); return; }
-          setRequirements(requirementResult.data ?? []);
-          setLessons(nextLessons);
-          const orderedLessons = summarizeLearning(nextModules, nextLessons, progressResult.data ?? [], requirementResult.data ?? []).ordered;
-          setLessons(orderedLessons as Lesson[]);
-          const nextLesson = summarizeLearning(nextModules, nextLessons, progressResult.data ?? [], requirementResult.data ?? []).next;
-          const firstIncompleteModule = nextModules.find((module) => module.id === nextLesson?.module_id) ?? nextModules[0];
-          if (firstIncompleteModule) setExpandedModules({ [firstIncompleteModule.id]: true });
-        }
-        setProgressRows((progressResult.data ?? []) as LessonProgressRow[]);
-      }
-
+    const controller = new AbortController();
+    setIsLoading(true);
+    setErrorMessage(null);
+    if (!user?.id || !programId) {
       setIsLoading(false);
+      return;
     }
+    void loadLearnerOutline(programId, controller.signal)
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        setProgram(data.program);
+        setEnrollment(data.enrollment);
+        setModules(data.modules);
+        setLessons(data.lessons);
+        setProgressRows(data.progress as LessonProgressRow[]);
+        setRequirements(data.requirements);
+        setLatestAttempts(data.attempts);
+        const next = summarizeLearning(
+          data.modules,
+          data.lessons,
+          data.progress,
+          data.requirements,
+        ).next;
+        const module =
+          data.modules.find((m) => m.id === next?.module_id) ?? data.modules[0];
+        setExpandedModules(module ? { [module.id]: true } : {});
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted)
+          setErrorMessage(e.message ?? "Program belum dapat dimuat.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsLoading(false);
+      });
+    return () => controller.abort();
+  }, [programId, user?.id]);
 
-    void loadProgram();
-  }, [programId, user]);
-
-  const progressByLesson = useMemo(() => new Map(progressRows.map((row) => [row.lesson_id, row])), [progressRows]);
-  const completedCount = progressRows.filter((row) => row.status === "completed" && lessons.some((lesson) => lesson.id === row.lesson_id)).length;
-  const completion = lessons.length ? Math.round((completedCount / lessons.length) * 100) : 0;
-  const learningSummary = summarizeLearning(modules, lessons, progressRows, requirements);
+  const progressByLesson = useMemo(
+    () => new Map(progressRows.map((row) => [row.lesson_id, row])),
+    [progressRows],
+  );
+  const completedCount = new Set(
+    progressRows
+      .filter(
+        (row) =>
+          row.status === "completed" &&
+          lessons.some((lesson) => lesson.id === row.lesson_id),
+      )
+      .map((row) => row.lesson_id),
+  ).size;
+  const completion = lessons.length
+    ? Math.round((completedCount / lessons.length) * 100)
+    : 0;
+  const learningSummary = summarizeLearning(
+    modules,
+    lessons,
+    progressRows,
+    requirements,
+  );
   const nextLesson = learningSummary.next;
-  const duration = lessons.reduce((total, lesson) => total + (lesson.duration_minutes ?? 0), 0);
+  const duration = lessons.reduce(
+    (total, lesson) => total + (lesson.duration_minutes ?? 0),
+    0,
+  );
   const isSyllabusTab = section === "silabus";
-  const syllabusSections = useMemo(() => parseSyllabus(program?.syllabus), [program?.syllabus]);
+  const syllabusSections = useMemo(
+    () => parseSyllabus(program?.syllabus),
+    [program?.syllabus],
+  );
 
-  const toggleModule = (id: string) => setExpandedModules((current) => ({ ...current, [id]: !current[id] }));
-  const expandAll = () => setExpandedModules(Object.fromEntries(modules.map((module) => [module.id, true])));
+  const toggleModule = (id: string) =>
+    setExpandedModules((current) => ({ ...current, [id]: !current[id] }));
+  const expandAll = () =>
+    setExpandedModules(
+      Object.fromEntries(modules.map((module) => [module.id, true])),
+    );
 
-  if (isLoading) return <FullPageLoader message="Memuat materi dan progres..." />;
+  if (isLoading)
+    return <FullPageLoader message="Memuat materi dan progres..." />;
 
   if (errorMessage || !program || !enrollment || !programId) {
     return (
       <div className="page-stack mx-auto max-w-4xl">
-        <Button variant="ghost" onClick={() => navigate("/learner/program-saya")} className="w-fit">
+        <Button
+          variant="ghost"
+          onClick={() => navigate("/learner/program-saya")}
+          className="w-fit"
+        >
           <ArrowLeft className="h-4 w-4" /> Kembali ke Program Saya
         </Button>
         <Alert className="border-red-200 bg-red-50 text-red-900">
           <AlertTitle>Program tidak dapat dimuat</AlertTitle>
-          <AlertDescription>{errorMessage ?? "Data program tidak ditemukan."}</AlertDescription>
+          <AlertDescription>
+            {errorMessage ?? "Data program tidak ditemukan."}
+          </AlertDescription>
         </Alert>
       </div>
     );
   }
 
   return (
-    <div className="page-stack w-full">
+    <div className="page-stack w-full student-program-detail">
       <Button variant="ghost" asChild className="w-fit">
-        <Link to="/learner/program-saya"><ArrowLeft className="h-4 w-4" /> Program Saya</Link>
+        <Link to="/learner/program-saya">
+          <ArrowLeft className="h-4 w-4" /> Program Saya
+        </Link>
       </Button>
 
       <section className="rounded-lg border bg-background p-5 sm:p-6">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
           <div className="max-w-2xl">
             <Badge variant="outline">{program.code}</Badge>
-            <h1 className="mt-3 text-2xl font-bold sm:text-3xl">{program.name}</h1>
-            {isSyllabusTab && program.description && <p className="mt-2 text-sm leading-6 text-muted-foreground">{program.description}</p>}
+            <h1 className="mt-3 text-2xl font-bold sm:text-3xl">
+              {program.name}
+            </h1>
+            {isSyllabusTab && program.description && (
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {program.description}
+              </p>
+            )}
           </div>
           <div className="w-full rounded-lg border bg-muted/20 p-4 xl:max-w-md">
-            <div className="flex items-center justify-between"><span className="text-sm font-medium">Progres program</span><strong>{completion}%</strong></div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Progres program</span>
+              <strong>{lessons.length ? completion + "%" : "—"}</strong>
+            </div>
             <Progress value={completion} className="mt-3 h-2.5" />
-            <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-muted-foreground"><span>{completedCount} dari {lessons.length} materi selesai</span><span>{duration ? `${duration} menit materi` : `${modules.length} modul`}</span></div>
+            <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
+              <span>
+                {completedCount} dari {lessons.length} materi selesai
+              </span>
+              <span>
+                {duration
+                  ? `${duration} menit materi`
+                  : `${modules.length} modul`}
+              </span>
+            </div>
             {nextLesson ? (
               <Button asChild className="mt-4 w-full">
-                <Link to={`/learner/lesson/${nextLesson.id}`}>{completion ? "Lanjutkan Belajar" : "Mulai Belajar"}<ChevronRight className="h-4 w-4" /></Link>
+                <Link to={`/learner/lesson/${nextLesson.id}`}>
+                  {completion ? "Lanjutkan Belajar" : "Mulai Belajar"}
+                  <ChevronRight className="h-4 w-4" />
+                </Link>
               </Button>
-            ) : learningSummary.finished ? <Button asChild className="mt-4 w-full"><Link to={`/learner/transkrip/${enrollment.id}`}>Lihat hasil belajar</Link></Button> : null}
+            ) : learningSummary.finished ? (
+              <Button asChild className="mt-4 w-full">
+                <Link to={`/learner/transkrip/${enrollment.id}`}>
+                  Lihat hasil belajar
+                </Link>
+              </Button>
+            ) : null}
           </div>
         </div>
       </section>
 
-      {location.state?.completedLesson && <p role="status" className="learner-success">Progres materi tersimpan.</p>}
-      <div className="flex flex-wrap items-center justify-between gap-3"><LearnerProgramNav programId={programId} enrollmentId={enrollment.id} /><Button asChild variant="ghost" size="sm"><Link to={`/learner/bantuan?category=academic&contextProgram=${programId}&contextEnrollment=${enrollment.id}`}>Bantuan program<ChevronRight className="h-4 w-4"/></Link></Button></div>
+      {location.state?.completedLesson && (
+        <p role="status" className="learner-success">
+          Progres materi tersimpan.
+        </p>
+      )}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <LearnerProgramNav programId={programId} enrollmentId={enrollment.id} />
+        <Button asChild variant="ghost" size="sm">
+          <Link
+            to={`/learner/bantuan?category=academic&contextProgram=${programId}&contextEnrollment=${enrollment.id}`}
+          >
+            Bantuan program
+            <ChevronRight className="h-4 w-4" />
+          </Link>
+        </Button>
+      </div>
 
       {isSyllabusTab ? (
-        <section aria-labelledby="syllabus-heading" className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <section
+          aria-labelledby="syllabus-heading"
+          className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]"
+        >
           <div className="space-y-4">
             <div>
-              <h2 id="syllabus-heading" className="text-xl font-bold">Silabus Program</h2>
-              <p className="text-sm text-muted-foreground">Tujuan, cakupan materi, metode, dan evaluasi program ditampilkan tanpa meninggalkan halaman detail.</p>
+              <h2 id="syllabus-heading" className="text-xl font-bold">
+                Silabus Program
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Tujuan, cakupan materi, metode, dan evaluasi program ditampilkan
+                tanpa meninggalkan halaman detail.
+              </p>
             </div>
             {syllabusSections.length > 0 ? (
               syllabusSections.map((item) => (
                 <Card key={item.id}>
                   <CardContent className="p-5">
                     <h3 className="font-semibold">{item.title}</h3>
-                    <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{item.content}</div>
+                    <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">
+                      {item.content}
+                    </div>
                   </CardContent>
                 </Card>
               ))
@@ -276,7 +324,10 @@ export function LearnerProgramDetailPage() {
               <Alert>
                 <FileText className="h-4 w-4" />
                 <AlertTitle>Silabus naratif belum diterbitkan</AlertTitle>
-                <AlertDescription>Struktur modul tetap dapat dipelajari pada tab Materi & Progres.</AlertDescription>
+                <AlertDescription>
+                  Struktur modul tetap dapat dipelajari pada tab Materi &
+                  Progres.
+                </AlertDescription>
               </Alert>
             )}
           </div>
@@ -284,85 +335,261 @@ export function LearnerProgramDetailPage() {
             <CardContent className="space-y-3 p-5">
               <p className="text-sm font-semibold">Ringkasan Belajar</p>
               <div className="grid gap-2 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">Modul</span><strong>{modules.length}</strong></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Materi terbit</span><strong>{lessons.length}</strong></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Estimasi durasi</span><strong>{duration ? `${duration} menit` : "-"}</strong></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Progres</span><strong>{completion}%</strong></div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Modul</span>
+                  <strong>{modules.length}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Materi terbit</span>
+                  <strong>{lessons.length}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Estimasi durasi</span>
+                  <strong>{duration ? `${duration} menit` : "-"}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Progres</span>
+                  <strong>{lessons.length ? completion + "%" : "—"}</strong>
+                </div>
               </div>
               <Button asChild variant="outline" className="w-full">
-                <Link to={`/learner/program/${programId}`}>Kembali ke Materi</Link>
+                <Link to={`/learner/program/${programId}`}>
+                  Kembali ke Materi
+                </Link>
               </Button>
             </CardContent>
           </Card>
         </section>
       ) : (
         <>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border bg-background p-4"><p className="text-xs font-semibold text-muted-foreground">Modul</p><p className="mt-1 text-2xl font-bold">{modules.length}</p></div>
-        <div className="rounded-lg border bg-background p-4"><p className="text-xs font-semibold text-muted-foreground">Materi Terbit</p><p className="mt-1 text-2xl font-bold">{lessons.length}</p></div>
-        <div className="rounded-lg border bg-background p-4"><p className="text-xs font-semibold text-muted-foreground">Status Belajar</p><p className="mt-1 text-base font-bold">{completion === 100 ? "Semua selesai" : completion > 0 ? "Sedang berjalan" : "Belum dimulai"}</p></div>
-      </div>
-
-      <section aria-labelledby="curriculum-heading">
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div><h2 id="curriculum-heading" className="text-xl font-bold">Materi Pembelajaran</h2><p className="text-sm text-muted-foreground">Buka modul dan lanjutkan materi sesuai progres Anda.</p></div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={expandAll}>Buka Semua</Button>
-            <Button variant="outline" size="sm" onClick={() => setExpandedModules({})}>Tutup Semua</Button>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border bg-background p-4">
+              <p className="text-xs font-semibold text-muted-foreground">
+                Modul
+              </p>
+              <p className="mt-1 text-2xl font-bold">{modules.length}</p>
+            </div>
+            <div className="rounded-lg border bg-background p-4">
+              <p className="text-xs font-semibold text-muted-foreground">
+                Materi Terbit
+              </p>
+              <p className="mt-1 text-2xl font-bold">{lessons.length}</p>
+            </div>
+            <div className="rounded-lg border bg-background p-4">
+              <p className="text-xs font-semibold text-muted-foreground">
+                Status Belajar
+              </p>
+              <p className="mt-1 text-base font-bold">
+                {!lessons.length
+                  ? "Materi belum tersedia"
+                  : completion === 100
+                    ? "Materi tersedia selesai"
+                    : completion > 0
+                      ? "Sedang berjalan"
+                      : "Belum dimulai"}
+              </p>
+            </div>
           </div>
-        </div>
 
-        <div className="space-y-3">
-          {modules.length === 0 ? (
-            <Alert><BookOpen className="h-4 w-4" /><AlertTitle>Materi belum tersedia</AlertTitle><AlertDescription>Pengelola program belum menerbitkan modul pembelajaran.</AlertDescription></Alert>
-          ) : modules.map((module) => {
-            const moduleLessons = lessons.filter((lesson) => lesson.module_id === module.id);
-            const moduleCompleted = moduleLessons.filter((lesson) => progressByLesson.get(lesson.id)?.status === "completed").length;
-            const isExpanded = Boolean(expandedModules[module.id]);
-            return (
-              <Card key={module.id} className="overflow-hidden">
-                <button type="button" onClick={() => toggleModule(module.id)} aria-expanded={isExpanded} className="flex w-full items-center justify-between gap-4 bg-muted/20 p-4 text-left transition-colors hover:bg-muted/40">
-                  <div className="flex min-w-0 items-center gap-3">
-                    {isExpanded ? <ChevronDown className="h-5 w-5 shrink-0 text-primary" /> : <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />}
-                    <div className="min-w-0"><h3 className="font-semibold">{module.code} - {module.title}</h3><p className="mt-0.5 text-xs text-muted-foreground">{module.levels?.name ?? "Tahap umum"} · {moduleCompleted}/{moduleLessons.length} selesai</p></div>
-                  </div>
-                  <Badge variant={moduleCompleted === moduleLessons.length && moduleLessons.length ? "secondary" : "outline"} className="shrink-0">{moduleLessons.length} materi</Badge>
-                </button>
+          <section aria-labelledby="curriculum-heading">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 id="curriculum-heading" className="text-xl font-bold">
+                  Materi Pembelajaran
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Buka modul dan lanjutkan materi sesuai progres Anda.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={expandAll}>
+                  Buka Semua
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setExpandedModules({})}
+                >
+                  Tutup Semua
+                </Button>
+              </div>
+            </div>
 
-                {isExpanded ? (
-                  <CardContent className="p-0">
-                    {moduleLessons.length === 0 ? <p className="p-5 text-sm text-muted-foreground">Belum ada materi yang diterbitkan pada modul ini.</p> : (
-                      <ol className="divide-y">
-                        {moduleLessons.map((lesson, index) => {
-                          const progress = progressByLesson.get(lesson.id);
-                          const isCompleted = progress?.status === "completed";
-                          const isLocked = !isCompleted && requirements.some((requirement) => requirement.lesson_id === lesson.id && progressByLesson.get(requirement.prerequisite_lesson_id)?.status !== "completed");
-                          return (
-                            <li key={lesson.id}>
-                              <Link to={`/learner/lesson/${lesson.id}`} aria-disabled={isLocked} onClick={(event) => { if (isLocked) event.preventDefault(); }} className={`group ${isLocked ? "opacity-60" : ""} flex items-center gap-3 p-4 transition-colors hover:bg-primary/5`}>
-                                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted">{lessonIcon(lesson.lesson_type, isCompleted)}</span>
-                                <div className="min-w-0 flex-1"><p className="font-medium group-hover:text-primary">{index + 1}. {lesson.title}</p>{isLocked && <p className="text-xs text-amber-700">Selesaikan materi prasyarat terlebih dahulu</p>}<div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span className="capitalize">{lesson.lesson_type.replaceAll("_", " ")}</span>{lesson.duration_minutes ? <span className="inline-flex items-center gap-1"><Clock3 className="h-3 w-3" /> {lesson.duration_minutes} menit</span> : null}{progress?.score != null ? <span>Nilai {Number(progress.score).toLocaleString("id-ID")}</span> : null}</div></div>
-                                <Badge variant={isCompleted ? "secondary" : "outline"} className="hidden shrink-0 sm:inline-flex">{isCompleted ? "Selesai" : progress ? "Dilanjutkan" : "Belum mulai"}</Badge>
-                                {progress && !isCompleted ? <RotateCcw className="h-4 w-4 shrink-0 text-muted-foreground" /> : <Circle className="h-4 w-4 shrink-0 text-muted-foreground/50" />}
-                              </Link>
-                            </li>
-                          );
-                        })}
-                      </ol>
-                    )}
-                  </CardContent>
-                ) : null}
-              </Card>
-            );
-          })}
-        </div>
-      </section>
+            <div className="space-y-3">
+              {modules.length === 0 ? (
+                <Alert>
+                  <BookOpen className="h-4 w-4" />
+                  <AlertTitle>Materi belum tersedia</AlertTitle>
+                  <AlertDescription>
+                    Pengelola program belum menerbitkan modul pembelajaran.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                modules.map((module) => {
+                  const moduleLessons = lessons.filter(
+                    (lesson) => lesson.module_id === module.id,
+                  );
+                  const moduleCompleted = moduleLessons.filter(
+                    (lesson) =>
+                      progressByLesson.get(lesson.id)?.status === "completed",
+                  ).length;
+                  const isExpanded = Boolean(expandedModules[module.id]);
+                  return (
+                    <Card key={module.id} className="overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => toggleModule(module.id)}
+                        aria-expanded={isExpanded}
+                        className="flex w-full items-center justify-between gap-4 bg-muted/20 p-4 text-left transition-colors hover:bg-muted/40"
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          {isExpanded ? (
+                            <ChevronDown className="h-5 w-5 shrink-0 text-primary" />
+                          ) : (
+                            <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+                          )}
+                          <div className="min-w-0">
+                            <h3 className="font-semibold">
+                              {module.code} - {module.title}
+                            </h3>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {module.levels?.name ?? "Tahap umum"} ·{" "}
+                              {moduleCompleted}/{moduleLessons.length} selesai
+                            </p>
+                          </div>
+                        </div>
+                        <Badge
+                          variant={
+                            moduleCompleted === moduleLessons.length &&
+                            moduleLessons.length
+                              ? "secondary"
+                              : "outline"
+                          }
+                          className="shrink-0"
+                        >
+                          {moduleLessons.length} materi
+                        </Badge>
+                      </button>
 
-      <section className="border-t pt-6">
-        <h2 className="text-lg font-semibold">Sertifikat / Syahadah</h2>
-        <p className="mb-4 text-sm text-muted-foreground">Status penerbitan dokumen kelulusan untuk program ini.</p>
-        <SyahadahSection enrollmentId={enrollment.id} />
-      </section>
+                      {isExpanded ? (
+                        <CardContent className="p-0">
+                          {moduleLessons.length === 0 ? (
+                            <p className="p-5 text-sm text-muted-foreground">
+                              Belum ada materi yang diterbitkan pada modul ini.
+                            </p>
+                          ) : (
+                            <ol className="divide-y">
+                              {moduleLessons.map((lesson, index) => {
+                                const progress = progressByLesson.get(
+                                  lesson.id,
+                                );
+                                const isCompleted =
+                                  progress?.status === "completed";
+                                const attempt = latestAttempts.find(
+                                  (a) => a.lesson_id === lesson.id,
+                                );
+                                const isLocked =
+                                  !isCompleted &&
+                                  requirements.some(
+                                    (requirement) =>
+                                      requirement.lesson_id === lesson.id &&
+                                      progressByLesson.get(
+                                        requirement.prerequisite_lesson_id,
+                                      )?.status !== "completed",
+                                  );
+                                return (
+                                  <li key={lesson.id}>
+                                    <Link
+                                      to={`/learner/lesson/${lesson.id}`}
+                                      aria-disabled={isLocked}
+                                      onClick={(event) => {
+                                        if (isLocked) event.preventDefault();
+                                      }}
+                                      className={`group ${isLocked ? "opacity-60" : ""} flex items-center gap-3 p-4 transition-colors hover:bg-primary/5`}
+                                    >
+                                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted">
+                                        {lessonIcon(
+                                          lesson.lesson_type,
+                                          isCompleted,
+                                        )}
+                                      </span>
+                                      <div className="min-w-0 flex-1">
+                                        <p className="font-medium group-hover:text-primary">
+                                          {index + 1}. {lesson.title}
+                                        </p>
+                                        {isLocked && (
+                                          <p className="text-xs text-amber-700">
+                                            Selesaikan materi prasyarat terlebih
+                                            dahulu
+                                          </p>
+                                        )}
+                                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                          <span className="capitalize">
+                                            {learnerLessonLabels[
+                                              lesson.lesson_type
+                                            ] ?? "Aktivitas"}
+                                          </span>
+                                          {lesson.duration_minutes ? (
+                                            <span className="inline-flex items-center gap-1">
+                                              <Clock3 className="h-3 w-3" />{" "}
+                                              {lesson.duration_minutes} menit
+                                            </span>
+                                          ) : null}
+                                          {progress?.score != null ? (
+                                            <span>
+                                              Nilai{" "}
+                                              {Number(
+                                                progress.score,
+                                              ).toLocaleString("id-ID")}
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                      <Badge
+                                        variant={
+                                          isCompleted ? "secondary" : "outline"
+                                        }
+                                        className="hidden shrink-0 sm:inline-flex"
+                                      >
+                                        {attempt?.status === "pending_review"
+                                          ? "Menunggu nilai"
+                                          : attempt?.status === "ongoing"
+                                            ? "Ujian berjalan"
+                                            : isCompleted
+                                              ? "Selesai"
+                                              : progress
+                                                ? "Dilanjutkan"
+                                                : "Belum mulai"}
+                                      </Badge>
+                                      {progress && !isCompleted ? (
+                                        <RotateCcw className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                      ) : (
+                                        <Circle className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+                                      )}
+                                    </Link>
+                                  </li>
+                                );
+                              })}
+                            </ol>
+                          )}
+                        </CardContent>
+                      ) : null}
+                    </Card>
+                  );
+                })
+              )}
+            </div>
+          </section>
+
+          {program.feature_flags?.use_certificate && (
+            <section className="border-t pt-6">
+              <h2 className="text-lg font-semibold">Sertifikat / Syahadah</h2>
+              <p className="mb-4 text-sm text-muted-foreground">
+                Status penerbitan dokumen kelulusan untuk program ini.
+              </p>
+              <SyahadahSection enrollmentId={enrollment.id} />
+            </section>
+          )}
         </>
       )}
     </div>

@@ -60,15 +60,15 @@ type ContentFilter = "all" | "published" | "draft" | "locked" | "assessment";
 
 function visibilityBadge(status: TeacherLesson["visibility_status"]) {
   if (status === "published") {
-    return <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">Published</Badge>;
+    return <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">Terbit</Badge>;
   }
   if (status === "draft") {
-    return <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">Draft</Badge>;
+    return <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">Draf</Badge>;
   }
   if (status === "locked") {
-    return <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-600">Locked</Badge>;
+    return <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-600">Terkunci</Badge>;
   }
-  return <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-600">Archived</Badge>;
+  return <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-600">Diarsipkan</Badge>;
 }
 
 function lessonTypeLabel(type: string) {
@@ -301,9 +301,9 @@ export function TeacherContentPage() {
               <Filter className="h-4 w-4 text-muted-foreground" />
               <select className="h-10 bg-transparent text-sm outline-none" value={filter} onChange={(event) => setFilter(event.target.value as ContentFilter)}>
                 <option value="all">Semua</option>
-                <option value="published">Published</option>
-                <option value="draft">Draft</option>
-                <option value="locked">Locked</option>
+                <option value="published">Terbit</option>
+                <option value="draft">Draf</option>
+                <option value="locked">Terkunci</option>
                 <option value="assessment">Evaluasi</option>
               </select>
             </div>

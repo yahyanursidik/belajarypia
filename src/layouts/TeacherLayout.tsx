@@ -10,7 +10,7 @@ export function TeacherLayout({ children }: PropsWithChildren) {
   return (
     <ShellLayout
       title={isMentor ? "Ruang Musyrif" : "Ruang Pengajar"}
-      subtitle={isMentor ? "Halaqah, peserta binaan, silabus, dan setoran Qur'an" : "Workspace kelas, review, presensi, dan materi"}
+      subtitle={isMentor ? "Halaqah, peserta binaan, silabus, dan setoran Qur'an" : "Kelas, materi, dan perkembangan peserta"}
       variant={isMentor ? "mentor" : "teacher"}
       menuItems={getNavigationForRole(primaryRole)}
     >

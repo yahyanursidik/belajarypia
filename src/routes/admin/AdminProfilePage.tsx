@@ -1,318 +1,422 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState } from "react";
+import { Link, useBeforeUnload, useLocation } from "react-router-dom";
+import {
+  UserRound,
+  ArrowUpRight,
+  ShieldCheck,
+  KeyRound,
+  Mail,
+  RefreshCw,
+  History,
+  Clock3,
+  CheckCheck,
+  LayoutDashboard,
+  ArrowRight,
+} from "lucide-react";
 import { useAuthSession } from "../../app/providers/authSessionContext";
-import { supabase } from "../../lib/supabase";
-import { User, Lock, Mail, Phone, ShieldCheck, CheckCircle2, Loader2, Save } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import { Input } from "../../components/ui/input";
+import { useMyProfile } from "../../lib/profileData";
+import {
+  type ProfileWorkspace,
+  profileInitial,
+  profileFieldLabel,
+} from "../../lib/profileWorkspace";
+import { userRoleLabels, userTime, userStatus } from "../../lib/usersWorkspace";
 import { Button } from "../../components/ui/button";
-import { Badge } from "../../components/ui/badge";
-
+import { Alert, AlertTitle, AlertDescription } from "../../components/ui/alert";
+import { Dialog } from "../../components/ui/dialog";
+import { ProfileEditor } from "../../components/profile/ProfileEditor";
+import { ProfilePasswordDialog } from "../../components/profile/ProfilePasswordDialog";
 export function AdminProfilePage() {
-  const { profile, primaryRole } = useAuthSession();
-  
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
-  
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  
-  const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [isSavingPassword, setIsSavingPassword] = useState(false);
-  
-  const [profileSuccess, setProfileSuccess] = useState(false);
-  const [passwordSuccess, setPasswordSuccess] = useState(false);
-  const [passwordError, setPasswordError] = useState("");
-
-  useEffect(() => {
-    if (profile) {
-      setFullName(profile.full_name || "");
-      // setPhone((profile as any).phone || "");
+  const { user, refresh } = useAuthSession(),
+    { data, loading, error, load, update } = useMyProfile(user?.id),
+    location = useLocation(),
+    base = location.pathname.startsWith("/system") ? "/system" : location.pathname.startsWith("/teacher") ? "/teacher" : "/admin";
+  const [dirty, setDirty] = useState(false),
+    [busy, setBusy] = useState(false),
+    [version, setVersion] = useState(0),
+    [discard, setDiscard] = useState(false),
+    [passwordOpen, setPasswordOpen] = useState(false),
+    [notice, setNotice] = useState("");
+  useBeforeUnload(
+    useCallback(
+      (e: BeforeUnloadEvent) => {
+        if (dirty || busy) {
+          e.preventDefault();
+          e.returnValue = "";
+        }
+      },
+      [dirty, busy],
+    ),
+  );
+  async function reload() {
+    if (busy) return;
+    setDiscard(false);
+    const next = await load();
+    if (next) {
+      setVersion((v) => v + 1);
+      setDirty(false);
+      setNotice("");
+      void refresh().catch(() =>
+        setNotice("Profil dimuat. Muat ulang sesi untuk memperbarui menu."),
+      );
     }
-  }, [profile]);
-
-  const handleUpdateProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!profile) return;
-    
-    setIsSavingProfile(true);
-    setProfileSuccess(false);
-    
+  }
+  function requestReload() {
+    if (dirty) setDiscard(true);
+    else void reload();
+  }
+  async function saved(next: ProfileWorkspace) {
+    update(next);
+    setDirty(false);
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          full_name: fullName,
-          phone: phone,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', profile.id);
-        
-      if (error) throw error;
-      
-      setProfileSuccess(true);
-      setTimeout(() => setProfileSuccess(false), 3000);
-    } catch (error: any) {
-      console.error("Error updating profile:", error);
-      alert("Gagal memperbarui profil: " + error.message);
-    } finally {
-      setIsSavingProfile(false);
+      const state = await refresh();
+      if (
+        state.profile?.id !== next.profile.id ||
+        state.profile.full_name !== next.profile.full_name
+      )
+        throw new Error();
+    } catch {
+      setNotice(
+        "Profil tersimpan. Muat ulang sesi untuk memperbarui nama di menu.",
+      );
     }
-  };
-
-  const handleUpdatePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPasswordError("");
-    setPasswordSuccess(false);
-    
-    if (newPassword.length < 6) {
-      setPasswordError("Kata sandi minimal 6 karakter");
-      return;
-    }
-    
-    if (newPassword !== confirmPassword) {
-      setPasswordError("Konfirmasi kata sandi tidak cocok");
-      return;
-    }
-    
-    setIsSavingPassword(true);
-    
-    try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword
-      });
-      
-      if (error) throw error;
-      
-      setPasswordSuccess(true);
-      setNewPassword("");
-      setConfirmPassword("");
-      
-      setTimeout(() => setPasswordSuccess(false), 3000);
-    } catch (error: any) {
-      console.error("Error updating password:", error);
-      setPasswordError("Gagal merubah kata sandi: " + error.message);
-    } finally {
-      setIsSavingPassword(false);
-    }
-  };
-
+  }
+  const name = data?.profile.full_name || data?.login.email || "Akun saya",
+    canEdit =
+      !!data && data.profile.status === "active" && !data.login.login_blocked,
+    governance =
+      base === "/system" &&
+      canEdit &&
+      data.assignments.some((a) => a.code === "super_admin");
   return (
-    <div className="page-stack space-y-6 pb-12">
-      <section className="page-hero">
-        <Badge variant="secondary" className="mb-4 bg-white/20 text-white border-white/30 backdrop-blur-sm shadow-sm">
-          PENGATURAN AKUN
-        </Badge>
-        <div className="flex flex-col md:flex-row md:items-center gap-6">
-          <div className="hidden md:flex h-20 w-20 rounded-2xl bg-white/10 backdrop-blur-xl items-center justify-center border border-white/20 shadow-inner">
-            <User className="h-10 w-10 text-white drop-shadow-md" />
-          </div>
-          <div>
-            <p className="text-white/70 text-sm font-medium mb-1 tracking-wide uppercase">Profil Saya</p>
-            <h2 className="text-white text-3xl font-bold tracking-tight">Kelola Identitas & Keamanan</h2>
-            <p className="text-white/80 max-w-xl text-sm leading-relaxed mt-1">
-              Perbarui informasi kontak Anda atau ubah kata sandi untuk menjaga keamanan akun Anda di LMS YPIA.
+    <div className="profile-workspace">
+      <header className="profile-page-header">
+        <div>
+          <span>
+            <UserRound size={15} />
+            AKUN SAYA
+          </span>
+          <h1>Profil Saya</h1>
+          <p>Identitas, keamanan, dan akses akun.</p>
+        </div>
+        <div>
+          <Button asChild variant="outline">
+            <Link to={base}>
+              <LayoutDashboard size={16} />
+              Beranda
+              <ArrowUpRight size={14} />
+            </Link>
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={requestReload}
+            disabled={loading || busy}
+            aria-label="Muat ulang profil"
+          >
+            <RefreshCw size={17} className={loading ? "animate-spin" : ""} />
+          </Button>
+        </div>
+      </header>
+      {error && (
+        <Alert className="border-red-200 bg-red-50 text-red-900">
+          <AlertTitle>Profil belum dapat dimuat</AlertTitle>
+          <AlertDescription>
+            {error}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={requestReload}
+              disabled={loading || busy}
+            >
+              Coba lagi
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      {notice && (
+        <p className="profile-notice" role="status">
+          <CheckCheck size={17} />
+          {notice}
+        </p>
+      )}
+      {!data ? (
+        <section className="profile-panel profile-loading" role="status">
+          {loading
+            ? "Memuat profil akun…"
+            : "Profil belum tersedia. Coba muat ulang."}
+        </section>
+      ) : (
+        <>
+          <section className="profile-identity" aria-label="Ringkasan akun">
+            <div className="profile-initial" aria-hidden="true">
+              {profileInitial(name)}
+            </div>
+            <div>
+              <h2>{data.profile.full_name?.trim() || "Nama belum diisi"}</h2>
+              <p>{data.login.email || "Email login belum tersedia"}</p>
+              <div className="profile-identity-tags">
+                <span
+                  className={
+                    "profile-status " +
+                    (data.profile.status === "active"
+                      ? "profile-status-active"
+                      : "profile-status-inactive")
+                  }
+                >
+                  {userStatus(data.profile.status)}
+                </span>
+                <span>{data.assignments.length} penugasan peran</span>
+              </div>
+            </div>
+            <div className="profile-updated">
+              <Clock3 size={14} />
+              {error ? "Snapshot" : "Data"} {userTime(data.generated_at)}
+              {loading ? " · Memuat…" : ""}
+            </div>
+          </section>
+          {!canEdit && (
+            <p className="profile-restricted" role="status">
+              Profil tidak aktif atau login dibatasi. Hubungi pengelola untuk
+              perubahan akun.
             </p>
-          </div>
-        </div>
-      </section>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Profile Info */}
-        <div className="lg:col-span-2 space-y-6">
-          <Card className="border-border/40 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-primary to-indigo-500"></div>
-            <CardHeader className="bg-slate-50/50 pb-4">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <User className="h-5 w-5 text-primary" />
-                Informasi Personal
-              </CardTitle>
-              <CardDescription>
-                Detail kontak dan nama yang akan ditampilkan di seluruh sistem.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-6">
-              <form onSubmit={handleUpdateProfile} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-700">Nama Lengkap</label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input 
-                        required
-                        value={fullName}
-                        onChange={e => setFullName(e.target.value)}
-                        className="pl-9 h-11"
-                        placeholder="Masukkan nama lengkap"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-700">Alamat Surel (Email)</label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                      <Input 
-                        disabled
-                        value={profile?.email || ""}
-                        className="pl-9 h-11 bg-slate-50 text-slate-500 border-slate-200 cursor-not-allowed"
-                        placeholder="Email Anda"
-                      />
-                    </div>
-                    <p className="text-[10px] text-muted-foreground">Email digunakan untuk login dan tidak dapat diubah di sini.</p>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-700">Nomor Telepon</label>
-                    <div className="relative">
-                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input 
-                        value={phone}
-                        onChange={e => setPhone(e.target.value)}
-                        className="pl-9 h-11"
-                        placeholder="0812xxxxxx"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-4 flex items-center justify-between border-t mt-6">
+          )}
+          <div className="profile-content-grid">
+            <div className="profile-primary">
+              <ProfileEditor
+                key={data.profile.id + ":" + version}
+                data={data}
+                disabled={!canEdit || loading || busy}
+                onDirty={setDirty}
+                onBusy={setBusy}
+                onSaved={(next) => void saved(next)}
+                onReload={requestReload}
+              />
+              <section className="profile-panel" aria-label="Keamanan akun">
+                <header>
+                  <span className="profile-section-icon profile-icon-violet">
+                    <KeyRound size={19} />
+                  </span>
                   <div>
-                    {profileSuccess && (
-                      <p className="text-sm text-emerald-600 font-medium flex items-center gap-1.5 animate-in fade-in duration-300">
-                        <CheckCircle2 className="h-4 w-4" /> Profil berhasil diperbarui
-                      </p>
-                    )}
+                    <h2>Keamanan akun</h2>
+                    <p>Informasi masuk dan kata sandi.</p>
                   </div>
-                  <Button 
-                    type="submit" 
-                    disabled={isSavingProfile}
-                    className="min-w-[140px]"
-                  >
-                    {isSavingProfile ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Menyimpan...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="h-4 w-4 mr-2" /> Simpan Profil
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/40 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-slate-700 to-slate-900"></div>
-            <CardHeader className="bg-slate-50/50 pb-4">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Lock className="h-5 w-5 text-slate-700" />
-                Keamanan Kata Sandi
-              </CardTitle>
-              <CardDescription>
-                Ganti kata sandi Anda secara berkala untuk menjaga keamanan akun.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-6">
-              <form onSubmit={handleUpdatePassword} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-700">Kata Sandi Baru</label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input 
-                        type="password"
-                        required
-                        value={newPassword}
-                        onChange={e => setNewPassword(e.target.value)}
-                        className="pl-9 h-11"
-                        placeholder="Minimal 6 karakter"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-700">Konfirmasi Kata Sandi Baru</label>
-                    <div className="relative">
-                      <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input 
-                        type="password"
-                        required
-                        value={confirmPassword}
-                        onChange={e => setConfirmPassword(e.target.value)}
-                        className="pl-9 h-11"
-                        placeholder="Ketik ulang kata sandi"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {passwordError && (
-                  <p className="text-sm text-red-500 font-medium mt-2 animate-in fade-in">{passwordError}</p>
-                )}
-
-                <div className="pt-4 flex items-center justify-between border-t mt-6">
+                </header>
+                <dl className="profile-account-facts">
                   <div>
-                    {passwordSuccess && (
-                      <p className="text-sm text-emerald-600 font-medium flex items-center gap-1.5 animate-in fade-in duration-300">
-                        <CheckCircle2 className="h-4 w-4" /> Kata sandi berhasil diubah
-                      </p>
-                    )}
+                    <dt>Email masuk</dt>
+                    <dd>{data.login.email || "Belum tersedia"}</dd>
                   </div>
-                  <Button 
-                    type="submit" 
+                  <div>
+                    <dt>Konfirmasi email</dt>
+                    <dd>
+                      <span
+                        className={
+                          "profile-indicator " +
+                          (data.login.email_confirmed
+                            ? "profile-indicator-good"
+                            : "profile-indicator-pending")
+                        }
+                      >
+                        {data.login.email_confirmed
+                          ? "Tercatat"
+                          : "Belum tercatat"}
+                      </span>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Profil dibuat</dt>
+                    <dd>{userTime(data.profile.created_at)}</dd>
+                  </div>
+                  <div>
+                    <dt>Terakhir masuk</dt>
+                    <dd>
+                      {data.login.last_sign_in_at
+                        ? userTime(data.login.last_sign_in_at)
+                        : "Belum tercatat"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Pembatasan login</dt>
+                    <dd>
+                      {data.login.login_blocked
+                        ? "Sedang dibatasi"
+                        : "Tidak tercatat"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Metode masuk</dt>
+                    <dd>
+                      {[
+                        ...new Set([
+                          ...(data.login.password_enabled
+                            ? ["Email & sandi"]
+                            : []),
+                          ...data.login.providers.map((p) =>
+                            p === "email"
+                              ? "Email"
+                              : p === "google"
+                                ? "Google"
+                                : p,
+                          ),
+                        ]),
+                      ].join(" · ") || "Belum tercatat"}
+                    </dd>
+                  </div>
+                  {data.profile.email !== data.login.email && (
+                    <div>
+                      <dt>Email profil</dt>
+                      <dd>{data.profile.email || "Belum diisi"}</dd>
+                    </div>
+                  )}
+                </dl>
+                <footer className="profile-security-footer">
+                  <span>
+                    <Mail size={14} />
+                    Email masuk dikelola oleh akun login.
+                  </span>
+                  <Button
                     variant="outline"
-                    disabled={isSavingPassword || !newPassword || !confirmPassword}
-                    className="min-w-[140px] border-slate-300"
+                    disabled={!canEdit || loading || busy}
+                    onClick={() => setPasswordOpen(true)}
                   >
-                    {isSavingPassword ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Memproses...
-                      </>
-                    ) : (
-                      <>
-                        Ganti Kata Sandi
-                      </>
-                    )}
+                    <KeyRound size={15} />
+                    {data.login.password_enabled
+                      ? "Ubah kata sandi"
+                      : "Atur kata sandi"}
                   </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right Column - Status Card */}
-        <div className="space-y-6">
-          <Card className="border-border/40 shadow-sm bg-gradient-to-br from-primary/5 to-transparent">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-primary" />
-                Status & Peran Akun
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Status Akun</p>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold uppercase tracking-wider">
-                  <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                  {profile?.status || "AKTIF"}
-                </div>
-              </div>
-              
-              <div className="pt-4 border-t border-border/50">
-                <p className="text-xs text-muted-foreground mb-2">Tingkat Hak Akses (Role)</p>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-primary/10 text-primary text-sm font-bold uppercase tracking-wider">
-                  {primaryRole?.replace('_', ' ')}
-                </div>
-                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                  Akun Anda saat ini memiliki akses otorisasi sebagai <strong>{primaryRole?.replace('_', ' ')}</strong> di sistem YPIA.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+                </footer>
+              </section>
+            </div>
+            <aside className="profile-secondary">
+              <section className="profile-panel" aria-label="Peran dan akses">
+                <header>
+                  <span className="profile-section-icon profile-icon-amber">
+                    <ShieldCheck size={19} />
+                  </span>
+                  <div>
+                    <h2>Peran & cakupan</h2>
+                    <p>Penugasan akun saat ini.</p>
+                  </div>
+                </header>
+                {data.assignments.length ? (
+                  <ul className="profile-role-list">
+                    {data.assignments.map((a) => (
+                      <li key={a.id}>
+                        <span className="profile-role-dot" />
+                        <div>
+                          <strong>{userRoleLabels[a.code] ?? a.name}</strong>
+                          <small>{a.scope_name}</small>
+                          {!a.supported_scope && (
+                            <small className="profile-scope-note">
+                              Cakupan lama · perlu ditinjau pengelola
+                            </small>
+                          )}
+                        </div>
+                        {a.duplicates > 1 && (
+                          <span className="profile-duplicate">Duplikat</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="profile-empty">
+                    Belum ada penugasan peran. Hubungi pengelola.
+                  </p>
+                )}
+                {governance && (
+                  <div className="profile-panel-links">
+                    <Link to={"/system/pengguna?user=" + data.profile.id}>
+                      Kelola penugasan saya
+                      <ArrowUpRight size={14} />
+                    </Link>
+                  </div>
+                )}
+              </section>
+              <section className="profile-panel" aria-label="Riwayat profil">
+                <header>
+                  <span className="profile-section-icon profile-icon-green">
+                    <History size={19} />
+                  </span>
+                  <div>
+                    <h2>Riwayat profil</h2>
+                    <p>Lima perubahan profil terbaru.</p>
+                  </div>
+                </header>
+                {data.history.length ? (
+                  <ol className="profile-history">
+                    {data.history.map((h) => (
+                      <li key={h.id}>
+                        <span />
+                        <div>
+                          <strong>
+                            {h.fields.map(profileFieldLabel).join(", ")}
+                          </strong>
+                          <small>{userTime(h.created_at)}</small>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="profile-empty">
+                    Belum ada perubahan profil yang tercatat.
+                  </p>
+                )}
+                {governance && (
+                  <div className="profile-panel-links">
+                    <Link
+                      to={
+                        "/system/audit?entity=profile&target=" + data.profile.id
+                      }
+                    >
+                      Buka audit profil
+                      <ArrowUpRight size={14} />
+                    </Link>
+                    <Link to={"/system/audit?actor=" + data.profile.id}>
+                      Aktivitas saya
+                      <ArrowUpRight size={14} />
+                    </Link>
+                  </div>
+                )}
+              </section>
+              <Link className="profile-help-link" to={base === "/teacher" ? "/teacher/bantuan" : base + "/helpdesk"}>
+                <span>Butuh bantuan akun?</span>Buka Helpdesk
+                <ArrowRight size={15} />
+              </Link>
+            </aside>
+          </div>
+        </>
+      )}
+      {discard && (
+        <Dialog
+          title="Muat profil terbaru?"
+          onClose={() => setDiscard(false)}
+          className="profile-discard-dialog"
+        >
+          <p className="profile-muted">
+            Perubahan yang belum disimpan akan diganti dengan data server.
+          </p>
+          <footer className="profile-dialog-footer">
+            <Button variant="outline" onClick={() => setDiscard(false)}>
+              Lanjut mengedit
+            </Button>
+            <Button onClick={() => void reload()}>Muat data terbaru</Button>
+          </footer>
+        </Dialog>
+      )}
+      {passwordOpen && data && (
+        <ProfilePasswordDialog
+          email={data.login.email ?? name}
+          onClose={() => setPasswordOpen(false)}
+          onSaved={() => {
+            setPasswordOpen(false);
+            setNotice(
+              "Kata sandi berhasil diperbarui. Gunakan sandi baru saat masuk berikutnya.",
+            );
+            void refresh().catch(() => {});
+          }}
+        />
+      )}
     </div>
   );
 }

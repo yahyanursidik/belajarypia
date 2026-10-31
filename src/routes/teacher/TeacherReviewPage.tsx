@@ -216,6 +216,7 @@ export function TeacherReviewPage() {
                 <ArrowRight size={15} />
               </Button>
             )}
+            <Button asChild variant="outline"><Link to={`${root}/tugas?view=review`}>Pengumpulan tugas</Link></Button>
           </>
         }
       />
@@ -363,8 +364,7 @@ export function TeacherReviewPage() {
         </div>
         {filters.kind === "assignment" && (
           <p className="program-notice mb-4">
-            Data ini mencatat progres tugas. Koreksi jawaban esai tersedia pada
-            Ujian & kuis.
+            Hasil tugas terdahulu tetap tersimpan. <Link to={`${root}/tugas?view=review`}>Buka pengumpulan dan revisi tugas →</Link>
           </p>
         )}
         {error ? (

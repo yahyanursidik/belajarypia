@@ -1,0 +1,42 @@
+{
+  "version": "5",
+  "remote": {
+    "https://esm.sh/@supabase/supabase-js@2.118.0": "56fce2ec273698af8a739c03a005c4b2160e163e5d2c0ede05de7e9bd47e28b8",
+    "https://esm.sh/pdf-lib@1.17.1": "cf7c5527829cb9bbb3aa20d339c530067441c10eb98880360aea9e77c3c87ff8"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@electric-sql/pglite@~0.5.13",
+        "npm:@eslint/js@10.0.1",
+        "npm:@radix-ui/react-slot@1.5.0",
+        "npm:@refinedev/core@5.0.12",
+        "npm:@supabase/supabase-js@2.118.0",
+        "npm:@tailwindcss/vite@4.3.3",
+        "npm:@types/node@^24.19.2",
+        "npm:@types/papaparse@5.5.2",
+        "npm:@types/react-dom@19.3.0",
+        "npm:@types/react@19.3.0",
+        "npm:@vitejs/plugin-react@6.1.2",
+        "npm:class-variance-authority@0.7.1",
+        "npm:clsx@2.1.1",
+        "npm:date-fns@4.4.0",
+        "npm:eslint-plugin-react-hooks@7.1.1",
+        "npm:eslint-plugin-react-refresh@0.5.7",
+        "npm:eslint@10.14.0",
+        "npm:globals@17.13.0",
+        "npm:lucide-react@1.66.0",
+        "npm:papaparse@5.7.0",
+        "npm:radix-ui@1.8.1",
+        "npm:react-dom@19.3.1",
+        "npm:react-router-dom@7.18.5",
+        "npm:react@19.3.1",
+        "npm:tailwind-merge@3.7.0",
+        "npm:tailwindcss@4.3.3",
+        "npm:typescript-eslint@8.72.1",
+        "npm:typescript@6.0",
+        "npm:vite@8.3.5"
+      ]
+    }
+  }
+}

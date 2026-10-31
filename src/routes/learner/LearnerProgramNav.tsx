@@ -1,4 +1,4 @@
-import { Award, BookOpen, FileText } from "lucide-react";
+import { Award, BookOpen, FileText, BarChart3 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +27,7 @@ export function LearnerProgramNav({ programId, enrollmentId }: LearnerProgramNav
           <FileText className="h-4 w-4" />
           Tentang program
         </NavLink>
+        <NavLink to={`/learner/progres?program=${programId}`} className={itemClass}><BarChart3 className="h-4 w-4"/>Progres</NavLink>
         {enrollmentId ? (
           <NavLink to={`/learner/transkrip/${enrollmentId}`} className={itemClass}>
             <Award className="h-4 w-4" />
