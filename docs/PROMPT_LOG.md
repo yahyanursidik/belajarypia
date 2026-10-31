@@ -980,3 +980,23 @@ Lanjutkan review dan implementasi halaman peserta, termasuk pemeriksaan integras
 
 ### Paket Git
 - Branch `revamp/lms-helpdesk-workspaces` memuat perubahan Helpdesk dan seluruh revamp modul sebelumnya yang belum dipublikasikan dan saling bergantung sejak PR #1. Backup, konfigurasi lokal, hasil build dan fixture sementara dikecualikan.
+
+## MIGRATION-RECONCILE-001 — 2026-10-31
+
+### Permintaan dan penerapan
+- Pengguna meminta **“migrasikan semua dan merge”**, melanjutkan paket Helpdesk 014 dan rekonsiliasi deployment.
+- Audit membaca schema/fungsi/policy/ACL serta jumlah data pada YPIA / BelajarLMS1 / main (`foauntgtmhnhqlspgtoc`). Riwayat CLI sebelumnya belum tersedia. Migration 001–013 sudah ada; yang belum tersedia adalah 12 fungsi baru, dua tabel dan kolom konteks Helpdesk 014.
+- Paket Helpdesk dicocokkan persis, SHA256 `410dbdeb0fbc05fc1e3a9dd45899c8f7d2be34018a6f02103afc40835367d302`, lalu dijalankan satu transaksi dengan lock/statement timeout. Tidak membuat atau membalas tiket nyata. Verifikasi **14/14 hash cocok**, RLS pada empat tabel, direct mutations ditolak, operation tidak dapat dibaca browser, fingerprint data lama cocok.
+- Verifikasi lintas modul Pendaftaran/Penilaian/Sertifikat/Keuangan/Pengumuman/Pengaturan cocok dengan paket sebelumnya. Hotfix Auth produksi yang sudah ada tetap dipertahankan; tidak menjalankan reset sandi, seed akun atau pembaruan flag Auth secara massal.
+
+### Rekonsiliasi riwayat
+- Menambahkan `supabase/maintenance/20261031_reconcile_migration_history.sql`. Guard memeriksa **110 fungsi menurut signature, 73 tabel, 88 kolom tambahan**. CRLF dinormalkan menjadi LF untuk fungsi lama; isi SQL tetap dicocokkan.
+- Guard lolos tanpa fungsi/tabel/kolom tertinggal. Baseline **69 migration berversi** dicatat pada `supabase_migrations.schema_migrations` hingga **202610310014**, tanpa menjalankan ulang SQL historis. Metadata memuat nama migration serta SHA256 sumber pada komentar baseline. `emergency_fix.sql` tanpa nomor tetap skrip troubleshooting manual, tidak dijalankan.
+- Verifikasi akhir: **69 lokal = 69 remote**, versi hilang/tambahan **0**, seluruh nama/SHA256 cocok, RLS riwayat aktif dan browser tidak memperoleh akses. Jumlah data tetap **1.064 enrollment, 0 progres, 3 transaksi, 2 sertifikat, 9 audit, 0 tiket dan 0 pesan**.
+- Status terkini dicatat di `docs/DEPLOYMENT_STATE.md`; catatan Helpdesk/Pengumuman/Pengaturan diperbarui agar tidak lagi menyatakan deployment/rekonsiliasi tertunda. Pernyataan historis pada entri log sebelumnya menjelaskan keadaan saat entri tersebut dibuat.
+
+### Pemeriksaan aplikasi dan bukti
+- Sesi superadmin nyata membuka `/system/helpdesk` dengan empat statistik 0 dan antrean kosong yang valid, tanpa error RPC. Wizard membaca 13 pilihan program dari server; draf pemeriksaan ditutup sebelum kirim. Tidak ada tiket/pesan baru.
+- Kode frontend tidak berubah dari snapshot PR #2 yang telah lulus 23 berkas tes. Lint/typecheck/build diperiksa kembali untuk paket dokumentasi/maintenance; hasil akhir disimpan di workspace.
+- Receipt dan audit lokal: `../backups/ypia-migration-audit-before-20261031.json`, `../backups/ypia-all-modules-verify-20261031.json`, `../backups/ypia-baseline-history-20261031.json`, `../backups/ypia-migrations-final-verify-20261031.json`, `../backups/ypia-helpdesk-verify-20261031.json`. Tidak dipublikasikan ke Git.
+- Bukti: `../ypia-helpdesk-migration-success.png`, `../ypia-helpdesk-verification.png`, `../ypia-migrations-reconciled.png`, `../ypia-migrations-final-verification.png`, `../system-helpdesk-live.png`.
