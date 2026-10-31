@@ -34,11 +34,11 @@
 
 ## Deployment
 
-Migration `202610310014_helpdesk_workspace.sql` disiapkan untuk YPIA / BelajarLMS1 / main (`foauntgtmhnhqlspgtoc`). **Belum diterapkan; menunggu konfirmasi perubahan akses kategori pembayaran untuk finance.** Tidak ada Edge Function baru.
+Migration `202610310014_helpdesk_workspace.sql` **sudah diterapkan dan diverifikasi** pada YPIA / BelajarLMS1 / main (`foauntgtmhnhqlspgtoc`) pada 31 Oktober 2026, setelah pengguna meminta “migrasikan semua dan merge”. Seluruh 14 hash fungsi cocok, RLS aktif, direct mutations browser ditolak dan tidak ada tiket/pesan nyata yang dibuat. Tidak ada Edge Function baru.
 
 Paket penerapan, preflight policy/fungsi/ACL, manifest hash, verifikasi 14 fungsi, dan emergency disable tersedia pada folder `../backups/ypia-helpdesk-*-20261031.*` di workspace lokal. Cadangan tidak dimasukkan ke Git. Preflight: 0 tiket, 0 pesan; tidak ada komunikasi nyata yang dikirim saat audit.
 
-Jangan menjalankan seluruh migration historis dengan `supabase db push`: beberapa seed lama mereset kredensial. Database sebelumnya menerima migration 002–013 melalui SQL Editor; riwayat CLI perlu direkonsiliasi tersendiri sebelum deployment otomatis.
+Riwayat 69 migration berversi telah direkonsiliasi setelah verifikasi, tanpa menjalankan ulang seed/perubahan kredensial. Lihat [status deployment](DEPLOYMENT_STATE.md) untuk baseline dan langkah deployment berikutnya.
 
 ## Validasi
 
