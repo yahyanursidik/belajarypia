@@ -12,6 +12,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from "reac
 import {
   AlertCircle,
   ArrowRight,
+  ArrowUpRight,
   RefreshCw,
   Settings,
   ArrowLeft,
@@ -498,7 +499,7 @@ export function ProgramBuilderPage() {
     setIsLessonModalOpen(true);
   };
 
-  const editLesson = (lesson: Lesson) => {
+  const editLesson = useCallback((lesson: Lesson) => {
     setLessonStep(0); setErrorMessage(null);
     setLessonModalMode(lesson.lesson_type === "quiz" || lesson.lesson_type === "exam" ? "kuis" : "materi");
     const externalDocs = documentFiles.filter(d => d.lesson_id === lesson.id && d.source_type === "external_link");
@@ -537,7 +538,19 @@ export function ProgramBuilderPage() {
     });
     setEditingLessonId(lesson.id);
     setIsLessonModalOpen(true);
-  };
+  }, [documentFiles]);
+
+  const reviewLesson = searchParams.get("reviewLesson");
+  const openedReviewLesson = useRef("");
+  useEffect(() => {
+    if (workspaceBase !== "/system" || !reviewLesson || isLoading || loadError) return;
+    const lesson = lessons.find((row) => row.id === reviewLesson);
+    const key = `${programId}:${reviewLesson}`;
+    if (!lesson || openedReviewLesson.current === key) return;
+    openedReviewLesson.current = key;
+    setExpandedModules((current) => ({ ...current, [lesson.module_id]: true }));
+    editLesson(lesson);
+  }, [reviewLesson, programId, lessons, editLesson, isLoading, loadError, workspaceBase]);
 
   const deleteLesson = async (lessonId: string) => {
     if (!await askDelete("Hapus materi ini? Tindakan ini tidak bisa dibatalkan.")) return;
@@ -877,6 +890,7 @@ export function ProgramBuilderPage() {
       {/* ── Header ── */}
       <nav aria-label="Jejak navigasi" className="admin-breadcrumb"><button type="button" onClick={() => navigate(directoryPath)}>Program</button><span aria-hidden="true">/</span><span>{program.name}</span></nav>
       <PageHeader title={program.name} eyebrow={`${program.code} · ${statusMeta.label}`} actions={<><Button variant="outline" onClick={()=>void loadData(true)} aria-label="Muat ulang program"><RefreshCw size={16}/></Button>{canManageProgram&&<Button asChild variant="outline"><Link to={`${workspaceBase}/keuangan?tab=invoices&program=${program.id}`}>Tagihan & pembayaran</Link></Button>}{canManageProgram&&<Button asChild variant="outline"><Link to={`${workspaceBase}/pengumuman?program=${program.id}`}>Pengumuman</Link></Button>}{canManageProgram&&<Button variant="outline" onClick={()=>setIsSettingsOpen(true)}><Settings size={16}/>Pengaturan</Button>}</>}/>
+      {workspaceBase === '/system' && <div className="content-builder-return"><Button asChild size="sm" variant="outline"><Link to={searchParams.get('reviewReturn')?.startsWith('/system/konten?') ? searchParams.get('reviewReturn')! : `/system/konten?program=${program.id}`}><FileText size={15}/>Review konten<ArrowUpRight size={14}/></Link></Button></div>}
       <ProgramNavigation basePath={workspaceBase} programId={program.id} section={currentSection} scheduled={program.curriculum_model==="angkatan"||classes.length>0} returnTo={directoryPath} admin={canManageProgram}/>
       <div>
         <div className="min-w-0 space-y-6">
@@ -1032,6 +1046,7 @@ export function ProgramBuilderPage() {
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2 shrink-0">
+                                    {lesson.lesson_type === "assignment" && <Button asChild size="sm" variant="outline"><Link to={`${workspaceBase.startsWith("/teacher") ? "/teacher" : workspaceBase}/tugas/${lesson.id}`}>Pengaturan & pengumpulan tugas</Link></Button>}
                                     {(lesson.lesson_type === "quiz" || lesson.lesson_type === "exam") && (
                                       <Button variant="outline" size="sm" className="h-8 text-xs border-orange-200 text-orange-600 hover:bg-orange-50" onClick={() => manageQuestions(lesson)}>
                                         <BookOpen className="h-3 w-3 mr-1" /> Kelola Soal
@@ -1438,6 +1453,7 @@ export function ProgramBuilderPage() {
                       <option value="draft">Draf</option>
                       <option value="published" disabled={lessonModalMode==="kuis"&&!editingLessonId}>Diterbitkan</option>
                       <option value="locked">Terkunci</option>
+                      <option value="archived">Diarsipkan</option>
                     </select>
                   </div>
                 </div>
@@ -1759,7 +1775,9 @@ export function ProgramBuilderPage() {
                       {lessonForm.content_body?.length || 0} / 1000
                     </span>
                   </div>
+                  {lessonForm.lesson_type === "assignment" && <p className="text-sm text-muted-foreground">Instruksi dan jenis jawaban diatur melalui tombol Pengaturan & pengumpulan tugas setelah materi disimpan.</p>}
                   <textarea aria-label="Deskripsi atau instruksi"
+                    disabled={lessonForm.lesson_type === "assignment"}
                     className="field-control min-h-[120px] leading-relaxed resize-y"
                     placeholder={
                       lessonForm.lesson_type === "live_session"

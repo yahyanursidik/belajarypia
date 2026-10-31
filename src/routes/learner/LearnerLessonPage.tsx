@@ -1,3 +1,7 @@
+import { AssignmentWork } from "../../components/assignments/AssignmentWork";
+import { LearnerReadingContent } from "../../components/learner/LearnerReadingContent";
+import { learnerLessonLabels } from "../../lib/learnerWorkspace";
+import { Link } from "react-router-dom";
 import { canCompleteReading } from "../../lib/learningProgress";
 import { fetchLearningSummary } from "../../lib/learningSummary";
 import { useEffect, useState } from "react";
@@ -14,7 +18,8 @@ import { LessonBoardView } from "../../components/boards/LessonBoardView";
 import { requestSignedDownloadUrl } from "../../lib/documents";
 import { requestLessonBoardImageUrl, type LessonBoard, type LessonBoardColumn, type LessonBoardPost } from "../../lib/lessonBoards";
 
-export function LearnerLessonPage() {
+export function LearnerLessonPage(){const {lessonId}=useParams();return <LearnerLessonContent key={lessonId}/>;}
+function LearnerLessonContent() {
   const { lessonId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -47,7 +52,7 @@ export function LearnerLessonPage() {
         const { data: lessonRow, error: lessonError } = await supabase
           .from("lessons")
           .select(`
-            id, module_id, code, title, lesson_type, content_body, external_url, release_at, 
+            id, module_id, code, title, lesson_type, content_body, content_format, external_url, release_at,
             duration_minutes, passing_grade, max_attempts, randomized_questions_count,
             program_modules(id, program_id, programs(id, name))
           `)
@@ -429,7 +434,7 @@ export function LearnerLessonPage() {
           </h1>
           <div className="flex items-center gap-4 mt-4 text-sm text-slate-500">
             <span className="capitalize font-medium flex items-center gap-1.5">
-              Tipe: {lesson?.lesson_type.replace('_', ' ')}
+              {learnerLessonLabels[lesson?.lesson_type]??"Aktivitas"}
             </span>
             {lesson?.release_at && (
               <span>Dirilis: {new Date(lesson.release_at).toLocaleDateString("id-ID")}</span>
@@ -441,7 +446,7 @@ export function LearnerLessonPage() {
       {prerequisites.length > 0 && (
         <Alert className="mb-8 bg-amber-50 border-amber-200 text-amber-800">
           <BookOpen className="w-4 h-4 text-amber-600" />
-          <AlertTitle className="text-amber-800 font-semibold">Persyaratan Materi (Prerequisite)</AlertTitle>
+          <AlertTitle className="text-amber-800 font-semibold">Materi prasyarat</AlertTitle>
           <AlertDescription>
             Anda disarankan untuk menyelesaikan materi berikut sebelum mempelajari materi ini:
             <ul className="list-disc ml-5 mt-2 space-y-1">
@@ -656,14 +661,9 @@ export function LearnerLessonPage() {
           )}
 
           {/* Text Content */}
-          {lesson?.content_body ? (
-            <div className="p-8 prose prose-slate max-w-none prose-headings:text-slate-800 prose-a:text-primary hover:prose-a:text-primary/90">
-              {/* Fallback rendering for now. If it's HTML, we'll dangerously set it */}
-              {lesson.content_body.includes('<') && lesson.content_body.includes('>') ? (
-                <div dangerouslySetInnerHTML={{ __html: lesson.content_body }} />
-              ) : (
-                <div className="whitespace-pre-wrap">{lesson.content_body}</div>
-              )}
+          {lesson.lesson_type === "assignment" ? null : lesson?.content_body ? (
+            <div className="student-reading-shell">
+              <LearnerReadingContent body={lesson.content_body} format={lesson.content_format} title={lesson.title}/>
             </div>
           ) : (
             !lesson?.external_url && (
@@ -675,6 +675,7 @@ export function LearnerLessonPage() {
         </div>
       )}
 
+      <div className="student-reading-links"><Link to={`/learner/progres?program=${programId}`}>Progres program</Link><Link to={`/learner/bantuan?category=academic&contextProgram=${programId}`}>Bantuan materi</Link></div>
       {/* Inline Document Viewers */}
       {documents.length > 0 && (
         <section className="mb-8">
@@ -691,6 +692,7 @@ export function LearnerLessonPage() {
       )}
 
 
+      {lesson.lesson_type === "assignment" && lessonId && <AssignmentWork key={user?.id+lessonId} lessonId={lessonId}/> }
       {/* Document Attachments */}
       {documents.length > 0 && (
         <Card className="border-slate-200 shadow-sm">
@@ -764,7 +766,7 @@ export function LearnerLessonPage() {
           >
             <CheckCircle2 className="w-5 h-5 mr-2 text-white" /> {isCompleting ? "Menyimpan progres…" : "Selesai & lanjutkan"}
           </Button>
-        ) : <p className="text-sm text-muted-foreground">Penyelesaian aktivitas ini mengikuti penilaian atau presensi.</p>}
+        ) : lesson?.lesson_type === "assignment" ? null : <p className="text-sm text-muted-foreground">Penyelesaian aktivitas ini mengikuti penilaian atau presensi.</p>}
       </div>
     </div>
   );

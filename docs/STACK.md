@@ -1,6 +1,15 @@
 # STACK.md
 # Technical Stack for YPIA LMS
 
+## Baseline 31 Oktober 2026
+
+Node 24.22.1 LTS, React 19.3.1, React Router 7.18.5, Vite 8.3.5,
+TypeScript 6.0.3, ESLint 10.14.0, Tailwind 4.3.3, Supabase JS 2.118.0.
+Gunakan `.nvmrc`, `npm ci`, `npm run check`, dan `npm run test:sql`.
+Versi exact, keputusan kompatibilitas, temuan keamanan, serta audit fitur
+lintas portal ada di [STACK_AUDIT_20261031.md](STACK_AUDIT_20261031.md).
+Versi SDK pada sumber Edge Function diselaraskan; deployment remote terpisah.
+
 ## 1. Frontend
 - Vite
 - React

@@ -146,7 +146,7 @@ export function DashboardActivity({
                 aria-pressed={focused?.day === d.day}
                 tabIndex={focused?.day === d.day ? 0 : -1}
                 onKeyDown={(event) => {
-                  let next = index;
+                  let next: number;
                   if (event.key === "ArrowRight")
                     next = Math.min(data.daily.length - 1, index + 1);
                   else if (event.key === "ArrowLeft")

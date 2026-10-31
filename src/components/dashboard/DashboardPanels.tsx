@@ -248,7 +248,11 @@ export function DashboardAudit({ data }: { data: DashboardData }) {
             <li key={log.id}>
               <span className="dashboard-audit-dot" />
               <div>
-                <strong>{dashboardAuditLabel(log)}</strong>
+                <strong>
+                  <Link to={href + "&event=" + log.id}>
+                    {dashboardAuditLabel(log)}
+                  </Link>
+                </strong>
                 <small>
                   {log.actor_name} · {dashboardTime(log.created_at)} WIB
                 </small>

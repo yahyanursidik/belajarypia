@@ -88,7 +88,7 @@ export function TeacherClassDashboardPage() {
             <h3 className="font-semibold text-lg text-slate-900">Daftar Peserta</h3>
             <p className="text-sm text-slate-500">Kelola dan lihat perkembangan murid di kelas ini.</p>
             <Button asChild variant="outline" className="w-full mt-4">
-              <Link to={`/teacher/kelas/program/${classData.programs?.id}/peserta`}>Buka Peserta</Link>
+              <Link to={`/teacher/progres?program=${classData.programs?.id}&class=${classData.id}`}>Buka Peserta</Link>
             </Button>
           </CardContent>
         </Card>
@@ -114,7 +114,7 @@ export function TeacherClassDashboardPage() {
             <h3 className="font-semibold text-lg text-slate-900">Penilaian</h3>
             <p className="text-sm text-slate-500">Berikan nilai untuk tugas, kuis, atau setoran.</p>
             <Button asChild variant="outline" className="w-full mt-4">
-              <Link to="/teacher/review">Buka Review</Link>
+              <Link to={`/teacher/review?program=${classData.programs?.id}`}>Buka Review</Link>
             </Button>
           </CardContent>
         </Card>
@@ -137,10 +137,10 @@ export function TeacherClassDashboardPage() {
             <div className="h-12 w-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 mb-2">
               <Calendar className="h-6 w-6" />
             </div>
-            <h3 className="font-semibold text-lg text-slate-900">Jadwal & Presensi</h3>
-            <p className="text-sm text-slate-500">Kelola jadwal pertemuan (halaqah) dan absensi.</p>
+            <h3 className="font-semibold text-lg text-slate-900">Agenda Pembelajaran</h3>
+            <p className="text-sm text-slate-500">Tanggal rilis materi dan tenggat program.</p>
             <Button asChild variant="outline" className="w-full mt-4">
-              <Link to={`/teacher/kelas/program/${classData.programs?.id}/angkatan-kelas`}>Kelola Kelas</Link>
+              <Link to={`/teacher/agenda?program=${classData.programs?.id}`}>Buka Agenda</Link>
             </Button>
           </CardContent>
         </Card>

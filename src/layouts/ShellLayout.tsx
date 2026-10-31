@@ -1,4 +1,5 @@
 import {BrandMark} from "../components/BrandMark";
+import { RouteRecovery } from "../components/RouteRecovery";
 import { isHrefActive, isNavigationItemActive } from "../lib/navigationMatching";
 import {
   BookOpen,
@@ -303,7 +304,7 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
   const isAdminWorkspace = variant === "admin" || variant === "superadmin";
   const isCompactWorkspace = isAdminWorkspace || variant === "learner";
   const currentModule = menuItems.find((item) => isNavigationItemActive(location.pathname, location.search, item));
-  const roleLabel = primaryRole === "participant" ? "Peserta" : primaryRole === "guardian" ? "Wali" : primaryRole?.replaceAll("_", " ");
+  const roleLabel = primaryRole === "teacher" ? "Pengajar" : primaryRole === "participant" ? "Peserta" : primaryRole === "guardian" ? "Wali" : primaryRole?.replaceAll("_", " ");
   const displayName = profile?.full_name ?? profile?.email ?? "Pengguna";
 
   const initials = displayName
@@ -427,7 +428,7 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
             </div>
             <div className="min-w-0">
               <span className="app-shell__eyebrow">{portalIdentity.eyebrow}</span>
-              <div className="app-shell__title">{isCompactWorkspace ? currentModule?.label ?? title : title}</div>
+              <div className="app-shell__title">{isCompactWorkspace ? (/^\/(system|admin)\/profil\/?$/.test(location.pathname) ? "Profil Saya" : currentModule?.label ?? title) : title}</div>
               {!isCompactWorkspace && <p className="app-shell__subtitle">{subtitle}</p>}
             </div>
           </div>
@@ -468,7 +469,7 @@ export function ShellLayout({ children, title, subtitle, variant, menuItems }: S
         </header>
 
         <main id="main-content" className="app-shell__content print:p-0 print:m-0 print:block">
-          <Suspense fallback={<ContentFallback />}>{children}</Suspense>
+          <RouteRecovery home={homeByVariant[variant]}><Suspense fallback={<ContentFallback />}>{children}</Suspense></RouteRecovery>
         </main>
 
         <footer className="app-shell__footer print:hidden">

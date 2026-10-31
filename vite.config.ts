@@ -6,20 +6,22 @@ import path from "node:path";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          "vendor-react": ["react", "react-dom", "react-router-dom"],
-          "vendor-refine": ["@refinedev/core"],
-          "vendor-supabase": ["@supabase/supabase-js"],
-          "vendor-icons": ["lucide-react"],
+        codeSplitting: {
+          groups: [
+            { name: "vendor-react", test: /node_modules\/(react|react-dom|react-router|react-router-dom)\// },
+            { name: "vendor-refine", test: /node_modules\/@refinedev\// },
+            { name: "vendor-supabase", test: /node_modules\/@supabase\// },
+            { name: "vendor-icons", test: /node_modules\/lucide-react\// },
+          ],
         },
       },
     },
   },
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
 });

@@ -1,124 +1,126 @@
-import { LearningCards } from "../../components/learner/LearningCards";
-import { useEffect, useState, useMemo } from "react";
-
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { FullPageLoader } from "@/components/ui/full-page-loader";
-import { Input } from "@/components/ui/input";
-import { useAuthSession } from "../../app/providers/authSessionContext";
-import { Search } from "lucide-react";
-import type { Enrollment, Participant } from "../../lib/enrollment";
-import { supabase } from "../../lib/supabase";
-
+import { useSearchParams, Link } from "react-router-dom";
+import { Search, ArrowRight } from "lucide-react";
+import { Input } from "../../components/ui/input";
+import { Button } from "../../components/ui/button";
+import { useLearnerPortal } from "../../lib/learnerData";
+import { learnerEnrollmentLabels } from "../../lib/learnerWorkspace";
+import {
+  LearnerLoadState,
+  LearnerRefresh,
+  LearnerUnlinked,
+  StudentProgramCard,
+} from "../../components/learner/LearnerShared";
 export function LearnerProgramLessonsPage() {
-
-  const { user } = useAuthSession();
-  const [participant, setParticipant] = useState<Participant | null>(null);
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  
-  // UI States
-
-  const [searchQuery, setSearchQuery] = useState("");
-
-  useEffect(() => {
-    async function loadPrograms() {
-      if (!user) {
-        setIsLoading(false);
-        return;
-      }
-
-      setIsLoading(true);
-      setErrorMessage(null);
-
-      const { data: participantRow, error: participantError } = await supabase
-        .from("participants")
-        .select("id, user_id, global_participant_number, display_name, status")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (participantError) {
-        setErrorMessage(participantError.message);
-        setIsLoading(false);
-        return;
-      }
-
-      const currentParticipant = (participantRow as Participant | null) ?? null;
-      setParticipant(currentParticipant);
-
-      if (!currentParticipant) {
-        setIsLoading(false);
-        return;
-      }
-
-      const { data: enrollmentRows, error: enrollmentError } = await supabase
-        .from("enrollments")
-        .select(
-          "id, participant_id, program_id, batch_id, class_id, halaqah_id, enrollment_number, enrollment_status, payment_status, programs(id, code, name, feature_flags)",
-        )
-        .eq("participant_id", currentParticipant.id)
-        .eq("enrollment_status", "active")
-        .order("created_at", { ascending: false });
-
-      if (enrollmentError) {
-        setErrorMessage(enrollmentError.message);
-      } else {
-        setEnrollments((enrollmentRows ?? []) as unknown as Enrollment[]);
-      }
-
-      setIsLoading(false);
-    }
-
-    void loadPrograms();
-  }, [user]);
-
-  // Deduplicate programs and apply search filter
-  const filteredPrograms = useMemo(() => {
-    const unique = Array.from(
-      new Map(enrollments.map((e) => [e.program_id, { id: e.program_id, code: e.programs?.code || "", name: e.programs?.name || "", enrollment: e }])).values()
+  const { data, loading, error, load } = useLearnerPortal(),
+    [params, setParams] = useSearchParams(),
+    q = params.get("q") ?? "",
+    status = ["active", "completed", "hold", "pending", "cancelled"].includes(
+      params.get("status") ?? "",
+    )
+      ? params.get("status")!
+      : "all";
+  function update(key: string, value: string) {
+    setParams(
+      (p) => {
+        const n = new URLSearchParams(p);
+        if (value && value !== "all") n.set(key, value);
+        else n.delete(key);
+        return n;
+      },
+      { replace: true },
     );
-    
-    if (!searchQuery) return unique;
-    
-    const lowerQuery = searchQuery.toLowerCase();
-    return unique.filter(p => 
-      p.name.toLowerCase().includes(lowerQuery) || 
-      p.code.toLowerCase().includes(lowerQuery) ||
-      p.enrollment.enrollment_number.toLowerCase().includes(lowerQuery)
-    );
-  }, [enrollments, searchQuery]);
-
-  if (isLoading) {
-    return <FullPageLoader message="Memuat program Anda..." />;
   }
-
-  if (errorMessage) {
+  if (!data)
     return (
-      <div className="p-4">
-        <Alert className="border-red-200 bg-red-50 text-red-900">
-          <AlertTitle>Gagal memuat program</AlertTitle>
-          <AlertDescription>{errorMessage}</AlertDescription>
-        </Alert>
-      </div>
+      <LearnerLoadState
+        error={error}
+        loading={loading}
+        onRetry={() => void load()}
+      />
     );
-  }
-
-  if (!participant) {
-    return (
-      <div className="p-4">
-        <Alert>
-          <AlertTitle>Belum terhubung sebagai peserta</AlertTitle>
-          <AlertDescription>
-            Akun ini belum memiliki profil peserta aktif.
-          </AlertDescription>
-        </Alert>
+  if (!data.participant) return <LearnerUnlinked />;
+  const rows = data.enrollments.filter(
+    (e) =>
+      (status === "all" || e.enrollment_status === status) &&
+      (!q ||
+        `${e.programs?.name} ${e.programs?.code} ${e.enrollment_number}`
+          .toLowerCase()
+          .includes(q.toLowerCase())),
+  );
+  return (
+    <div className="student-workspace">
+      <header className="student-page-heading">
+        <div>
+          <span>PERJALANAN BELAJAR</span>
+          <h1>Program saya</h1>
+        </div>
+        <LearnerRefresh loading={loading} onClick={() => void load()} />
+      </header>
+      {error && (
+        <LearnerLoadState
+          error={error}
+          loading={loading}
+          onRetry={() => void load()}
+        />
+      )}
+      <div className="student-directory-filters">
+        <label>
+          <Search size={17} />
+          <Input
+            aria-label="Cari program"
+            placeholder="Nama atau nomor enrollment…"
+            value={q}
+            onChange={(e) => update("q", e.target.value)}
+          />
+        </label>
+        <select
+          aria-label="Status program saya"
+          value={status}
+          onChange={(e) => update("status", e.target.value)}
+        >
+          <option value="all">Semua status</option>
+          {Object.entries(learnerEnrollmentLabels).map(([key, label]) => (
+            <option value={key} key={key}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <Link to="/learner/progres">
+          Progres belajar
+          <ArrowRight size={15} />
+        </Link>
       </div>
-    );
-  }
-
-  return <div className="page-stack learner-program-directory">
-    <header className="learner-section-heading"><h1>Program saya</h1></header>
-    <label className="learner-program-search"><Search size={18} /><Input aria-label="Cari program" placeholder="Cari program…" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} /></label>
-    {filteredPrograms.length === 0 && searchQuery ? <p role="status">Program tidak ditemukan. Coba kata lain.</p> : <LearningCards enrollments={filteredPrograms.map((item) => item.enrollment)} />}
-  </div>;
+      <div className="student-section-heading">
+        <h2>{rows.length} program</h2>
+        <Link to="/learner/cek-status">
+          Status pendaftaran
+          <ArrowRight size={14} />
+        </Link>
+      </div>
+      {rows.length ? (
+        <div className="student-program-grid">
+          {rows.map((e, i) => (
+            <StudentProgramCard key={e.id} enrollment={e} index={i} />
+          ))}
+        </div>
+      ) : (
+        <section className="student-empty">
+          <h2>
+            {q || status !== "all"
+              ? "Program tidak ditemukan"
+              : "Belum ada program terdaftar"}
+          </h2>
+          {q || status !== "all" ? (
+            <Button variant="outline" onClick={() => setParams({})}>
+              Reset filter
+            </Button>
+          ) : (
+            <Button asChild>
+              <Link to="/learner">Jelajahi program</Link>
+            </Button>
+          )}
+        </section>
+      )}
+    </div>
+  );
 }

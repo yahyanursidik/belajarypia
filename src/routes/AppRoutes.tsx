@@ -3,6 +3,11 @@ import { Navigate, Route, Routes, Outlet } from "react-router-dom";
 import { FullPageLoader } from "../components/ui/full-page-loader";
 import { DashboardRedirect, ProtectedRoute } from "./ProtectedRoute";
 
+const AssignmentsPage = lazy(() => import("./shared/AssignmentsPage").then(m => ({default:m.AssignmentsPage})));
+const AssignmentDetailPage = lazy(() => import("./shared/AssignmentsPage").then(m => ({default:m.AssignmentDetailPage})));
+
+const AgendaPage = lazy(() => import("./shared/AgendaPage").then((m) => ({ default: m.AgendaPage })));
+
 const AdminLayout = lazy(() =>
   import("../layouts/AdminLayout").then((module) => ({ default: module.AdminLayout })),
 );
@@ -126,6 +131,7 @@ const LearnerProfilePage = lazy(() =>
     default: module.LearnerProfilePage,
   })),
 );
+const LearnerProgressPage = lazy(() => import("./learner/LearnerProgressPage").then(module => ({ default: module.LearnerProgressPage })));
 const LearnerProgramLessonsPage = lazy(() =>
   import("./learner/LearnerProgramLessonsPage").then((module) => ({
     default: module.LearnerProgramLessonsPage,
@@ -246,6 +252,7 @@ const TeacherClassDashboardPage = lazy(() =>
     default: module.TeacherClassDashboardPage,
   })),
 );
+const TeacherProgressPage = lazy(() => import("./teacher/TeacherProgressPage").then(m => ({ default: m.TeacherProgressPage })));
 const TeacherContentPage = lazy(() =>
   import("./teacher/TeacherContentPage").then((module) => ({
     default: module.TeacherContentPage,
@@ -316,6 +323,9 @@ export function AppRoutes() {
           }
         >
           <Route index element={<AdminDashboardPage />} />
+          <Route path="tugas" element={<ProtectedRoute allowedRoles={["admin"]}><AssignmentsPage /></ProtectedRoute>} />
+          <Route path="tugas/:lessonId" element={<ProtectedRoute allowedRoles={["admin"]}><AssignmentDetailPage /></ProtectedRoute>} />
+          <Route path="agenda" element={<ProtectedRoute allowedRoles={["admin"]}><AgendaPage /></ProtectedRoute>} />
           <Route
             path="pendaftaran"
             element={
@@ -450,7 +460,11 @@ export function AppRoutes() {
           }
         >
           <Route index element={<TeacherPortalHomePage />} />
+          <Route path="tugas" element={<ProtectedRoute allowedRoles={["teacher"]}><AssignmentsPage /></ProtectedRoute>} />
+          <Route path="tugas/:lessonId" element={<ProtectedRoute allowedRoles={["teacher"]}><AssignmentDetailPage /></ProtectedRoute>} />
+          <Route path="agenda" element={<ProtectedRoute allowedRoles={["teacher"]}><AgendaPage /></ProtectedRoute>} />
           <Route path="kelas" element={<TeacherClassPage />} />
+          <Route path="progres" element={<TeacherProgressPage />} />
           <Route path="kelas/program/:programId" element={<ProgramBuilderPage />} />
           <Route path="kelas/program/:programId/:section" element={<ProgramBuilderPage />} />
           <Route path="board/:lessonId" element={<LessonBoardEditorPage />} />
@@ -479,7 +493,11 @@ export function AppRoutes() {
           }
         >
           <Route index element={<LearnerDashboardPage />} />
+          <Route path="tugas" element={<ProtectedRoute allowedRoles={["participant"]}><AssignmentsPage /></ProtectedRoute>} />
+          <Route path="tugas/:lessonId" element={<ProtectedRoute allowedRoles={["participant"]}><AssignmentDetailPage /></ProtectedRoute>} />
+          <Route path="agenda" element={<ProtectedRoute allowedRoles={["participant"]}><AgendaPage /></ProtectedRoute>} />
           <Route path="program-saya" element={<LearnerProgramLessonsPage />} />
+          <Route path="progres" element={<LearnerProgressPage />} />
           <Route path="program/:programId" element={<LearnerProgramDetailPage />} />
           <Route path="program/:programId/:section" element={<LearnerProgramDetailPage />} />
           <Route path="lesson/:lessonId" element={<LearnerLessonPage />} />
@@ -506,6 +524,9 @@ export function AppRoutes() {
           }
         >
           <Route index element={<SuperAdminDashboardPage />} />
+          <Route path="tugas" element={<ProtectedRoute allowedRoles={["super_admin"]}><AssignmentsPage /></ProtectedRoute>} />
+          <Route path="tugas/:lessonId" element={<ProtectedRoute allowedRoles={["super_admin"]}><AssignmentDetailPage /></ProtectedRoute>} />
+          <Route path="agenda" element={<AgendaPage />} />
           <Route path="pendaftaran" element={<AdminApplicantListPage />} />
           <Route path="peserta" element={<AdminParticipantListPage />} />
           <Route path="peserta/:participantId" element={<AdminParticipantDetailPage />} />

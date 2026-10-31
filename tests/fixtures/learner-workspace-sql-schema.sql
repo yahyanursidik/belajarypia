@@ -1,0 +1,12 @@
+alter table participants add column birth_date date,add column updated_at timestamptz default now(),add column created_at timestamptz default now();
+alter table programs add column description text,add column syllabus text,add column program_type text default 'course',add column curriculum_model text default 'self_paced',add column delivery_mode text default 'online',add column grading_rubric jsonb,add column graduation_settings jsonb;
+alter table batches add column name text,add column code text;
+alter table classes add column code text;
+alter table halaqahs add column code text;
+alter table enrollments add column created_at timestamptz default now();
+create table levels(id uuid primary key,program_id uuid references programs,name text,code text);
+create table program_modules(id uuid primary key,program_id uuid references programs,parent_module_id uuid,level_id uuid references levels,code text,title text,module_type text default 'lesson_group',order_no int default 0,is_required boolean default true);
+create table lessons(id uuid primary key,module_id uuid references program_modules,code text,title text,lesson_type text default 'content',order_no int default 0,release_at timestamptz,due_at timestamptz,visibility_status text default 'draft',duration_minutes int,passing_grade numeric,content_body text);
+create table lesson_prerequisites(lesson_id uuid references lessons,prerequisite_lesson_id uuid references lessons);
+create table lesson_progresses(id uuid primary key default gen_random_uuid(),enrollment_id uuid references enrollments,participant_id uuid references participants,lesson_id uuid references lessons,status text,score numeric,started_at timestamptz default now(),completed_at timestamptz,unique(enrollment_id,lesson_id));
+create table quiz_attempts(id uuid primary key,enrollment_id uuid references enrollments,lesson_id uuid references lessons,attempt_number int,status text,score numeric,started_at timestamptz default now(),submitted_at timestamptz,secret_answer text);

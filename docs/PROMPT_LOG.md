@@ -1007,3 +1007,75 @@ Lanjutkan review dan implementasi halaman peserta, termasuk pemeriksaan integras
 Permintaan: review hubungan fitur/subfitur beranda `/system`, ringkas dan ramah pengguna, wizard mudah, lalu push dan merge.
 
 Implementasi: snapshot RPC superadmin, KPI dengan definisi akurat, antrean lintas modul, grafik 7/30/90 hari WIB, progres program, status pilihan program, onboarding, audit global, launcher dua langkah. Filter tujuan diselaraskan pada Pendaftaran, Keuangan dan Audit. Angka gagal muat tidak ditampilkan sebagai nol; progres tanpa denominator memakai `—`. Migration 015 sudah diterapkan dan riwayat menjadi 70 versi; data bisnis sebelum/sesudah sama. Rincian dan batas verifikasi: `DASHBOARD_WORKSPACE.md`.
+
+
+## 2026-10-31 — Revamp Review Konten
+
+Permintaan: review seluruh fitur/subfitur `/system/konten`, hubungan dengan modul LMS, navigasi yang mudah, tampilan berwarna dan ringkas.
+
+Implementasi: empat kartu statistik, filter program/jenis/status/pencarian, pagination server, daftar/panel responsif, pratinjau teks/HTML terisolasi/sumber privat/soal/papan, pemeriksaan kelengkapan, riwayat keputusan, wizard dua langkah dan editor materi spesifik dengan tautan kembali. Draf tidak lagi dianggap pengajuan formal. Empat fungsi server memvalidasi superadmin aktif, kelengkapan dan fingerprint sumber; perubahan status/audit/pengumuman atomik. Migration 016 diterapkan dan 4/4 hash cocok, riwayat menjadi 71. Fingerprint materi/pengumuman dan data operasional tetap sama; tidak mengubah status materi nyata. Rincian hasil review, hubungan fitur, pengujian dan batas: `CONTENT_REVIEW_WORKSPACE.md`.
+
+## 2026-10-31 — Revamp Akses & Pengguna
+
+Permintaan: review fitur/subfitur `/system/pengguna`, hubungan akun-peran-peserta/program, navigasi dan UI yang ringkas, ramah pengguna, berwarna.
+
+Implementasi: direktori server dengan URL/filter/pagination, statistik global akurat, detail akun/peran/hubungan/riwayat, wizard grant/revoke per penugasan dengan scope dan alasan, ekspor CSV lengkap sesuai filter dan perlindungan formula. Tidak mengganti sandi, membuat akun atau mengubah penugasan nyata saat pengujian. Migration 017 menambahkan empat fungsi superadmin dengan validasi versi/audit; table RLS/DML lama dipertahankan untuk kompatibilitas dan TRUNCATE browser dicabut. Sepuluh skenario SQL serta helper/regresi lulus; browser memakai akun contoh.
+
+Pada tahap awal penerapan database tertunda oleh pemeriksaan persetujuan otomatis; kemudian pengguna menyetujui **Terapkan migration Akses & Pengguna**, dan 017 berhasil diterapkan. Pemeriksaan sesi nyata menemukan scope signup peserta/wali `own` perlu dikenali sebagai Data sendiri. Koreksi 018 disiapkan dan sebelas skenario SQL lulus; pengguna menyetujui **Terapkan koreksi 018**, lalu paket diterapkan dan diverifikasi. Riwayat remote kini 73 versi sampai 018, empat hash fungsi cocok, fingerprint profil/penugasan/policy tetap sama. Tidak membuat akun, mengubah sandi atau memberi/melepas peran akun nyata. Sesi nyata membaca 552 akun dan filter tanpa peran 26 hasil. Build/typecheck, empat helper dan regresi lulus; lint 0 error/4 warning lama. Rincian hasil review dan status terkini: `USERS_WORKSPACE.md`.
+
+## 2026-10-31 — Revamp Audit Sistem
+
+Pengguna meminta review dan implementasi `/system/audit` yang terhubung antarmodul, ringkas, berwarna dan mudah ditelusuri. Temuan: pencarian UUID memakai ilike, kategori substring tumpang tindih, facet berpotensi terpotong, ringkasan kategori hanya satu halaman, ekspor parsial dan payload mentah, modal custom, identitas pelaku hilang disamakan Sistem/Anonim.
+
+Implementasi: proyeksi server baca khusus superadmin aktif, pencarian literal pelaku/ID, kategori konsisten, pagination exact, URL penuh, ringkasan seluruh filter, periode WIB, wizard dua langkah, detail dengan perbandingan tercatat/redaksi kredensial yang dikenali, tautan akun/objek/modul, ekspor metadata seluruh hasil dengan perlindungan formula dan batas eksplisit. Dashboard/Pengguna/Konten mengirim konteks ke Audit. Tidak menambahkan status review/risiko rekaan atau operasi hapus log.
+
+Pengguna menyetujui **Terapkan migration Audit**; 019 diterapkan pada YPIA main. Riwayat 74 versi, 4/4 hash cocok, helper privat dan privilege sesuai paket. Fingerprint 10 catatan audit, policy/grant tabel serta jumlah data bisnis identik. Tujuh skenario SQL, empat helper dan regresi terkait lulus; browser memakai PostgreSQL terisolasi dengan data contoh. Batas sumber audit, penyamaran proyeksi dan hasil lengkap: `AUDIT_WORKSPACE.md`.
+
+Verifikasi akhir Audit: sesi nyata membaca 10 aktivitas/2 pelaku/3 akses, pencarian UUID satu hasil dan tautan Pengaturan tepat. Fixture memverifikasi gagal/kosong/snapshot/retry, wizard, detail before-after, pagination tetap saat dialog dibuka/ditutup, serta responsif 390px. Dua kode pengaturan lama/baru dengan label sama diberi kode pembeda pada opsi filter. Build/typecheck berhasil dan lint 0 error/4 warning lama; tidak mengekspor data audit nyata atau memanggil mutasi operasional.
+
+## 2026-10-31 — Revamp Profil Saya
+
+Pengguna meminta review dan implementasi `/system/profil` yang saling terhubung, ringkas, berwarna, mudah dipahami. Temuan utama: telepon tidak dimuat dan bisa terhapus saat menyimpan nama; sesi/menu tidak refresh; status selalu hijau; primaryRole menghilangkan cakupan/penugasan lain; penyimpanan langsung tanpa pemeriksaan versi/audit.
+
+Implementasi: identitas ringkas, editor nama/kontak dengan patch/tinjauan, read-only email login dan status nyata, seluruh peran/cakupan, keamanan dengan metadata faktual, dialog sandi dua langkah, lima riwayat profil, tautan Pengguna/Audit/Helpdesk/Beranda, header Profil Saya. Sandi hanya di memori dan tetap melalui Auth; tidak mengganti profil peserta atau dokumen akademik.
+
+Pengguna menyetujui **Terapkan migration Profil**. Migration 020 diterapkan pada YPIA main, riwayat 75 versi, 2/2 hash cocok. Fingerprint profil/Auth/penugasan dan policy/ACL/RLS sebelum/sesudah sama. Tujuh skenario SQL dan tiga helper lulus; fixture membuktikan telepon terjaga, nama menu/riwayat diperbarui, stale save menjaga draf, konfirmasi reload, serta responsif 390px. Tidak mengubah akun/sandi nyata atau mengirim email. Rincian review dan batas validasi: `PROFILE_WORKSPACE.md`.
+
+Pemeriksaan Profil nyata: data akun/peran dan tautan terhubung berhasil dibaca, tanpa save atau update sandi. Nama profil belum diisi ditampilkan eksplisit, bukan mengulang email sebagai nama. Fixture error awal tidak merender editor kosong; draf konflik dan dialog mobile telah diverifikasi. Bukti akhir `../system-profile-revamp.png`.
+
+## 2026-10-31 — Revamp Portal Peserta
+
+Pengguna meminta review dan implementasi seluruh portal peserta yang saling terhubung, berwarna, sederhana, nyaman dipakai belajar, dengan progres dan wizard profil. Temuan: daftar aktif menyembunyikan riwayat selesai/ditahan, progres tersebar, sumber REST outline/ringkasan terpisah dan berpotensi terpotong, profil diperbarui melalui dua operasi, konten HTML berjalan pada origin aplikasi.
+
+Implementasi: beranda lanjutkan belajar/agenda aktual, direktori semua status, Progres baru dengan agregat materi tersedia dan aktivitas WIB, outline tunggal dan tautan status ujian terbaru, navigasi ponsel lima menu, ruang baca dengan ukuran teks/sandbox, profil belajar tiga langkah dengan patch atomik/revision/audit. Keuangan, Pengumuman, Helpdesk, transkrip dan syahadah terhubung lewat konteks yang tepat. Tidak menambahkan XP/streak/kelulusan rekaan, payment gateway atau media upload.
+
+Pengguna menyetujui **Terapkan migration Portal Peserta**. Migration 021 diterapkan di YPIA main; riwayat 76 versi dan keempat hash cocok. Fingerprint profil/peserta/enrollment/policy/ACL tetap sama. Delapan skenario SQL, helper peserta dan regresi terkait lulus; typecheck/build berhasil, lint 0 error/4 warning lama. Browser fixture memverifikasi progres 3/6=50%, status/tautan, wizard simpan/konflik dan ponsel; sandbox memblokir script materi. Read-only ROLE authenticated pada data nyata memverifikasi kepemilikan profil dan enrollment tanpa mutasi. Tidak mengganti sandi/login sebagai peserta nyata. Review lengkap serta fitur native yang belum tersedia: `LEARNER_WORKSPACE.md`.
+
+Verifikasi lanjutan menggunakan sesi peserta localhost yang sudah tersedia: beranda 4 program aktif, Progres 0/49 dan filter 0/33, serta profil belajar berhasil dimuat. Seluruh pemeriksaan baca saja; tidak login ulang, mengubah profil, mendaftarkan program atau menyelesaikan materi. Bukti `../learner-portal-localhost.png`.
+
+## 2026-10-31 — Revamp Portal Pengajar
+
+Permintaan review seluruh fitur portal pengajar dan implementasi pengalaman yang ringkas, berwarna, terhubung, dengan progres dan profil terpandu. Beranda diganti menjadi fokus pengajaran; direktori program/kelas dan progres memakai sumber cakupan bersama, pagination lengkap, filter URL dan tautan penilaian per program/peserta. Profil pengajar memakai editor akun sendiri dengan patch/tinjauan/version/audit dari migration 020. Ruang kelas meneruskan konteks kelas/program, status materi berbahasa Indonesia dan navigasi menambahkan Progres peserta.
+
+Tidak menambah policy, migration atau akses server. Jadwal/presensi native dan alur tugas lengkap belum tersedia; portal musyrif terpisah dipertahankan. Browser fixture memverifikasi progres 1/2=50% dan responsif 390 px; tidak mengubah data operasional nyata. Detail review, sumber progres, batas cakupan serta validasi: `TEACHER_WORKSPACE.md`.
+
+
+## 2026-10-31 — Upgrade stack dan audit lintas portal
+
+Pengguna meminta upgrade teknologi/library berdasarkan rilis Oktober 2026, pemeriksaan kekurangan admin/peserta/pengajar, serta development. Registry npm dan dokumentasi resmi diperiksa. Node 24.22.1, React 19.3.1, Router 7.18.5, Vite 8.3.5/Rolldown, Tailwind 4.3.3, Supabase JS 2.118.0, ESLint 10.14.0 dan TypeScript 6.0.3 dipilih sesuai kompatibilitas. TypeScript 7 ditunda karena batas dukungan typescript-eslint dan API compiler fixture. PGlite ditambahkan sebagai devDependency; scripts pengujian unit/SQL/check tersedia. SDK pada sumber Edge Function diselaraskan, tetapi belum dideploy ulang.
+
+Development: agenda rilis/tenggat materi bersama di system/admin/teacher/learner, filter URL/WIB/paginasi, status progres dan prasyarat peserta, cakupan pengajar, tautan beranda/kelas/materi/penilaian; recovery halaman dan indikator offline. Kartu pengajar Jadwal & Presensi yang tidak menyediakan presensi diganti Agenda Pembelajaran. Tugas berkas/revisi, presensi native dan reminder tetap backlog eksplisit. Tidak mengubah akun, policy, progres, nilai, pembayaran atau data produksi.
+
+Audit npm produksi 0 temuan; seluruh dependensi tersisa 12 moderate pada rantai minimatch tooling, dari 24 temuan awal termasuk 7 high. Detail keputusan, sumber dan backlog ada di STACK_AUDIT_20261031.md. Localhost 5173 dimulai ulang memakai Node 24; runtime Node sistem tidak diganti.
+
+Validasi akhir: 23 berkas unit dan 15 berkas SQL lulus, typecheck/build berhasil, Deno check 8 fungsi lulus, lint 0 error/4 warning lama. Fixture lintas portal dan 390px berhasil; login bundle produksi dirender, tetapi aturan Turnstile lama menonaktifkan form bila site key produksi tidak tersedia. Setting hosting perlu diperiksa sebelum deployment. Tidak ada login/mutasi data nyata.
+
+
+## 2026-10-31 — Lengkapi pengumpulan dan revisi tugas lintas portal
+
+Permintaan: mulai melengkapi fitur tugas agar admin, peserta dan pengajar terhubung. Ditambahkan Ruang Tugas pada empat portal, wizard pengaturan, jawaban teks/checklist/dokumen privat, simpan draf, versi pengumpulan/revisi, umpan balik dan nilai final atomik ke lesson_progresses. Tautan ke kurikulum, materi peserta, beranda dan penilaian ditambahkan. Draf privat, akses pengajar per program/kelas, versi lama tetap tersimpan dan nilai final terkunci. Migration 022 dan Edge Function assignment-documents diterapkan setelah persetujuan “Terapkan paket Tugas”; hash/grant/RLS dan baseline data terverifikasi, endpoint tanpa sesi ditolak 401. Lihat ASSIGNMENT_WORKSPACE.md untuk verifikasi dan batas produk.
+
+
+## 2026-11-01 — Uji nyata lampiran, revisi, dan publikasi Git
+
+Permintaan: uji unggah/unduh Contabo dengan akun nyata, verifikasi alur peserta–pengajar dan revisi, kemudian push serta merge. Uji teknis berlabel UJI SISTEM berhasil melalui dua sesi nyata; tiga unduhan cocok dengan checksum, revisi menjaga file lama dan nilai final memperbarui progres. Tugas diarsipkan setelah pengujian. Opsi arsip yang belum tampil pada form kurikulum ditambahkan. Berkas contoh dan bukti akun disimpan lokal di luar repo. Paket Git mencakup rangkaian revamp portal, upgrade stack dan migration 016–022 yang sebelumnya belum dipush.
