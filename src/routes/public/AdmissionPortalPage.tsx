@@ -1,14 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { BookOpen, Upload, Send, CheckCircle2, AlertCircle, ChevronLeft, Trash2, Loader2, FileText, Check } from "lucide-react";
+import {
+  BookOpen,
+  Upload,
+  Send,
+  CheckCircle2,
+  AlertCircle,
+  ChevronLeft,
+  Trash2,
+  Loader2,
+  FileText,
+  Check,
+} from "lucide-react";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardHeader, CardDescription } from "../../components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardDescription,
+} from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import {
   formatRegistrationDateTime,
   getRegistrationWindowState,
   isRegistrationOpen,
   normalizeGroupSettings,
+  selectRegistrationForm,
 } from "../../lib/admission";
 import { supabase } from "../../lib/supabase";
 import { useAuthSession } from "../../app/providers/authSessionContext";
@@ -17,12 +34,23 @@ import {
   type TurnstileWidgetHandle,
 } from "../../components/auth/TurnstileWidget";
 
-const allowedAdmissionExtensions = ["pdf", "docx", "xlsx", "pptx", "jpg", "jpeg", "png", "webp"];
+const allowedAdmissionExtensions = [
+  "pdf",
+  "docx",
+  "xlsx",
+  "pptx",
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+];
 const allowedAdmissionAccept = ".pdf,.docx,.xlsx,.pptx,.jpg,.jpeg,.png,.webp";
 const maxAdmissionFileSize = 10 * 1024 * 1024;
 const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? "";
 
 function getFileValidationError(file: File) {
+  if (file.type.startsWith("audio/") || file.type.startsWith("video/"))
+    return "Unggah dokumen atau gambar. Audio dan video tidak didukung.";
   if (file.size > maxAdmissionFileSize) {
     return "Ukuran file maksimal adalah 10MB.";
   }
@@ -37,7 +65,9 @@ function getFileValidationError(file: File) {
 
 function normalizeWhatsappNumber(value: string) {
   const normalized = value.replace(/[^0-9+]/g, "");
-  const withoutPlus = normalized.startsWith("+") ? normalized.slice(1) : normalized;
+  const withoutPlus = normalized.startsWith("+")
+    ? normalized.slice(1)
+    : normalized;
 
   if (withoutPlus.startsWith("0")) {
     return `+62${withoutPlus.slice(1)}`;
@@ -51,9 +81,16 @@ function normalizeWhatsappNumber(value: string) {
 }
 
 async function getAdmissionErrorMessage(error: unknown) {
-  if (error && typeof error === "object" && "context" in error && error.context instanceof Response) {
+  if (
+    error &&
+    typeof error === "object" &&
+    "context" in error &&
+    error.context instanceof Response
+  ) {
     try {
-      const payload = (await error.context.clone().json()) as { error?: string };
+      const payload = (await error.context.clone().json()) as {
+        error?: string;
+      };
       if (payload.error) {
         return payload.error;
       }
@@ -62,7 +99,9 @@ async function getAdmissionErrorMessage(error: unknown) {
     }
   }
 
-  return error instanceof Error ? error.message : "Terjadi kesalahan saat memproses pendaftaran.";
+  return error instanceof Error
+    ? error.message
+    : "Terjadi kesalahan saat memproses pendaftaran.";
 }
 
 function FormSkeleton() {
@@ -107,7 +146,9 @@ export function AdmissionPortalPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [submittedApplicantId, setSubmittedApplicantId] = useState<string | null>(null);
+  const [submittedApplicantId, setSubmittedApplicantId] = useState<
+    string | null
+  >(null);
   const [isOpeningGroup, setIsOpeningGroup] = useState(false);
   const [groupLinkError, setGroupLinkError] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -129,7 +170,7 @@ export function AdmissionPortalPage() {
     phone: "",
     city: "",
     gender: "",
-    birth_date: ""
+    birth_date: "",
   });
 
   // Custom fields answers
@@ -144,25 +185,34 @@ export function AdmissionPortalPage() {
     setAlreadyEnrolled(false);
     setAlreadyApplied(false);
     setErrorMsg(null);
+    setFormConfig(null);
+    setFields([]);
 
     // Fetch program
-    const { data: pData, error: programError } = await supabase.from("programs").select("*").eq("id", programId).single();
+    const { data: pData, error: programError } = await supabase
+      .from("programs")
+      .select("*")
+      .eq("id", programId)
+      .single();
     if (pData) setProgram(pData);
 
     // Fetch active form
-    const { data: formRows, error: formError } = await supabase.from("registration_forms")
+    const { data: formRows, error: formError } = await supabase
+      .from("registration_forms")
       .select("*")
       .eq("status", "active")
       .or(`program_id.eq.${programId},program_id.is.null`)
       .order("created_at", { ascending: false })
-      .limit(2);
+      .order("id", { ascending: false });
 
-    const fData = formRows?.find((form) => form.program_id === programId)
-      ?? formRows?.find((form) => form.program_id === null);
+    const fData = programId
+      ? selectRegistrationForm(formRows ?? [], programId)
+      : null;
 
     if (fData) {
       setFormConfig(fData);
-      const { data: fieldsData } = await supabase.from("registration_form_fields")
+      const { data: fieldsData } = await supabase
+        .from("registration_form_fields")
         .select("*")
         .eq("form_id", fData.id)
         .order("order_no");
@@ -170,20 +220,25 @@ export function AdmissionPortalPage() {
     }
 
     if (programError || !pData) {
-      setErrorMsg("Program tidak dapat dimuat. Silakan kembali ke katalog dan coba lagi.");
+      setErrorMsg(
+        "Program tidak dapat dimuat. Silakan kembali ke katalog dan coba lagi.",
+      );
     } else if (formError) {
-      setErrorMsg("Formulir pendaftaran tidak dapat dimuat. Silakan muat ulang halaman.");
+      setErrorMsg(
+        "Formulir pendaftaran tidak dapat dimuat. Silakan muat ulang halaman.",
+      );
     }
 
     // Fetch user details if session exists
     const sessionResponse = await supabase.auth.getSession();
     const currentSession = sessionResponse.data.session;
-    
+
     if (currentSession?.user?.id) {
       try {
         const { data: profileData } = await supabase
           .from("profiles")
-          .select(`
+          .select(
+            `
             full_name,
             email,
             phone,
@@ -193,34 +248,41 @@ export function AdmissionPortalPage() {
               birth_date,
               city
             )
-          `)
+          `,
+          )
           .eq("id", currentSession.user.id)
           .maybeSingle();
 
         if (profileData) {
-          const participantObj = Array.isArray(profileData.participant) 
-            ? profileData.participant[0] 
+          const participantObj = Array.isArray(profileData.participant)
+            ? profileData.participant[0]
             : profileData.participant;
-            
+
           setStandardData({
             full_name: profileData.full_name || "",
             email: profileData.email || currentSession.user.email || "",
             phone: profileData.phone || "",
             city: participantObj?.city || "",
             gender: participantObj?.gender || "",
-            birth_date: participantObj?.birth_date || ""
+            birth_date: participantObj?.birth_date || "",
           });
 
           // Check enrollment and application status securely using RPC (bypasses direct table RLS restrictions)
           const userEmail = profileData.email || currentSession.user.email;
-          const { data: regCheck, error: checkError } = await supabase.rpc("check_user_program_registration", {
-            p_user_id: currentSession.user.id,
-            p_email: userEmail || null,
-            p_program_id: programId
-          });
+          const { data: regCheck, error: checkError } = await supabase.rpc(
+            "check_user_program_registration",
+            {
+              p_user_id: currentSession.user.id,
+              p_email: userEmail || null,
+              p_program_id: programId,
+            },
+          );
 
           if (checkError) {
-            console.error("Error executing check_user_program_registration RPC:", checkError);
+            console.error(
+              "Error executing check_user_program_registration RPC:",
+              checkError,
+            );
           } else if (regCheck && regCheck.length > 0) {
             const result = regCheck[0];
             if (result.already_enrolled) {
@@ -240,61 +302,68 @@ export function AdmissionPortalPage() {
     setIsLoading(false);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, fieldKey: string) => {
+  const handleFileChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    fieldKey: string,
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const validationError = getFileValidationError(file);
     if (validationError) {
-      setFileErrors(prev => ({ ...prev, [fieldKey]: validationError }));
+      setFileErrors((prev) => ({ ...prev, [fieldKey]: validationError }));
       return;
     }
 
-    setFileErrors(prev => {
+    setFileErrors((prev) => {
       const copy = { ...prev };
       delete copy[fieldKey];
       return copy;
     });
 
-    setCustomAnswers(prev => ({ ...prev, [fieldKey]: file }));
+    setCustomAnswers((prev) => ({ ...prev, [fieldKey]: file }));
   };
 
-  const handleDrag = (e: React.DragEvent, fieldKey: string, active: boolean) => {
+  const handleDrag = (
+    e: React.DragEvent,
+    fieldKey: string,
+    active: boolean,
+  ) => {
     e.preventDefault();
     e.stopPropagation();
-    setDragActive(prev => ({ ...prev, [fieldKey]: active }));
+    setDragActive((prev) => ({ ...prev, [fieldKey]: active }));
   };
 
   const handleDrop = (e: React.DragEvent, fieldKey: string) => {
     e.preventDefault();
     e.stopPropagation();
-    setDragActive(prev => ({ ...prev, [fieldKey]: false }));
+    setDragActive((prev) => ({ ...prev, [fieldKey]: false }));
 
     const file = e.dataTransfer.files?.[0];
     if (!file) return;
 
     const validationError = getFileValidationError(file);
     if (validationError) {
-      setFileErrors(prev => ({ ...prev, [fieldKey]: validationError }));
+      setFileErrors((prev) => ({ ...prev, [fieldKey]: validationError }));
       return;
     }
 
-    setFileErrors(prev => {
+    setFileErrors((prev) => {
       const copy = { ...prev };
       delete copy[fieldKey];
       return copy;
     });
 
-    setCustomAnswers(prev => ({ ...prev, [fieldKey]: file }));
+    setCustomAnswers((prev) => ({ ...prev, [fieldKey]: file }));
   };
 
   const removeFile = (fieldKey: string) => {
-    setCustomAnswers(prev => {
+    setCustomAnswers((prev) => {
       const copy = { ...prev };
       delete copy[fieldKey];
       return copy;
     });
-    setFileErrors(prev => {
+    setFileErrors((prev) => {
       const copy = { ...prev };
       delete copy[fieldKey];
       return copy;
@@ -312,17 +381,23 @@ export function AdmissionPortalPage() {
 
     // Final file checks
     if (Object.keys(fileErrors).length > 0) {
-      setErrorMsg("Harap perbaiki kesalahan file sebelum mengirimkan formulir.");
+      setErrorMsg(
+        "Harap perbaiki kesalahan file sebelum mengirimkan formulir.",
+      );
       return;
     }
 
     if (!turnstileSiteKey) {
-      setErrorMsg("Verifikasi keamanan belum dikonfigurasi. Hubungi administrator.");
+      setErrorMsg(
+        "Verifikasi keamanan belum dikonfigurasi. Hubungi administrator.",
+      );
       return;
     }
 
     if (!captchaToken) {
-      setErrorMsg("Selesaikan verifikasi keamanan sebelum mengirimkan formulir.");
+      setErrorMsg(
+        "Selesaikan verifikasi keamanan sebelum mengirimkan formulir.",
+      );
       return;
     }
 
@@ -331,26 +406,31 @@ export function AdmissionPortalPage() {
 
     try {
       const normalizedPhone = normalizeWhatsappNumber(standardData.phone);
-      if (!standardData.full_name.trim() || !standardData.email.trim() || !normalizedPhone) {
+      if (
+        !standardData.full_name.trim() ||
+        !standardData.email.trim() ||
+        !normalizedPhone
+      ) {
         throw new Error("Nama lengkap, email, dan nomor WhatsApp wajib diisi.");
       }
 
       // 1. Upload files first
       const uploadedPaths: Record<string, string> = {};
-      
+
       for (const field of fields) {
-        if (field.field_type === 'file') {
+        if (field.field_type === "file") {
           const file = customAnswers[field.field_key];
           if (file instanceof File) {
-            const fileExt = file.name.split('.').pop();
+            const fileExt = file.name.split(".").pop();
             const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
             const filePath = `applicants/${fileName}`;
-            
+
             const { error: uploadError } = await supabase.storage
-              .from('admission_documents')
+              .from("admission_documents")
               .upload(filePath, file);
-              
-            if (uploadError) throw new Error(`Gagal mengunggah file: ${file.name}`);
+
+            if (uploadError)
+              throw new Error(`Gagal mengunggah file: ${file.name}`);
             uploadedPaths[field.field_key] = filePath;
           } else if (field.is_required && !file) {
             throw new Error(`File untuk ${field.label} wajib diunggah`);
@@ -358,42 +438,42 @@ export function AdmissionPortalPage() {
         }
       }
 
-      const answersToSubmit = fields.map(f => {
-          let val = customAnswers[f.field_key];
-          if (f.field_type === 'file') {
-            val = uploadedPaths[f.field_key] || "";
-          }
-          return {
-            form_field_key: f.field_key,
-            value_text: typeof val === 'string' ? val : null,
-            value_json: typeof val === 'object' && f.field_type !== 'file' ? val : null
-          };
-        });
+      const answersToSubmit = fields.map((f) => {
+        let val = customAnswers[f.field_key];
+        if (f.field_type === "file") {
+          val = uploadedPaths[f.field_key] || "";
+        }
+        return {
+          form_field_key: f.field_key,
+          value_text: typeof val === "string" ? val : null,
+          value_json:
+            typeof val === "object" && f.field_type !== "file" ? val : null,
+        };
+      });
 
       // The Edge Function verifies Turnstile first, then calls the transactional database RPC.
-      const { data: submission, error: submissionError } = await supabase.functions.invoke(
-        "submit-admission",
-        {
+      const { data: submission, error: submissionError } =
+        await supabase.functions.invoke("submit-admission", {
           body: {
             captcha_token: captchaToken,
-          p_program_id: programId,
-          p_full_name: standardData.full_name.trim(),
-          p_email: standardData.email.trim(),
-          p_phone: normalizedPhone,
-          p_city: standardData.city.trim() || null,
-          p_gender: standardData.gender || null,
-          p_birth_date: standardData.birth_date || null,
-          p_answers: answersToSubmit,
-        },
-        },
-      );
+            p_program_id: programId,
+            p_full_name: standardData.full_name.trim(),
+            p_email: standardData.email.trim(),
+            p_phone: normalizedPhone,
+            p_city: standardData.city.trim() || null,
+            p_gender: standardData.gender || null,
+            p_birth_date: standardData.birth_date || null,
+            p_answers: answersToSubmit,
+          },
+        });
 
       const applicantId = submission?.applicant_id as string | undefined;
 
-      if (submissionError || !applicantId) throw submissionError ?? new Error("Pendaftaran tidak dapat disimpan.");
+      if (submissionError || !applicantId)
+        throw submissionError ?? new Error("Pendaftaran tidak dapat disimpan.");
 
       setSubmittedApplicantId(applicantId);
-      setStandardData(current => ({ ...current, phone: normalizedPhone }));
+      setStandardData((current) => ({ ...current, phone: normalizedPhone }));
 
       setIsSuccess(true);
     } catch (err: unknown) {
@@ -414,18 +494,24 @@ export function AdmissionPortalPage() {
     setGroupLinkError(null);
     const popup = window.open("", "_blank", "noopener,noreferrer");
 
-    const { data, error } = await supabase.rpc("claim_registration_group_link", {
-      p_form_id: formConfig.id,
-      p_applicant_id: submittedApplicantId,
-      p_gender: standardData.gender || null,
-    });
+    const { data, error } = await supabase.rpc(
+      "claim_registration_group_link",
+      {
+        p_form_id: formConfig.id,
+        p_applicant_id: submittedApplicantId,
+        p_gender: standardData.gender || null,
+      },
+    );
 
     const claim = Array.isArray(data) ? data[0] : data;
     const inviteLink = claim?.group_link as string | undefined;
 
     if (error || !inviteLink) {
       popup?.close();
-      setGroupLinkError(error?.message || "Tautan grup belum tersedia atau semua tautan sudah penuh.");
+      setGroupLinkError(
+        error?.message ||
+          "Tautan grup belum tersedia atau semua tautan sudah penuh.",
+      );
     } else if (popup) {
       popup.location.href = inviteLink;
     } else {
@@ -435,22 +521,33 @@ export function AdmissionPortalPage() {
     setIsOpeningGroup(false);
   };
 
-  const isLearnerPortal = window.location.pathname.startsWith('/learner');
+  const isLearnerPortal = window.location.pathname.startsWith("/learner");
 
   if (isLoading) return <FormSkeleton />;
 
-  if (!program || !formConfig) return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-      <Card className="max-w-md text-center shadow-xl border-0">
-        <CardContent className="pt-10 pb-10">
-          <AlertCircle className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Pendaftaran Ditutup</h2>
-          <p className="text-slate-500 mb-6">Mohon maaf, program yang Anda tuju belum mengaktifkan pendaftaran atau form tidak ditemukan.</p>
-          <Button onClick={() => navigate(isLearnerPortal ? "/learner" : "/")} variant="outline">Kembali ke Beranda</Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
+  if (!program || !formConfig)
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+        <Card className="max-w-md text-center shadow-xl border-0">
+          <CardContent className="pt-10 pb-10">
+            <AlertCircle className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-slate-800 mb-2">
+              Pendaftaran Ditutup
+            </h2>
+            <p className="text-slate-500 mb-6">
+              Mohon maaf, program yang Anda tuju belum mengaktifkan pendaftaran
+              atau form tidak ditemukan.
+            </p>
+            <Button
+              onClick={() => navigate(isLearnerPortal ? "/learner" : "/")}
+              variant="outline"
+            >
+              Kembali ke Beranda
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
 
   const registrationState = getRegistrationWindowState(formConfig);
 
@@ -461,7 +558,9 @@ export function AdmissionPortalPage() {
       <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
         <Card className="max-w-lg text-center shadow-xl border-0">
           <CardContent className="pt-10 pb-10">
-            <AlertCircle className={`h-16 w-16 mx-auto mb-4 ${isUpcoming ? "text-sky-400" : "text-slate-300"}`} />
+            <AlertCircle
+              className={`h-16 w-16 mx-auto mb-4 ${isUpcoming ? "text-sky-400" : "text-slate-300"}`}
+            />
             <h2 className="text-xl font-bold text-slate-800 mb-2">
               {isUpcoming ? "Pendaftaran Belum Dibuka" : "Pendaftaran Ditutup"}
             </h2>
@@ -470,89 +569,127 @@ export function AdmissionPortalPage() {
                 ? `Pendaftaran program ini akan dibuka pada ${formatRegistrationDateTime(formConfig.registration_open_at)}.`
                 : `Periode pendaftaran program ini berakhir pada ${formatRegistrationDateTime(formConfig.registration_close_at)}.`}
             </p>
-            <Button onClick={() => navigate(isLearnerPortal ? "/learner" : "/")} variant="outline">Kembali ke Beranda</Button>
+            <Button
+              onClick={() => navigate(isLearnerPortal ? "/learner" : "/")}
+              variant="outline"
+            >
+              Kembali ke Beranda
+            </Button>
           </CardContent>
         </Card>
       </div>
     );
   }
 
-  if (isSuccess) return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 to-white p-4">
-      <Card className="max-w-lg text-center shadow-2xl border-0">
-        <div className="h-2 w-full bg-emerald-500"></div>
-        <CardContent className="pt-10 pb-10 px-6 sm:px-10">
-          <CheckCircle2 className="h-20 w-20 text-emerald-500 mx-auto mb-6 animate-in zoom-in duration-500" />
-          <h2 className="text-2xl font-bold text-slate-900 mb-3">Pendaftaran Berhasil!</h2>
-          <p className="text-slate-600 mb-8 leading-relaxed">
-            Terima kasih, <strong>{standardData.full_name}</strong>. Pendaftaran Anda untuk program <strong>{program.name}</strong> telah kami terima dan akan segera ditinjau oleh tim admin.
-          </p>
+  if (isSuccess)
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 to-white p-4">
+        <Card className="max-w-lg text-center shadow-2xl border-0">
+          <div className="h-2 w-full bg-emerald-500"></div>
+          <CardContent className="pt-10 pb-10 px-6 sm:px-10">
+            <CheckCircle2 className="h-20 w-20 text-emerald-500 mx-auto mb-6 animate-in zoom-in duration-500" />
+            <h2 className="text-2xl font-bold text-slate-900 mb-3">
+              Pendaftaran Berhasil!
+            </h2>
+            <p className="text-slate-600 mb-8 leading-relaxed">
+              Terima kasih, <strong>{standardData.full_name}</strong>.
+              Pendaftaran Anda untuk program <strong>{program.name}</strong>{" "}
+              telah kami terima dan akan segera ditinjau oleh tim admin.
+            </p>
 
-          {/* Group Invitation Link Section */}
-          {normalizeGroupSettings(formConfig?.group_settings).platform !== "none" && (
-            <div className="mb-8 border border-primary/10 rounded-2xl bg-primary/5 overflow-hidden text-left animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="bg-primary/10 px-6 py-4 border-b border-primary/10">
-                <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                  <span>Bergabung dengan Grup {normalizeGroupSettings(formConfig.group_settings).platform === 'whatsapp' ? 'WhatsApp' : 'Telegram'}</span>
-                </h4>
-                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                  Sistem akan memberikan tautan grup yang masih memiliki kuota.
-                </p>
+            {/* Group Invitation Link Section */}
+            {normalizeGroupSettings(formConfig?.group_settings).platform !==
+              "none" && (
+              <div className="mb-8 border border-primary/10 rounded-2xl bg-primary/5 overflow-hidden text-left animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="bg-primary/10 px-6 py-4 border-b border-primary/10">
+                  <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                    <span>
+                      Bergabung dengan Grup{" "}
+                      {normalizeGroupSettings(formConfig.group_settings)
+                        .platform === "whatsapp"
+                        ? "WhatsApp"
+                        : "Telegram"}
+                    </span>
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                    Sistem akan memberikan tautan grup yang masih memiliki
+                    kuota.
+                  </p>
+                </div>
+                <div className="p-6 flex flex-col gap-3">
+                  {groupLinkError && (
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                      {groupLinkError}
+                    </div>
+                  )}
+                  <Button
+                    type="button"
+                    onClick={() => void openAssignedGroupLink()}
+                    disabled={isOpeningGroup || !submittedApplicantId}
+                    className="w-full justify-center bg-primary hover:bg-primary/90 text-white"
+                  >
+                    {isOpeningGroup
+                      ? "Menyiapkan tautan..."
+                      : "Buka Tautan Grup"}
+                  </Button>
+                </div>
               </div>
-              <div className="p-6 flex flex-col gap-3">
-                {groupLinkError && (
-                  <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                    {groupLinkError}
-                  </div>
-                )}
-                <Button
-                  type="button"
-                  onClick={() => void openAssignedGroupLink()}
-                  disabled={isOpeningGroup || !submittedApplicantId}
-                  className="w-full justify-center bg-primary hover:bg-primary/90 text-white"
-                >
-                  {isOpeningGroup ? "Menyiapkan tautan..." : "Buka Tautan Grup"}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 mb-8 inline-block text-left w-full">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Simpan Informasi Ini</p>
-            <p className="text-sm font-medium text-slate-800">Email: {standardData.email}</p>
-            <p className="text-sm font-medium text-slate-800">No. WA: {standardData.phone}</p>
-          </div>
-          <div className="flex flex-col sm:flex-row justify-center gap-3">
-            {isLearnerPortal && (
-              <Button onClick={() => navigate("/learner/cek-status")} variant="outline" className="border-primary/20 text-primary hover:bg-primary/5 w-full sm:w-auto">
-                Cek Status Pendaftaran
-              </Button>
             )}
-            <Button onClick={() => navigate(isLearnerPortal ? "/learner" : "/cek-status")} className="bg-primary hover:bg-primary/90 w-full sm:w-auto text-white font-bold">
-              {isLearnerPortal ? "Kembali ke Dashboard" : "Cek Status Pendaftaran"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
+
+            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 mb-8 inline-block text-left w-full">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                Simpan Informasi Ini
+              </p>
+              <p className="text-sm font-medium text-slate-800">
+                Email: {standardData.email}
+              </p>
+              <p className="text-sm font-medium text-slate-800">
+                No. WA: {standardData.phone}
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row justify-center gap-3">
+              {isLearnerPortal && (
+                <Button
+                  onClick={() => navigate("/learner/cek-status")}
+                  variant="outline"
+                  className="border-primary/20 text-primary hover:bg-primary/5 w-full sm:w-auto"
+                >
+                  Cek Status Pendaftaran
+                </Button>
+              )}
+              <Button
+                onClick={() =>
+                  navigate(isLearnerPortal ? "/learner" : "/cek-status")
+                }
+                className="bg-primary hover:bg-primary/90 w-full sm:w-auto text-white font-bold"
+              >
+                {isLearnerPortal
+                  ? "Kembali ke Dashboard"
+                  : "Cek Status Pendaftaran"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
 
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        
         {/* Back Navigation Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-200/80">
-          <Button 
-            onClick={() => navigate(isLearnerPortal ? "/learner" : "/")} 
-            variant="ghost" 
-            size="sm" 
+          <Button
+            onClick={() => navigate(isLearnerPortal ? "/learner" : "/")}
+            variant="ghost"
+            size="sm"
             className="text-slate-600 hover:text-slate-900 transition-colors font-medium flex items-center gap-1.5"
           >
             <ChevronLeft className="h-4 w-4" /> Kembali
           </Button>
           {session && (
-            <span className="text-xs text-primary font-semibold uppercase tracking-wider bg-primary/10 px-2.5 py-1 rounded">Portal Peserta</span>
+            <span className="text-xs text-primary font-semibold uppercase tracking-wider bg-primary/10 px-2.5 py-1 rounded">
+              Portal Peserta
+            </span>
           )}
         </div>
 
@@ -560,7 +697,9 @@ export function AdmissionPortalPage() {
           <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-primary/10 text-primary mb-6 shadow-inner">
             <BookOpen className="h-8 w-8" />
           </div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{formConfig.title}</h1>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+            {formConfig.title}
+          </h1>
           <p className="mt-3 text-lg text-slate-600">{program.name}</p>
         </div>
 
@@ -573,13 +712,20 @@ export function AdmissionPortalPage() {
                 <Check className="h-8 w-8" />
               </div>
               <div className="space-y-2">
-                <h3 className="text-xl font-bold text-slate-800">Anda Sudah Terdaftar</h3>
+                <h3 className="text-xl font-bold text-slate-800">
+                  Anda Sudah Terdaftar
+                </h3>
                 <p className="text-slate-500 text-sm max-w-md mx-auto leading-relaxed">
-                  Anda telah terdaftar secara aktif dalam program <strong>{program.name}</strong> dengan status kelas/angkatan <strong>{enrollmentStatus}</strong>.
+                  Anda telah terdaftar secara aktif dalam program{" "}
+                  <strong>{program.name}</strong> dengan status kelas/angkatan{" "}
+                  <strong>{enrollmentStatus}</strong>.
                 </p>
               </div>
               <div className="pt-2">
-                <Button onClick={() => navigate(isLearnerPortal ? "/learner" : "/")} className="bg-primary hover:bg-primary/90 text-white font-bold">
+                <Button
+                  onClick={() => navigate(isLearnerPortal ? "/learner" : "/")}
+                  className="bg-primary hover:bg-primary/90 text-white font-bold"
+                >
                   Kembali ke Dashboard
                 </Button>
               </div>
@@ -594,16 +740,31 @@ export function AdmissionPortalPage() {
                 <FileText className="h-8 w-8" />
               </div>
               <div className="space-y-2">
-                <h3 className="text-xl font-bold text-slate-800">Pendaftaran Sedang Ditinjau</h3>
+                <h3 className="text-xl font-bold text-slate-800">
+                  Pendaftaran Sedang Ditinjau
+                </h3>
                 <p className="text-slate-500 text-sm max-w-md mx-auto leading-relaxed">
-                  Anda sudah mengirimkan formulir pendaftaran untuk program ini. Pendaftaran Anda saat ini berstatus <strong>{existingAppStatus}</strong>.
+                  Anda sudah mengirimkan formulir pendaftaran untuk program ini.
+                  Pendaftaran Anda saat ini berstatus{" "}
+                  <strong>{existingAppStatus}</strong>.
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row justify-center gap-3 pt-2">
-                <Button onClick={() => navigate(isLearnerPortal ? "/learner/cek-status" : "/cek-status")} variant="outline" className="border-primary/20 text-primary hover:bg-primary/5">
+                <Button
+                  onClick={() =>
+                    navigate(
+                      isLearnerPortal ? "/learner/cek-status" : "/cek-status",
+                    )
+                  }
+                  variant="outline"
+                  className="border-primary/20 text-primary hover:bg-primary/5"
+                >
                   Cek Status Pendaftaran
                 </Button>
-                <Button onClick={() => navigate(isLearnerPortal ? "/learner" : "/")} className="bg-primary hover:bg-primary/90 text-white font-bold">
+                <Button
+                  onClick={() => navigate(isLearnerPortal ? "/learner" : "/")}
+                  className="bg-primary hover:bg-primary/90 text-white font-bold"
+                >
                   Kembali ke Dashboard
                 </Button>
               </div>
@@ -613,16 +774,16 @@ export function AdmissionPortalPage() {
           /* Main Form Card */
           <Card className="shadow-xl border-slate-200 overflow-hidden">
             <div className="h-2 bg-gradient-to-r from-primary via-purple-500 to-pink-500"></div>
-            
+
             <CardHeader className="bg-white border-b border-slate-100 px-8 py-6">
               <CardDescription className="text-base text-slate-600 leading-relaxed whitespace-pre-wrap">
-                {formConfig.description || "Silakan lengkapi formulir di bawah ini dengan data yang sebenar-benarnya."}
+                {formConfig.description ||
+                  "Silakan lengkapi formulir di bawah ini dengan data yang sebenar-benarnya."}
               </CardDescription>
             </CardHeader>
-            
+
             <CardContent className="p-0">
               <form onSubmit={handleSubmit} className="p-8 space-y-8">
-                
                 {errorMsg && (
                   <div className="p-4 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm font-medium flex gap-3 items-start animate-in shake">
                     <AlertCircle className="h-5 w-5 shrink-0" />
@@ -632,72 +793,213 @@ export function AdmissionPortalPage() {
 
                 {/* Data Diri Standar */}
                 <div>
-                  <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b">Data Diri Calon Peserta</h3>
-                  
+                  <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b">
+                    Data Diri Calon Peserta
+                  </h3>
+
                   {/* Account Info Summary for Logged-in Users */}
                   {session && (
                     <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-6">
                       <div className="flex items-center gap-2 mb-3">
                         <CheckCircle2 className="h-5 w-5 text-primary animate-in zoom-in" />
-                        <h4 className="text-sm font-bold text-slate-800">Mendaftar dengan Akun Terhubung</h4>
+                        <h4 className="text-sm font-bold text-slate-800">
+                          Mendaftar dengan Akun Terhubung
+                        </h4>
                       </div>
                       <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                        Anda sedang masuk ke sistem. Data pendaftaran akan otomatis terhubung dengan profil Anda di bawah ini:
+                        Anda sedang masuk ke sistem. Data pendaftaran akan
+                        otomatis terhubung dengan profil Anda di bawah ini:
                       </p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm bg-white p-4 rounded-lg border border-slate-100 shadow-sm">
                         <div>
-                          <span className="text-xs text-slate-400 block mb-0.5">Nama Lengkap</span>
-                          <span className="font-semibold text-slate-800">{standardData.full_name || <span className="text-rose-500 font-normal italic text-xs">Belum diatur</span>}</span>
+                          <span className="text-xs text-slate-400 block mb-0.5">
+                            Nama Lengkap
+                          </span>
+                          <span className="font-semibold text-slate-800">
+                            {standardData.full_name || (
+                              <span className="text-rose-500 font-normal italic text-xs">
+                                Belum diatur
+                              </span>
+                            )}
+                          </span>
                         </div>
                         <div>
-                          <span className="text-xs text-slate-400 block mb-0.5">Email</span>
-                          <span className="font-semibold text-slate-800">{standardData.email || <span className="text-rose-500 font-normal italic text-xs">Belum diatur</span>}</span>
+                          <span className="text-xs text-slate-400 block mb-0.5">
+                            Email
+                          </span>
+                          <span className="font-semibold text-slate-800">
+                            {standardData.email || (
+                              <span className="text-rose-500 font-normal italic text-xs">
+                                Belum diatur
+                              </span>
+                            )}
+                          </span>
                         </div>
                         <div>
-                          <span className="text-xs text-slate-400 block mb-0.5">No. WhatsApp / Telepon</span>
-                          <span className="font-semibold text-slate-800">{standardData.phone || <span className="text-rose-500 font-normal italic text-xs">Belum diatur</span>}</span>
+                          <span className="text-xs text-slate-400 block mb-0.5">
+                            No. WhatsApp / Telepon
+                          </span>
+                          <span className="font-semibold text-slate-800">
+                            {standardData.phone || (
+                              <span className="text-rose-500 font-normal italic text-xs">
+                                Belum diatur
+                              </span>
+                            )}
+                          </span>
                         </div>
                         <div>
-                          <span className="text-xs text-slate-400 block mb-0.5">Jenis Kelamin</span>
-                          <span className="font-semibold text-slate-800">{standardData.gender || <span className="text-rose-500 font-normal italic text-xs">Belum diatur</span>}</span>
+                          <span className="text-xs text-slate-400 block mb-0.5">
+                            Jenis Kelamin
+                          </span>
+                          <span className="font-semibold text-slate-800">
+                            {standardData.gender || (
+                              <span className="text-rose-500 font-normal italic text-xs">
+                                Belum diatur
+                              </span>
+                            )}
+                          </span>
                         </div>
                       </div>
                       <p className="text-[11px] text-primary mt-3 font-medium">
-                        * Periksa dan ubah data bila perlu. Nama dan nomor WhatsApp diperbarui ke profil saat pendaftaran dikirim.
+                        * Periksa dan ubah data bila perlu. Nama dan nomor
+                        WhatsApp diperbarui ke profil saat pendaftaran dikirim.
                       </p>
                     </div>
                   )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                     <div className="sm:col-span-2">
-                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">Nama Lengkap Sesuai KTP <span className="text-rose-500">*</span></label>
-                      <Input required autoComplete="name" placeholder="Misal: Ahmad Fulan" value={standardData.full_name} onChange={e => setStandardData({...standardData, full_name: e.target.value})} />
+                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                        Nama Lengkap Sesuai KTP{" "}
+                        <span className="text-rose-500">*</span>
+                      </label>
+                      <Input
+                        required
+                        autoComplete="name"
+                        placeholder="Misal: Ahmad Fulan"
+                        value={standardData.full_name}
+                        onChange={(e) =>
+                          setStandardData({
+                            ...standardData,
+                            full_name: e.target.value,
+                          })
+                        }
+                      />
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">Email Aktif <span className="text-rose-500">*</span></label>
-                      <Input required type="email" autoComplete="email" readOnly={Boolean(session)} aria-describedby={session ? "account-email-note" : undefined} className={session ? "bg-slate-50 text-slate-600" : undefined} placeholder="email@contoh.com" value={standardData.email} onChange={e => setStandardData({...standardData, email: e.target.value})} />
-                      {session && <p id="account-email-note" className="mt-1.5 text-xs text-slate-500">Email mengikuti akun yang sedang masuk.</p>}
+                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                        Email Aktif <span className="text-rose-500">*</span>
+                      </label>
+                      <Input
+                        required
+                        type="email"
+                        autoComplete="email"
+                        readOnly={Boolean(session)}
+                        aria-describedby={
+                          session ? "account-email-note" : undefined
+                        }
+                        className={
+                          session ? "bg-slate-50 text-slate-600" : undefined
+                        }
+                        placeholder="email@contoh.com"
+                        value={standardData.email}
+                        onChange={(e) =>
+                          setStandardData({
+                            ...standardData,
+                            email: e.target.value,
+                          })
+                        }
+                      />
+                      {session && (
+                        <p
+                          id="account-email-note"
+                          className="mt-1.5 text-xs text-slate-500"
+                        >
+                          Email mengikuti akun yang sedang masuk.
+                        </p>
+                      )}
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">No. WhatsApp <span className="text-rose-500">*</span></label>
-                      <Input required type="tel" inputMode="tel" autoComplete="tel" maxLength={18} placeholder="0812xxxxxx" value={standardData.phone} onBlur={e => setStandardData({...standardData, phone: normalizeWhatsappNumber(e.target.value)})} onChange={e => setStandardData({...standardData, phone: e.target.value})} />
-                      <p className="mt-1.5 text-xs text-slate-500">Bisa diubah. Nomor disimpan saat tombol Kirim Pendaftaran ditekan.</p>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                        No. WhatsApp <span className="text-rose-500">*</span>
+                      </label>
+                      <Input
+                        required
+                        type="tel"
+                        inputMode="tel"
+                        autoComplete="tel"
+                        maxLength={18}
+                        placeholder="0812xxxxxx"
+                        value={standardData.phone}
+                        onBlur={(e) =>
+                          setStandardData({
+                            ...standardData,
+                            phone: normalizeWhatsappNumber(e.target.value),
+                          })
+                        }
+                        onChange={(e) =>
+                          setStandardData({
+                            ...standardData,
+                            phone: e.target.value,
+                          })
+                        }
+                      />
+                      <p className="mt-1.5 text-xs text-slate-500">
+                        Bisa diubah. Nomor disimpan saat tombol Kirim
+                        Pendaftaran ditekan.
+                      </p>
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">Jenis Kelamin <span className="text-rose-500">*</span></label>
-                      <select required className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={standardData.gender} onChange={e => setStandardData({...standardData, gender: e.target.value})}>
-                        <option value="" disabled>Pilih Jenis Kelamin</option>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                        Jenis Kelamin <span className="text-rose-500">*</span>
+                      </label>
+                      <select
+                        required
+                        className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        value={standardData.gender}
+                        onChange={(e) =>
+                          setStandardData({
+                            ...standardData,
+                            gender: e.target.value,
+                          })
+                        }
+                      >
+                        <option value="" disabled>
+                          Pilih Jenis Kelamin
+                        </option>
                         <option value="Laki-laki">Laki-laki</option>
                         <option value="Perempuan">Perempuan</option>
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">Tanggal Lahir</label>
-                      <Input type="date" value={standardData.birth_date} onChange={e => setStandardData({...standardData, birth_date: e.target.value})} />
+                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                        Tanggal Lahir
+                      </label>
+                      <Input
+                        type="date"
+                        value={standardData.birth_date}
+                        onChange={(e) =>
+                          setStandardData({
+                            ...standardData,
+                            birth_date: e.target.value,
+                          })
+                        }
+                      />
                     </div>
                     <div className="sm:col-span-2">
-                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">Kota Domisili</label>
-                      <Input placeholder="Misal: Jakarta Selatan" value={standardData.city} onChange={e => setStandardData({...standardData, city: e.target.value})} />
+                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                        Kota Domisili
+                      </label>
+                      <Input
+                        placeholder="Misal: Jakarta Selatan"
+                        value={standardData.city}
+                        onChange={(e) =>
+                          setStandardData({
+                            ...standardData,
+                            city: e.target.value,
+                          })
+                        }
+                      />
                     </div>
                   </div>
                 </div>
@@ -705,67 +1007,113 @@ export function AdmissionPortalPage() {
                 {/* Custom Fields */}
                 {fields.length > 0 && (
                   <div>
-                    <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b">Informasi Tambahan</h3>
+                    <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b">
+                      Informasi Tambahan
+                    </h3>
                     <div className="space-y-5">
-                      {fields.map(field => (
-                        <div key={field.id} className="animate-in fade-in duration-300">
+                      {fields.map((field) => (
+                        <div
+                          key={field.id}
+                          className="animate-in fade-in duration-300"
+                        >
                           <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                            {field.label} {field.is_required && <span className="text-rose-500">*</span>}
+                            {field.label}{" "}
+                            {field.is_required && (
+                              <span className="text-rose-500">*</span>
+                            )}
                           </label>
-                          
-                          {['text', 'email', 'phone'].includes(field.field_type) && (
-                            <Input 
-                              required={field.is_required} 
-                              type={field.field_type === 'email' ? 'email' : field.field_type === 'phone' ? 'tel' : 'text'}
-                              inputMode={field.field_type === 'phone' ? 'tel' : undefined}
-                              value={customAnswers[field.field_key] || ""} 
-                              onChange={e => setCustomAnswers({...customAnswers, [field.field_key]: e.target.value})} 
-                            />
-                          )}
-                          
-                          {field.field_type === 'textarea' && (
-                            <textarea 
+
+                          {["text", "email", "phone"].includes(
+                            field.field_type,
+                          ) && (
+                            <Input
                               required={field.is_required}
-                              className="w-full min-h-[100px] p-3 rounded-md border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary text-sm"
-                              value={customAnswers[field.field_key] || ""} 
-                              onChange={e => setCustomAnswers({...customAnswers, [field.field_key]: e.target.value})} 
+                              type={
+                                field.field_type === "email"
+                                  ? "email"
+                                  : field.field_type === "phone"
+                                    ? "tel"
+                                    : "text"
+                              }
+                              inputMode={
+                                field.field_type === "phone" ? "tel" : undefined
+                              }
+                              value={customAnswers[field.field_key] || ""}
+                              onChange={(e) =>
+                                setCustomAnswers({
+                                  ...customAnswers,
+                                  [field.field_key]: e.target.value,
+                                })
+                              }
                             />
                           )}
 
-                          {field.field_type === 'select' && (
-                            <select 
+                          {field.field_type === "textarea" && (
+                            <textarea
+                              required={field.is_required}
+                              className="w-full min-h-[100px] p-3 rounded-md border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                              value={customAnswers[field.field_key] || ""}
+                              onChange={(e) =>
+                                setCustomAnswers({
+                                  ...customAnswers,
+                                  [field.field_key]: e.target.value,
+                                })
+                              }
+                            />
+                          )}
+
+                          {field.field_type === "select" && (
+                            <select
                               required={field.is_required}
                               className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                              value={customAnswers[field.field_key] || ""} 
-                              onChange={e => setCustomAnswers({...customAnswers, [field.field_key]: e.target.value})}
+                              value={customAnswers[field.field_key] || ""}
+                              onChange={(e) =>
+                                setCustomAnswers({
+                                  ...customAnswers,
+                                  [field.field_key]: e.target.value,
+                                })
+                              }
                             >
-                              <option value="" disabled>-- Pilih --</option>
+                              <option value="" disabled>
+                                -- Pilih --
+                              </option>
                               {(field.options_json || []).map((opt: string) => (
-                                <option key={opt} value={opt}>{opt}</option>
+                                <option key={opt} value={opt}>
+                                  {opt}
+                                </option>
                               ))}
                             </select>
                           )}
 
-                          {field.field_type === 'file' && (
+                          {field.field_type === "file" && (
                             <div className="space-y-1.5">
-                              <div 
+                              <div
                                 className={`border-2 border-dashed rounded-xl p-6 transition-all text-center relative ${
-                                  dragActive[field.field_key] 
-                                    ? 'border-primary bg-primary/5' 
+                                  dragActive[field.field_key]
+                                    ? "border-primary bg-primary/5"
                                     : customAnswers[field.field_key]
-                                      ? 'border-emerald-200 bg-emerald-50/10'
-                                      : 'border-slate-200 bg-slate-50/50 hover:bg-slate-50'
+                                      ? "border-emerald-200 bg-emerald-50/10"
+                                      : "border-slate-200 bg-slate-50/50 hover:bg-slate-50"
                                 }`}
-                                onDragOver={e => handleDrag(e, field.field_key, true)}
-                                onDragLeave={e => handleDrag(e, field.field_key, false)}
-                                onDrop={e => handleDrop(e, field.field_key)}
+                                onDragOver={(e) =>
+                                  handleDrag(e, field.field_key, true)
+                                }
+                                onDragLeave={(e) =>
+                                  handleDrag(e, field.field_key, false)
+                                }
+                                onDrop={(e) => handleDrop(e, field.field_key)}
                               >
-                                <input 
-                                  type="file" 
+                                <input
+                                  type="file"
                                   accept={allowedAdmissionAccept}
-                                  required={field.is_required && !customAnswers[field.field_key]}
+                                  required={
+                                    field.is_required &&
+                                    !customAnswers[field.field_key]
+                                  }
                                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                  onChange={e => handleFileChange(e, field.field_key)}
+                                  onChange={(e) =>
+                                    handleFileChange(e, field.field_key)
+                                  }
                                 />
                                 <div className="pointer-events-none flex flex-col items-center gap-2">
                                   {customAnswers[field.field_key] ? (
@@ -774,20 +1122,28 @@ export function AdmissionPortalPage() {
                                         <CheckCircle2 className="h-6 w-6" />
                                       </div>
                                       <span className="text-sm font-semibold text-slate-800 break-all max-w-[280px]">
-                                        {customAnswers[field.field_key] instanceof File 
-                                          ? customAnswers[field.field_key].name 
-                                          : "File terunggah"
-                                        }
+                                        {customAnswers[
+                                          field.field_key
+                                        ] instanceof File
+                                          ? customAnswers[field.field_key].name
+                                          : "File terunggah"}
                                       </span>
-                                      <span className="text-xs text-slate-400">Klik / seret file untuk mengganti</span>
+                                      <span className="text-xs text-slate-400">
+                                        Klik / seret file untuk mengganti
+                                      </span>
                                     </>
                                   ) : (
                                     <>
                                       <div className="h-12 w-12 bg-slate-200 text-slate-500 rounded-full flex items-center justify-center transition-colors">
                                         <Upload className="h-5 w-5" />
                                       </div>
-                                      <span className="text-sm font-medium text-slate-700">Pilih File atau Tarik ke Sini</span>
-                                      <span className="text-xs text-slate-400">PDF, Office, JPG, PNG, atau WebP. Maksimal 10MB.</span>
+                                      <span className="text-sm font-medium text-slate-700">
+                                        Pilih File atau Tarik ke Sini
+                                      </span>
+                                      <span className="text-xs text-slate-400">
+                                        PDF, Office, JPG, PNG, atau WebP.
+                                        Maksimal 10MB.
+                                      </span>
                                     </>
                                   )}
                                 </div>
@@ -796,21 +1152,23 @@ export function AdmissionPortalPage() {
                               {/* Upload control tools if file exists */}
                               {customAnswers[field.field_key] && (
                                 <div className="flex justify-end">
-                                  <Button 
-                                    type="button" 
-                                    variant="ghost" 
-                                    size="sm" 
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
                                     onClick={() => removeFile(field.field_key)}
                                     className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 flex items-center gap-1.5 h-8 px-2.5 rounded-lg"
                                   >
-                                    <Trash2 className="h-3.5 w-3.5" /> Hapus File
+                                    <Trash2 className="h-3.5 w-3.5" /> Hapus
+                                    File
                                   </Button>
                                 </div>
                               )}
 
                               {fileErrors[field.field_key] && (
                                 <p className="text-xs font-semibold text-rose-600 mt-1 flex items-center gap-1 animate-in slide-in-from-top-1">
-                                  <AlertCircle className="h-3 w-3 shrink-0" /> {fileErrors[field.field_key]}
+                                  <AlertCircle className="h-3 w-3 shrink-0" />{" "}
+                                  {fileErrors[field.field_key]}
                                 </p>
                               )}
                             </div>
@@ -833,10 +1191,17 @@ export function AdmissionPortalPage() {
                     </div>
                   ) : (
                     <div className="mb-5 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                      Verifikasi keamanan belum aktif. Pendaftaran sementara tidak dapat dikirim.
+                      Verifikasi keamanan belum aktif. Pendaftaran sementara
+                      tidak dapat dikirim.
                     </div>
                   )}
-                  <Button type="submit" disabled={isSubmitting || !turnstileSiteKey || !captchaToken} className="w-full h-12 text-base font-bold shadow-lg bg-primary hover:bg-primary/90 text-white font-bold transition-colors">
+                  <Button
+                    type="submit"
+                    disabled={
+                      isSubmitting || !turnstileSiteKey || !captchaToken
+                    }
+                    className="w-full h-12 text-base font-bold shadow-lg bg-primary hover:bg-primary/90 text-white font-bold transition-colors"
+                  >
                     {isSubmitting ? (
                       <span className="flex items-center justify-center gap-2">
                         <Loader2 className="h-5 w-5 animate-spin" />
@@ -849,10 +1214,10 @@ export function AdmissionPortalPage() {
                     )}
                   </Button>
                   <p className="text-center text-xs text-slate-400 mt-4 leading-normal">
-                    Dengan mengirimkan pendaftaran, Anda menyetujui seluruh ketentuan program ini.
+                    Dengan mengirimkan pendaftaran, Anda menyetujui seluruh
+                    ketentuan program ini.
                   </p>
                 </div>
-
               </form>
             </CardContent>
           </Card>

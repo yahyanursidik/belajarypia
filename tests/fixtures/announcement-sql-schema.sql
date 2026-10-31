@@ -1,0 +1,12 @@
+alter table public.user_roles add column scope_type text;
+alter table public.user_roles add column scope_id uuid;
+alter table public.programs add column unit_id uuid;
+alter table public.programs add column name text default 'Program contoh';
+alter table public.programs add column teacher_user_id uuid references profiles(id);
+alter table public.classes add column name text default 'Kelas contoh';
+alter table public.classes add column code text default 'CLS';
+alter table public.classes add column teacher_user_id uuid references profiles(id);
+alter table public.halaqahs add column mentor_user_id uuid references profiles(id);
+create function public.set_updated_at() returns trigger language plpgsql as $$begin new.updated_at=now();return new;end;$$;
+create table public.program_modules(id uuid primary key default gen_random_uuid(),program_id uuid references programs(id));
+create table public.lessons(id uuid primary key default gen_random_uuid(),module_id uuid references program_modules(id),title text not null,lesson_type text default 'content',visibility_status text default 'draft',release_at timestamptz);

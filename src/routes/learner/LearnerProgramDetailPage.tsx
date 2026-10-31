@@ -254,7 +254,7 @@ export function LearnerProgramDetailPage() {
       </section>
 
       {location.state?.completedLesson && <p role="status" className="learner-success">Progres materi tersimpan.</p>}
-      <LearnerProgramNav programId={programId} enrollmentId={enrollment.id} />
+      <div className="flex flex-wrap items-center justify-between gap-3"><LearnerProgramNav programId={programId} enrollmentId={enrollment.id} /><Button asChild variant="ghost" size="sm"><Link to={`/learner/bantuan?category=academic&contextProgram=${programId}&contextEnrollment=${enrollment.id}`}>Bantuan program<ChevronRight className="h-4 w-4"/></Link></Button></div>
 
       {isSyllabusTab ? (
         <section aria-labelledby="syllabus-heading" className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">

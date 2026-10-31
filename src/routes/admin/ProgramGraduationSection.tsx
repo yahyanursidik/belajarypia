@@ -24,6 +24,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import type { Lesson } from "../../lib/academic";
 import type { GradingRubricItem, GraduationSettings, Program } from "../../lib/organization";
+import { ProgramDialog } from "../../components/programs/ProgramDialog";
+import { summarizeProgramLearning } from "../../lib/programLearningReport";
 import { supabase } from "../../lib/supabase";
 
 type ProgramGraduationSectionProps = {
@@ -41,6 +43,7 @@ type EnrollmentRow = {
   participants: {
     id: string;
     display_name: string;
+    status:string;
     global_participant_number: string;
     profiles?: { email: string | null } | null;
   };
@@ -65,6 +68,7 @@ type GraduationResultRow = {
 type Candidate = EnrollmentRow & {
   completionPercent: number;
   finalScore: number;
+  scoreAvailable:boolean;
   allAssessmentsPassed: boolean;
   paymentCleared: boolean;
   eligible: boolean;
@@ -126,6 +130,8 @@ export function ProgramGraduationSection({ program, lessons, onProgramUpdated }:
   const [enrollments, setEnrollments] = useState<EnrollmentRow[]>([]);
   const [progressRows, setProgressRows] = useState<ProgressRow[]>([]);
   const [results, setResults] = useState<GraduationResultRow[]>([]);
+  const [loadError,setLoadError]=useState(false);
+  const [confirmation,setConfirmation]=useState<Candidate|null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [processingEnrollmentId, setProcessingEnrollmentId] = useState<string | null>(null);
@@ -142,19 +148,20 @@ export function ProgramGraduationSection({ program, lessons, onProgramUpdated }:
   }, [program]);
 
   const loadCandidates = useCallback(async () => {
-    setIsLoading(true);
+    setIsLoading(true);setLoadError(false);setProgressRows([]);setResults([]);
     setFeedback(null);
     const enrollmentResult = await supabase
       .from("enrollments")
       .select(`
         id, enrollment_number, enrollment_status, payment_status, participant_id,
-        participants!inner (id, display_name, global_participant_number, profiles(email))
+        participants!inner (id, display_name, global_participant_number,status, profiles(email))
       `)
       .eq("program_id", program.id)
       .neq("enrollment_status", "cancelled")
       .order("created_at", { ascending: false });
 
     if (enrollmentResult.error) {
+      setEnrollments([]);setLoadError(true);
       setFeedback({ type: "error", message: `Peserta kelulusan gagal dimuat: ${enrollmentResult.error.message}` });
       setIsLoading(false);
       return;
@@ -170,18 +177,33 @@ export function ProgramGraduationSection({ program, lessons, onProgramUpdated }:
     }
 
     const enrollmentIds = rows.map((row) => row.id);
+    const fetchProgress = async () => {
+      const data:ProgressRow[]=[];
+      for(let start=0;start<enrollmentIds.length;start+=100){
+        const ids=enrollmentIds.slice(start,start+100);
+        for(let offset=0;;offset+=500){
+          const result=await supabase.from("lesson_progresses").select("enrollment_id,lesson_id,status,score,updated_at").in("enrollment_id",ids).order("id").range(offset,offset+499);
+          if(result.error)return {data:null,error:result.error};
+          data.push(...(result.data??[]) as ProgressRow[]);
+          if((result.data?.length??0)<500)break;
+        }
+      }
+      return {data,error:null};
+    };
     const [progressResult, graduationResult] = await Promise.all([
-      supabase.from("lesson_progresses").select("enrollment_id, lesson_id, status, score").in("enrollment_id", enrollmentIds),
+      fetchProgress(),
       supabase.from("program_graduation_results").select("enrollment_id, final_score, completion_percent, predicate, status, decided_at").eq("program_id", program.id),
     ]);
 
     if (progressResult.error) {
+      setLoadError(true);
       setFeedback({ type: "error", message: `Progres peserta gagal dimuat: ${progressResult.error.message}` });
     } else {
       setProgressRows((progressResult.data ?? []) as ProgressRow[]);
     }
 
     if (graduationResult.error) {
+      setLoadError(true);
       if (isMissingGraduationSchema(graduationResult.error.message)) {
         setSchemaReady(false);
         setResults([]);
@@ -206,21 +228,19 @@ export function ProgramGraduationSection({ program, lessons, onProgramUpdated }:
 
   const candidates = useMemo<Candidate[]>(() => {
     const resultMap = new Map(results.map((result) => [result.enrollment_id, result]));
-    const assessmentLessons = lessons.filter((lesson) => lesson.lesson_type === "quiz" || lesson.lesson_type === "exam");
+    const assessmentLessons = lessons.filter(lesson=>lesson.visibility_status==='published'&&(lesson.lesson_type==='quiz'||lesson.lesson_type==='exam'));
     return enrollments.map((enrollment) => {
       const enrollmentProgress = progressRows.filter((row) => row.enrollment_id === enrollment.id);
-      const completedLessons = new Set(enrollmentProgress.filter((row) => row.status === "completed").map((row) => row.lesson_id));
-      const completionPercent = lessons.length > 0 ? (completedLessons.size / lessons.length) * 100 : 0;
-      const scores = enrollmentProgress.map((row) => row.score).filter((score): score is number => score !== null && Number.isFinite(Number(score))).map(Number);
-      const finalScore = scores.length > 0 ? scores.reduce((total, score) => total + score, 0) / scores.length : completionPercent;
-      const allAssessmentsPassed = assessmentLessons.every((lesson) => {
-        const progress = enrollmentProgress.find((row) => row.lesson_id === lesson.id && row.status === "completed");
-        return Boolean(progress && Number(progress.score ?? 0) >= Number(lesson.passing_grade ?? settings.minimum_final_score));
-      });
-      const paymentCleared = ["not_required", "paid", "verified", "completed"].includes(enrollment.payment_status);
       const result = resultMap.get(enrollment.id);
+      const learning=summarizeProgramLearning(lessons,enrollmentProgress);
+      const completionPercent=learning.percent;
+      const savedScore = result?.status === 'graduated' && result.final_score !== null && Number.isFinite(Number(result.final_score)) ? Number(result.final_score) : null;
+      const finalScore=savedScore??learning.averageScore??(assessmentLessons.length?0:completionPercent);
+      const scoreAvailable=savedScore!==null||learning.averageScore!==null||assessmentLessons.length===0;
+      const allAssessmentsPassed=assessmentLessons.every(lesson=>{const progress=learning.latest.get(lesson.id);return Boolean(progress&&progress.status==='completed'&&progress.score!==null&&Number.isFinite(Number(progress.score))&&Number(progress.score)>=Number(lesson.passing_grade??settings.minimum_final_score));});
+      const paymentCleared = ["not_required", "paid", "verified", "completed"].includes(enrollment.payment_status);
       const graduated = result?.status === "graduated" || enrollment.enrollment_status === "completed";
-      const eligible = !graduated
+      const eligible = !graduated && learning.total>0 && (assessmentLessons.length===0||learning.scoredAssessments>0) && enrollment.enrollment_status==='active' && enrollment.participants.status==='active'
         && completionPercent >= settings.minimum_completion_percent
         && finalScore >= settings.minimum_final_score
         && (!settings.require_all_assessments_passed || allAssessmentsPassed)
@@ -230,11 +250,12 @@ export function ProgramGraduationSection({ program, lessons, onProgramUpdated }:
         ...enrollment,
         completionPercent,
         finalScore,
+        scoreAvailable,
         allAssessmentsPassed,
         paymentCleared,
         eligible,
         graduated,
-        predicate: result?.predicate ?? getPredicate(finalScore, rubric),
+        predicate: (result?.status==='graduated'?result.predicate:null) ?? (scoreAvailable?getPredicate(finalScore,rubric):'—'),
         result,
       };
     });
@@ -286,7 +307,7 @@ export function ProgramGraduationSection({ program, lessons, onProgramUpdated }:
       .select("*")
       .single();
     if (error || !data) {
-      const migrationHint = isMissingGraduationSchema(error?.message) ? " Jalankan migration 202607170001_program_graduation_workflow.sql." : "";
+      const migrationHint = isMissingGraduationSchema(error?.message) ? " Hubungi pengelola sistem untuk mengaktifkan kelulusan." : "";
       setFeedback({ type: "error", message: `Kriteria kelulusan gagal disimpan: ${error?.message ?? "data tidak ditemukan"}.${migrationHint}` });
     } else {
       onProgramUpdated(data as Program);
@@ -298,9 +319,7 @@ export function ProgramGraduationSection({ program, lessons, onProgramUpdated }:
   };
 
   const finalizeGraduation = async (candidate: Candidate) => {
-    if (!candidate.eligible || !schemaReady) return;
-    const confirmed = window.confirm(`Tetapkan ${candidate.participants.display_name} sebagai lulus dengan predikat ${candidate.predicate}?`);
-    if (!confirmed) return;
+    if (!candidate.eligible || !schemaReady || hasChanges || loadError || isLoading) return;
     setProcessingEnrollmentId(candidate.id);
     setFeedback(null);
     const { error } = await supabase.rpc("finalize_program_graduation", {
@@ -311,10 +330,11 @@ export function ProgramGraduationSection({ program, lessons, onProgramUpdated }:
       target_notes: "Ditetapkan dari halaman kelulusan program",
     });
     if (error) {
-      const migrationHint = isMissingGraduationSchema(error.message) ? " Jalankan migration 202607170001_program_graduation_workflow.sql." : "";
+      const migrationHint = isMissingGraduationSchema(error.message) ? " Hubungi pengelola sistem untuk mengaktifkan kelulusan." : "";
       setFeedback({ type: "error", message: `Kelulusan gagal ditetapkan: ${error.message}.${migrationHint}` });
     } else {
       await loadCandidates();
+      setConfirmation(null);
       setFeedback({ type: "success", message: `${candidate.participants.display_name} berhasil ditetapkan lulus.` });
     }
     setProcessingEnrollmentId(null);
@@ -331,8 +351,8 @@ export function ProgramGraduationSection({ program, lessons, onProgramUpdated }:
       {!schemaReady ? (
         <Alert className="border-amber-200 bg-amber-50 text-amber-900">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Workflow kelulusan belum diaktifkan di database</AlertTitle>
-          <AlertDescription>Jalankan migration <strong>202607170001_program_graduation_workflow.sql</strong>. Perhitungan kesiapan tetap dapat dilihat, tetapi penetapan lulus dinonaktifkan.</AlertDescription>
+          <AlertTitle>Kelulusan belum tersedia</AlertTitle>
+          <AlertDescription>Pengaturan kelulusan belum tersedia di server. Penetapan lulus dinonaktifkan.</AlertDescription>
         </Alert>
       ) : null}
       {feedback ? (
@@ -342,9 +362,10 @@ export function ProgramGraduationSection({ program, lessons, onProgramUpdated }:
         </Alert>
       ) : null}
 
+      {confirmation&&<ProgramDialog title="Tetapkan kelulusan?" busy={Boolean(processingEnrollmentId)} error={feedback?.type==='error'?feedback.message:null} onClose={()=>setConfirmation(null)}><p className="font-semibold">{confirmation.participants.display_name}</p><p className="text-sm mt-2">Nilai {confirmation.finalScore.toFixed(1)} · {confirmation.predicate}</p><div className="wizard-footer"><Button variant="outline" disabled={Boolean(processingEnrollmentId)} onClick={()=>setConfirmation(null)}>Batal</Button><Button disabled={Boolean(processingEnrollmentId)||hasChanges||loadError} onClick={()=>void finalizeGraduation(confirmation)}>{processingEnrollmentId?'Menyimpan…':'Tetapkan lulus'}</Button></div></ProgramDialog>}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: "Peserta Dinilai", value: stats.total, icon: Users, className: "text-primary bg-primary/10" },
+          { label: "Peserta program", value: stats.total, icon: Users, className: "text-primary bg-primary/10" },
           { label: "Siap Diluluskan", value: stats.eligible, icon: ShieldCheck, className: "text-emerald-700 bg-emerald-50" },
           { label: "Perlu Tinjauan", value: stats.review, icon: AlertCircle, className: "text-amber-700 bg-amber-50" },
           { label: "Sudah Lulus", value: stats.graduated, icon: GraduationCap, className: "text-blue-700 bg-blue-50" },
@@ -353,13 +374,14 @@ export function ProgramGraduationSection({ program, lessons, onProgramUpdated }:
           return (
             <div key={item.label} className="flex items-center gap-3 rounded-lg border bg-background p-4">
               <span className={`grid h-10 w-10 place-items-center rounded-md ${item.className}`}><Icon className="h-5 w-5" /></span>
-              <span><strong className="block text-xl">{item.value}</strong><small className="text-muted-foreground">{item.label}</small></span>
+              <span><strong className="block text-xl">{isLoading||loadError?'—':item.value}</strong><small className="text-muted-foreground">{item.label}</small></span>
             </div>
           );
         })}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
+      <details className="program-criteria" open={!program.grading_rubric?.length}><summary>Kriteria & predikat {hasChanges&&<span>Belum disimpan</span>}</summary>
+      <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)] mt-4">
         <Card>
           <CardHeader className="border-b">
             <CardTitle className="text-lg">Kriteria Kelayakan</CardTitle>
@@ -427,6 +449,9 @@ export function ProgramGraduationSection({ program, lessons, onProgramUpdated }:
         </Button>
       </div>
 
+      </details>
+      {hasChanges&&<p className="program-notice" role="status">Simpan kriteria sebelum menetapkan kelulusan.</p>}
+      {program.feature_flags.use_certificate&&<div className="program-section-heading"><span className="text-sm">Penerbitan sertifikat mengikuti pemeriksaan kelayakan.</span><Button variant="outline" onClick={()=>navigate(`${basePath}/sertifikat/kelayakan?program=${program.id}`)}>Cek sertifikat</Button></div>}
       <Card>
         <CardHeader className="border-b">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -468,9 +493,9 @@ export function ProgramGraduationSection({ program, lessons, onProgramUpdated }:
                   <tr key={candidate.id} className="hover:bg-muted/25">
                     <td className="px-4 py-4"><p className="font-semibold text-foreground">{candidate.participants.display_name}</p><p className="mt-1 font-mono text-xs text-muted-foreground">{candidate.enrollment_number}</p></td>
                     <td className="px-4 py-4"><div className="flex items-center gap-2"><div className="h-2 w-24 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary" style={{ width: `${Math.min(100, candidate.completionPercent)}%` }} /></div><span className="font-semibold">{percentage(candidate.completionPercent)}</span></div><p className="mt-1 text-xs text-muted-foreground">materi selesai</p></td>
-                    <td className="px-4 py-4"><p className="font-semibold">{candidate.finalScore.toFixed(1)}</p><p className="text-xs text-muted-foreground">{candidate.predicate}</p></td>
+                    <td className="px-4 py-4"><p className="font-semibold">{candidate.scoreAvailable?candidate.finalScore.toFixed(1):'Belum dinilai'}</p><p className="text-xs text-muted-foreground">{candidate.predicate}</p></td>
                     <td className="px-4 py-4">{candidate.graduated ? <Badge className="bg-blue-600">Lulus</Badge> : candidate.eligible ? <Badge className="bg-emerald-600">Siap Diluluskan</Badge> : <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">Perlu Tinjauan</Badge>}</td>
-                    <td className="px-4 py-4"><div className="flex justify-end gap-2"><Button type="button" variant="outline" size="sm" className="h-9 w-9 p-0" onClick={() => navigate(`${basePath}/peserta/${candidate.participants.id}`)} aria-label={`Detail ${candidate.participants.display_name}`}><Eye className="h-4 w-4" /></Button>{candidate.eligible ? <Button type="button" size="sm" onClick={() => void finalizeGraduation(candidate)} disabled={!schemaReady || processingEnrollmentId === candidate.id}>{processingEnrollmentId === candidate.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GraduationCap className="mr-2 h-4 w-4" />}Tetapkan Lulus</Button> : null}</div></td>
+                    <td className="px-4 py-4"><div className="flex justify-end gap-2"><Button type="button" variant="outline" size="sm" className="h-9 w-9 p-0" onClick={() => navigate(`${basePath}/peserta/${candidate.participants.id}?tab=academic`)} aria-label={`Detail ${candidate.participants.display_name}`}><Eye className="h-4 w-4" /></Button>{candidate.eligible ? <Button type="button" size="sm" onClick={() => setConfirmation(candidate)} disabled={!schemaReady || loadError || hasChanges || isLoading || processingEnrollmentId === candidate.id}>{processingEnrollmentId === candidate.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GraduationCap className="mr-2 h-4 w-4" />}Tetapkan Lulus</Button> : null}</div></td>
                   </tr>
                 ))}
               </tbody>

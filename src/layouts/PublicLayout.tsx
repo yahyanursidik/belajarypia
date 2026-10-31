@@ -1,8 +1,11 @@
+import {useSystemSettings} from "../lib/useSystemSettings";
+import {getThemeStyles} from "../lib/theme";
 import type { PropsWithChildren } from "react";
 
 export function PublicLayout({ children }: PropsWithChildren) {
+  const {settings}=useSystemSettings();
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen bg-slate-50 flex flex-col" style={getThemeStyles(settings?.portal_themes?.public)}>
       <main className="flex-1 w-full">
         {children}
       </main>

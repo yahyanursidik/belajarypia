@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -44,7 +44,7 @@ function getAuthErrorMessage(error: unknown, context: "login" | "register" | "fo
   }
 
   if (error instanceof Error && /captcha|turnstile/i.test(error.message)) {
-    return "Verifikasi keamanan gagal atau kedaluwarsa. Silakan ulangi verifikasi.";
+    return (isTurnstileDisabled ? "CAPTCHA masih diminta oleh Supabase, tetapi verifikasi localhost dinonaktifkan. Pengelola perlu menyesuaikan pengaturan CAPTCHA proyek." : "Verifikasi keamanan gagal atau kedaluwarsa. Silakan ulangi verifikasi.");
   }
 
   const fallbackMessage =
@@ -79,7 +79,7 @@ function getAuthErrorMessage(error: unknown, context: "login" | "register" | "fo
     }
 
     if (code === "captcha_failed") {
-      return "Verifikasi keamanan gagal atau kedaluwarsa. Silakan ulangi verifikasi.";
+      return (isTurnstileDisabled ? "CAPTCHA masih diminta oleh Supabase, tetapi verifikasi localhost dinonaktifkan. Pengelola perlu menyesuaikan pengaturan CAPTCHA proyek." : "Verifikasi keamanan gagal atau kedaluwarsa. Silakan ulangi verifikasi.");
     }
 
     if (/ensure_learner_identity|function .* does not exist|schema cache/i.test(message)) {
@@ -184,29 +184,14 @@ export function LoginPage({ portal }: LoginPageProps) {
   const isLearnerRegistrationInProgress =
     isLearnerPortal && authMode === "register" && isSubmitting;
   const loginLogo = settings?.login_logo_url || settings?.logo_url;
-  const themeKey = settings?.portal_themes?.[portal] ?? (portal === "mentor" ? "rose" : undefined);
-  const themeStyles = getThemeStyles(themeKey);
-
-  useEffect(() => {
-    if (Object.keys(themeStyles).length === 0) return;
-    const root = document.documentElement;
-    Object.entries(themeStyles).forEach(([key, value]) => {
-      root.style.setProperty(key, value as string);
-    });
-
-    return () => {
-      Object.keys(themeStyles).forEach((key) => {
-        root.style.removeProperty(key);
-      });
-    };
-  }, [themeStyles]);
+  const themeStyles = getThemeStyles(settings?.portal_themes?.public);
 
   if (!isLoading && session && !isLearnerRegistrationInProgress) {
     return <Navigate to={dashboardPath} replace />;
   }
 
   return (
-    <div className="portal-login portal-login--unified">
+    <div className="portal-login portal-login--unified" style={themeStyles}>
       <div className="portal-login__shell">
         <section className="learning-intro" aria-label="Tentang ruang belajar YPIA">
           <div className="learning-intro__brand">

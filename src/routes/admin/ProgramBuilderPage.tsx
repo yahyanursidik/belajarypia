@@ -1,26 +1,31 @@
 import { PageHeader } from "../../components/admin/PageHeader";
-import { SectionNav } from "../../components/admin/SectionNav";
-import { type ComponentType, useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { ProgramNavigation } from "../../components/programs/ProgramNavigation";
+import { ProgramFormDialog } from "../../components/programs/ProgramFormDialog";
+import { ProgramPlacementDialog } from "../../components/programs/ProgramPlacementDialog";
+import { ProgramDialog } from "../../components/programs/ProgramDialog";
+import { WizardSteps } from "../../components/ui/wizard-steps";
+import { programDirectoryPath, programSectionPath, validateLessonSettings, validateProgramUpload, isHttpUrl, type ProgramSection } from "../../lib/programWorkspace";
+import { toDateTimeLocalValue } from "../../lib/admission";
+import { ProgramAdmissionBuilder } from "./ProgramAdmissionBuilder";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
+  ArrowRight,
+  RefreshCw,
+  Settings,
   ArrowLeft,
   BookOpen,
-  CalendarDays,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   Edit2,
   ExternalLink,
   FileText,
-  Info,
-  Layers,
-  Library,
   PlayCircle,
   Plus,
   Presentation,
   Trash2,
-  Trophy,
   Upload,
   Users,
   Video,
@@ -55,9 +60,9 @@ import { ProgramSyllabusSection } from "./ProgramSyllabusSection";
 
 /* ───────────────── Empty Form Templates ───────────────── */
 
-const emptyBatch = { code: "", name: "", start_date: "", end_date: "", status: "draft" as const };
-const emptyClass = { batch_id: "", code: "", name: "", capacity: "", teacher_user_id: "" };
-const emptyHalaqah = { class_id: "", code: "", name: "", capacity: "", mentor_user_id: "" };
+const emptyBatch = { code: "", name: "", start_date: "", end_date: "", status: "draft" as AcademicBatch["status"] };
+const emptyClass = { batch_id: "", code: "", name: "", capacity: "", teacher_user_id: "", status: "active" as AcademicClass["status"] };
+const emptyHalaqah = { class_id: "", code: "", name: "", capacity: "", mentor_user_id: "", status: "active" as AcademicHalaqah["status"] };
 const emptyLevel = { parent_level_id: "", code: "", name: "", order_no: "" };
 const emptyModule = { parent_module_id: "", level_id: "", code: "", title: "", order_no: "" };
 const emptyLesson = {
@@ -67,7 +72,7 @@ const emptyLesson = {
   lesson_type: "content",
   order_no: "",
   release_at: "",
-  visibility_status: "published" as LessonVisibilityStatus,
+  visibility_status: "draft" as LessonVisibilityStatus,
   content_body: "",
   external_url: "",
   passing_grade: "",
@@ -84,6 +89,7 @@ const emptyQuestion = {
   optB: "",
   optC: "",
   optD: "",
+  optE: "",
   correct_option: "A",
   explanation: "",
   grading_guide: "",
@@ -102,15 +108,7 @@ type UploadPreview = {
   url: string;
 };
 
-type ProgramTab = "info" | "kurikulum" | "peserta" | "angkatan" | "bank_soal" | "silabus" | "kelulusan";
-type ProgramTabItem = {
-  key: ProgramTab;
-  label: string;
-  desc: string;
-  icon: ComponentType<{ className?: string }>;
-  count?: number;
-};
-
+type ProgramTab = "info" | "kurikulum" | "peserta" | "angkatan" | "bank_soal" | "silabus" | "kelulusan" | "pendaftaran";
 const programTabSegments: Record<ProgramTab, string> = {
   info: "detail-program",
   silabus: "silabus",
@@ -119,6 +117,7 @@ const programTabSegments: Record<ProgramTab, string> = {
   bank_soal: "bank-soal",
   peserta: "peserta",
   kelulusan: "kelulusan",
+  pendaftaran: "pendaftaran",
 };
 
 const programSegmentTabs = Object.entries(programTabSegments).reduce<Record<string, ProgramTab>>((acc, [tab, segment]) => {
@@ -128,7 +127,7 @@ const programSegmentTabs = Object.entries(programTabSegments).reduce<Record<stri
 
 const programStatusMeta = {
   active: { label: "Aktif", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-  draft: { label: "Draft", className: "border-amber-200 bg-amber-50 text-amber-700" },
+  draft: { label: "Draf", className: "border-amber-200 bg-amber-50 text-amber-700" },
   archived: { label: "Diarsipkan", className: "border-slate-200 bg-slate-100 text-slate-700" },
 };
 
@@ -162,7 +161,22 @@ export function ProgramBuilderPage() {
   const { programId, section } = useParams<{ programId: string; section?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuthSession();
+  const { user, primaryRole } = useAuthSession();
+  const [searchParams] = useSearchParams();
+  const canManageProgram = primaryRole === "admin" || primaryRole === "super_admin";
+  const workspaceBase = location.pathname.startsWith('/system') ? '/system' : location.pathname.startsWith('/teacher') ? '/teacher/kelas' : '/admin';
+  const directoryPath = programDirectoryPath(workspaceBase, searchParams.get('returnTo'));
+  const [isSettingsOpen,setIsSettingsOpen]=useState(false);
+  const [placementRevision,setPlacementRevision]=useState(0);
+  const [editingBatchId,setEditingBatchId]=useState<string|null>(null);
+  const [editingClassId,setEditingClassId]=useState<string|null>(null);
+  const [editingHalaqahId,setEditingHalaqahId]=useState<string|null>(null);
+  const [deleteRequest,setDeleteRequest]=useState<{message:string;resolve:(confirmed:boolean)=>void}|null>(null);
+  const [placement,setPlacement]=useState<{enrollmentId?:string;classId?:string}|null>(null);
+  const [lessonStep,setLessonStep]=useState(0);
+  const [participantCount,setParticipantCount]=useState(0);
+  const [loadError,setLoadError]=useState('');
+  const loadController=useRef<AbortController|null>(null);
 
   /* ── Data State ── */
   const [program, setProgram] = useState<Program | null>(null);
@@ -206,6 +220,7 @@ export function ProgramBuilderPage() {
   const [isCreateQuestionModalOpen, setIsCreateQuestionModalOpen] = useState(false);
   const [questionTarget, setQuestionTarget] = useState<"quiz" | "bank" | null>(null);
   const [questionForm, setQuestionForm] = useState(emptyQuestion);
+  const [editingQuestionId,setEditingQuestionId]=useState<string|null>(null);
   const [isBankSelectModalOpen, setIsBankSelectModalOpen] = useState(false);
   const [allBankItems, setAllBankItems] = useState<any[]>([]);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -232,11 +247,6 @@ export function ProgramBuilderPage() {
     const t = setTimeout(() => setMessage(null), 4000);
     return () => clearTimeout(t);
   }, [message]);
-  useEffect(() => {
-    if (!errorMessage) return;
-    const t = setTimeout(() => setErrorMessage(null), 6000);
-    return () => clearTimeout(t);
-  }, [errorMessage]);
 
   /* ── File preview effect ── */
   useEffect(() => {
@@ -288,84 +298,49 @@ export function ProgramBuilderPage() {
       setIsImportModalOpen(false);
       setImportText("");
       setImportPreview([]);
-      // await loadBankItems(managingBankId);
+      const refreshed=await supabase.from('question_bank_items').select('*').eq('question_bank_id',managingBankId).order('created_at');
+      if(refreshed.error)setErrorMessage('Soal tersimpan; muat ulang bank untuk melihat hasil.');else setBankItems(refreshed.data||[]);
     }
     setIsSubmitting(false);
   };
 
   /* ── Data Loading ── */
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (silent = false) => {
     if (!programId) return;
-    setIsLoading(true);
-    setErrorMessage(null);
-
-    const [
-      programResult,
-      batchResult,
-      classResult,
-      halaqahResult,
-      levelResult,
-      moduleResult,
-      lessonResult,
-      docResult,
-      staffResult,
-      bankResult,
-    ] = await Promise.all([
-      supabase.from("programs").select("*").eq("id", programId).single(),
-      supabase.from("batches").select("*").eq("program_id", programId).order("created_at"),
-      supabase.from("classes").select("*").eq("program_id", programId).order("created_at"),
-      supabase.from("halaqahs").select("*, classes!inner(program_id)").eq("classes.program_id", programId),
-      supabase.from("levels").select("*").eq("program_id", programId).order("order_no"),
-      supabase.from("program_modules").select("*, levels(name, code)").eq("program_id", programId).order("order_no"),
-      supabase.from("lessons").select("*, program_modules!inner(program_id)").eq("program_modules.program_id", programId).order("order_no"),
-      supabase.from("document_files").select("*"),
-      supabase.from("profiles").select("id, full_name, email"),
-      supabase.from("question_banks").select("*").eq("program_id", programId).order("created_at"),
-    ]);
-
-    const firstError =
-      programResult.error ||
-      batchResult.error ||
-      classResult.error ||
-      halaqahResult.error ||
-      levelResult.error ||
-      moduleResult.error ||
-      lessonResult.error ||
-      docResult.error ||
-      staffResult.error ||
-      bankResult.error;
-
-    if (firstError) {
-      setErrorMessage(`Gagal memuat detail program: ${firstError.message}`);
-    }
-
-    const prog = programResult.data;
-    const batchRows = batchResult.data;
-    const classRows = classResult.data;
-    const halaqahRows = halaqahResult.data;
-    const levelRows = levelResult.data;
-    const moduleRows = moduleResult.data;
-    const lessonRows = lessonResult.data;
-    const docRows = docResult.data;
-    const staffRows = staffResult.data;
-    const bankRows = bankResult.data;
-
-    if (prog) {
-      setProgram(prog as unknown as Program);
-    }
-    setBatches((batchRows ?? []) as AcademicBatch[]);
-    setClasses((classRows ?? []) as AcademicClass[]);
-    setHalaqahs((halaqahRows ?? []) as unknown as AcademicHalaqah[]);
-    setLevels((levelRows ?? []) as Level[]);
-    setModules((moduleRows ?? []) as unknown as ProgramModule[]);
-    setLessons((lessonRows ?? []) as unknown as Lesson[]);
-    setDocumentFiles((docRows ?? []) as unknown as DocumentFile[]);
-    setStaff((staffRows ?? []) as StaffProfile[]);
-    setQuestionBanks((bankRows ?? []) as any[]);
-    setIsLoading(false);
+    loadController.current?.abort();
+    const controller = new AbortController(); loadController.current = controller;
+    if (!silent) { setIsLoading(true); setProgram(null); }
+    setLoadError('');
+    try {
+      const requests = await Promise.all([
+        supabase.from("programs").select("*,units(code,name)").eq("id", programId).abortSignal(controller.signal).single(),
+        supabase.from("batches").select("*").eq("program_id", programId).order("created_at").abortSignal(controller.signal),
+        supabase.from("classes").select("*").eq("program_id", programId).order("created_at").abortSignal(controller.signal),
+        supabase.from("halaqahs").select("*,classes!inner(program_id)").eq("classes.program_id", programId).abortSignal(controller.signal),
+        supabase.from("levels").select("*").eq("program_id", programId).order("order_no").abortSignal(controller.signal),
+        supabase.from("program_modules").select("*,levels(name,code)").eq("program_id", programId).order("order_no").abortSignal(controller.signal),
+        supabase.from("lessons").select("*,program_modules!inner(program_id)").eq("program_modules.program_id", programId).order("order_no").abortSignal(controller.signal),
+        supabase.from("profiles").select("id,full_name,email,user_roles!inner(roles!inner(code))").eq("status","active").in("user_roles.roles.code",["teacher","mentor","admin","super_admin"]).abortSignal(controller.signal),
+        supabase.from("question_banks").select("*").eq("program_id", programId).order("created_at").abortSignal(controller.signal),
+        supabase.from("enrollments").select("id",{count:"exact",head:true}).eq("program_id",programId).eq("enrollment_status","active").abortSignal(controller.signal),
+      ]);
+      if(controller.signal.aborted)return;
+      if(requests.some(result=>result.error))throw new Error('Data program belum lengkap dimuat.');
+      const [prog,batchRows,classRows,halaqahRows,levelRows,moduleRows,lessonRows,staffRows,bankRows,countResult]=requests;
+      const lessonIds=(lessonRows.data??[]).map(row=>row.id as string);
+      const docResult=lessonIds.length?await supabase.from("document_files").select("*").in("lesson_id",lessonIds).abortSignal(controller.signal):{data:[],error:null};
+      if(controller.signal.aborted)return;
+      if(docResult.error)throw docResult.error;
+      setProgram(prog.data as unknown as Program);
+      setBatches((batchRows.data??[]) as AcademicBatch[]);setClasses((classRows.data??[]) as AcademicClass[]);
+      setHalaqahs((halaqahRows.data??[]) as unknown as AcademicHalaqah[]);setLevels((levelRows.data??[]) as Level[]);
+      setModules((moduleRows.data??[]) as unknown as ProgramModule[]);setLessons((lessonRows.data??[]) as unknown as Lesson[]);
+      setStaff((staffRows.data??[]) as StaffProfile[]);setQuestionBanks((bankRows.data??[]) as QuestionBank[]);
+      setDocumentFiles((docResult.data??[]) as DocumentFile[]);setParticipantCount(countResult.count??0);
+    } catch { if(!controller.signal.aborted)setLoadError('Data program belum dapat dimuat. Coba lagi.'); }
+    finally { if(!controller.signal.aborted)setIsLoading(false); }
   }, [programId]);
-
-  useEffect(() => { void loadData(); }, [loadData]);
+  useEffect(() => { void loadData(); return()=>loadController.current?.abort(); }, [loadData]);
 
   const programBasePath = useMemo(() => {
     if (!programId) return location.pathname;
@@ -382,8 +357,9 @@ export function ProgramBuilderPage() {
   }, [location.pathname]);
 
   const getProgramSectionPath = useCallback((tab: ProgramTab) => {
-    return `${programBasePath}/${programTabSegments[tab]}`;
-  }, [programBasePath]);
+    const query = new URLSearchParams(); if(directoryPath !== `${workspaceBase}/program`)query.set("returnTo",directoryPath);
+    return `${programBasePath}/${programTabSegments[tab]}${query.size?`?${query}`:""}`;
+  }, [programBasePath,directoryPath,workspaceBase]);
 
   const navigateToProgramTab = useCallback((tab: ProgramTab, options?: { replace?: boolean }) => {
     navigate(getProgramSectionPath(tab), { replace: options?.replace ?? false });
@@ -400,11 +376,12 @@ export function ProgramBuilderPage() {
       navigateToProgramTab("info", { replace: true });
       return;
     }
-    if (program && activeTab === "angkatan" && program.curriculum_model !== "angkatan") {
+    if (program && activeTab === "angkatan" && program.curriculum_model !== "angkatan" && classes.length===0) {
       navigateToProgramTab("kurikulum", { replace: true });
     }
-  }, [activeTab, navigateToProgramTab, program, programId, section]);
+  }, [activeTab, navigateToProgramTab, program, programId, section,classes.length]);
 
+  useEffect(()=>{const requested=searchParams.get('placeEnrollment');if(canManageProgram&&requested&&program?.curriculum_model==='angkatan'){setPlacement({enrollmentId:requested});}},[searchParams,program?.id,program?.curriculum_model,canManageProgram]);
   /* ── Derived data ── */
   const classScopedHalaqahs = halaqahs;
   const moduleTree = useMemo(
@@ -428,22 +405,72 @@ export function ProgramBuilderPage() {
       classes: classes.length,
       halaqahs: halaqahs.length,
       questionBanks: questionBanks.length,
+      participants: participantCount,
     };
-  }, [batches.length, classes.length, halaqahs.length, lessons, modules.length, questionBanks.length]);
+  }, [batches.length, classes.length, halaqahs.length, lessons, modules.length, questionBanks.length,participantCount]);
 
   /* ── Generic submit helper ── */
   const submit = async (
     callback: () => PromiseLike<{ error: { message: string } | null }>,
     success: string,
   ) => {
-    setIsSubmitting(true);
-    setErrorMessage(null);
-    setMessage(null);
-    const { error } = await callback();
-    if (error) setErrorMessage(error.message);
-    else { setMessage(success); await loadData(); }
-    setIsSubmitting(false);
+    if(isSubmitting)return false;
+    setIsSubmitting(true); setErrorMessage(null); setMessage(null);
+    try {
+      const {error}=await callback();
+      if(error)throw error;
+      setMessage(success); await loadData(true); return true;
+    } catch(error) { setErrorMessage((error as {message?:string})?.message??'Perubahan belum tersimpan. Coba lagi.'); return false; }
+    finally { setIsSubmitting(false); }
   };
+
+  const saveStructure = async (event:React.FormEvent, kind:'batch'|'class'|'halaqah'|'level'|'module'|'bank') => {
+    event.preventDefault();
+    const source = kind==='batch'?batchForm:kind==='class'?classForm:kind==='halaqah'?halaqahForm:kind==='level'?levelForm:kind==='module'?moduleForm:bankForm;
+    const name = 'name' in source ? source.name : source.title;
+    if(!name.trim() || ('code' in source && !source.code.trim())) { setErrorMessage('Isi nama dan kode yang diperlukan.'); return; }
+    if('capacity' in source && source.capacity && (!Number.isSafeInteger(Number(source.capacity))||Number(source.capacity)<1)) { setErrorMessage('Kapasitas harus berupa bilangan bulat lebih dari 0.'); return; }
+    if(kind==='batch' && batchForm.start_date && batchForm.end_date && batchForm.end_date<batchForm.start_date){setErrorMessage('Tanggal selesai tidak boleh sebelum tanggal mulai.');return;}
+    if(kind==='halaqah'&&!classes.some(item=>item.id===halaqahForm.class_id)){setErrorMessage('Pilih kelas program ini.');return;}
+    if(kind==='class'&&classForm.batch_id&&!batches.some(item=>item.id===classForm.batch_id)){setErrorMessage('Pilih angkatan program ini.');return;}
+    let saved=false;
+    if(kind==='batch'){
+      const payload={program_id:programId,code:batchForm.code.trim(),name:batchForm.name.trim(),start_date:batchForm.start_date||null,end_date:batchForm.end_date||null,status:batchForm.status};
+      saved=await submit(()=>(editingBatchId?supabase.from('batches').update(payload).eq('id',editingBatchId):supabase.from('batches').insert(payload)).select('id').single(),'Angkatan tersimpan.');
+    }
+    if(kind==='class'){
+      const payload={program_id:programId,batch_id:classForm.batch_id||null,code:classForm.code.trim(),name:classForm.name.trim(),capacity:classForm.capacity?Number(classForm.capacity):null,teacher_user_id:classForm.teacher_user_id||null,status:classForm.status};
+      saved=await submit(()=>(editingClassId?supabase.from('classes').update(payload).eq('id',editingClassId):supabase.from('classes').insert(payload)).select('id').single(),'Kelas tersimpan.');
+    }
+    if(kind==='halaqah'){
+      const payload={class_id:halaqahForm.class_id,code:halaqahForm.code.trim(),name:halaqahForm.name.trim(),capacity:halaqahForm.capacity?Number(halaqahForm.capacity):null,mentor_user_id:halaqahForm.mentor_user_id||null,status:halaqahForm.status};
+      saved=await submit(()=>(editingHalaqahId?supabase.from('halaqahs').update(payload).eq('id',editingHalaqahId):supabase.from('halaqahs').insert(payload)).select('id').single(),'Halaqah tersimpan.');
+    }
+    if(kind==='level')saved=await submit(()=>supabase.from('levels').insert({program_id:programId,parent_level_id:null,code:levelForm.code.trim(),name:levelForm.name.trim(),order_no:Number(levelForm.order_no||0)}),'Tahapan tersimpan.');
+    if(kind==='bank')saved=await submit(()=>supabase.from('question_banks').insert({program_id:programId,name:bankForm.name.trim(),description:bankForm.description.trim()||null}),'Bank soal tersimpan.');
+    if(kind==='module'){
+      const payload={program_id:programId,parent_module_id:moduleForm.parent_module_id||null,level_id:moduleForm.level_id||null,code:moduleForm.code.trim(),title:moduleForm.title.trim(),order_no:Number(moduleForm.order_no||0)};
+      saved=await submit(()=>editingModuleId?supabase.from('program_modules').update(payload).eq('id',editingModuleId):supabase.from('program_modules').insert(payload),'Mata pelajaran tersimpan.');
+    }
+    if(!saved)return;
+    if(kind==='batch'){setEditingBatchId(null);setBatchForm(emptyBatch);setIsBatchModalOpen(false);}
+    if(kind==='class'){setEditingClassId(null);setClassForm(emptyClass);setIsClassModalOpen(false);}
+    if(kind==='halaqah'){setEditingHalaqahId(null);setHalaqahForm(emptyHalaqah);setIsHalaqahModalOpen(false);}
+    if(kind==='level'){setLevelForm(emptyLevel);setIsLevelModalOpen(false);}
+    if(kind==='module'){setModuleForm(emptyModule);setEditingModuleId(null);setIsModuleModalOpen(false);}
+    if(kind==='bank'){setBankForm({name:'',description:''});setIsBankModalOpen(false);}
+  };
+
+  const askDelete=(message:string)=>new Promise<boolean>(resolve=>setDeleteRequest({message,resolve}));
+  useEffect(()=>()=>deleteRequest?.resolve(false),[deleteRequest]);
+  const removeQuestion=async(id:string,target:'quiz'|'bank')=>{
+    if(!await askDelete('Hapus butir soal ini?'))return;
+    const table=target==='quiz'?'quiz_questions':'question_bank_items';
+    const owner=target==='quiz'?managingLesson?.id:managingBankId;
+    if(!owner)return;
+    await submit(async()=>{const result=await supabase.from(table).delete().eq('id',id);if(!result.error){const refreshed=await supabase.from(table).select('*').eq(target==='quiz'?'lesson_id':'question_bank_id',owner).order(target==='quiz'?'order_no':'created_at');if(!refreshed.error){if(target==='quiz')setQuizQuestions(refreshed.data??[]);else setBankItems(refreshed.data??[]);}}return result;},'Butir soal dihapus.');
+  };
+  const removeBank=async(id:string)=>{if(await askDelete('Hapus bank soal beserta butirnya? Soal yang sudah disalin ke ujian tetap tersimpan.'))await submit(()=>supabase.from('question_banks').delete().eq('id',id),'Bank soal dihapus.');};
 
   /* ── Lesson helpers ── */
   const getLessonIcon = (type: string) => {
@@ -457,6 +484,7 @@ export function ProgramBuilderPage() {
   };
 
   const openCreateLessonModal = (moduleId: string, mode: "materi" | "kuis") => {
+    setLessonStep(0); setErrorMessage(null);
     setLessonModalMode(mode);
     setLessonForm({
       ...emptyLesson,
@@ -471,6 +499,7 @@ export function ProgramBuilderPage() {
   };
 
   const editLesson = (lesson: Lesson) => {
+    setLessonStep(0); setErrorMessage(null);
     setLessonModalMode(lesson.lesson_type === "quiz" || lesson.lesson_type === "exam" ? "kuis" : "materi");
     const externalDocs = documentFiles.filter(d => d.lesson_id === lesson.id && d.source_type === "external_link");
     const drafts = externalDocs.map((doc) => ({
@@ -495,7 +524,7 @@ export function ProgramBuilderPage() {
       title: lesson.title,
       lesson_type: lesson.lesson_type,
       order_no: lesson.order_no.toString(),
-      release_at: lesson.release_at ? lesson.release_at.substring(0, 16) : "",
+      release_at: toDateTimeLocalValue(lesson.release_at),
       visibility_status: lesson.visibility_status,
       content_body: lesson.content_body || "",
       external_url: lesson.external_url || "",
@@ -511,12 +540,12 @@ export function ProgramBuilderPage() {
   };
 
   const deleteLesson = async (lessonId: string) => {
-    if (!window.confirm("Hapus materi ini? Tindakan ini tidak bisa dibatalkan.")) return;
+    if (!await askDelete("Hapus materi ini? Tindakan ini tidak bisa dibatalkan.")) return;
     await submit(() => supabase.from("lessons").delete().eq("id", lessonId), "Materi berhasil dihapus.");
   };
 
   const deleteModule = async (moduleId: string) => {
-    if (!window.confirm("Hapus mata pelajaran ini beserta semua materinya?")) return;
+    if (!await askDelete("Hapus mata pelajaran ini beserta semua materinya?")) return;
     await submit(() => supabase.from("program_modules").delete().eq("id", moduleId), "Mata pelajaran berhasil dihapus.");
   };
 
@@ -527,75 +556,50 @@ export function ProgramBuilderPage() {
   const manageQuestions = async (lesson: Lesson) => {
     setManagingLesson(lesson);
     setIsQuestionModalOpen(true);
-    const { data } = await supabase.from("quiz_questions").select("*").eq("lesson_id", lesson.id).order("order_no");
-    setQuizQuestions(data || []);
+    setQuizQuestions([]);setErrorMessage(null);
+    const {data,error}=await supabase.from('quiz_questions').select('*').eq('lesson_id',lesson.id).order('order_no');
+    if(error)setErrorMessage('Butir soal belum dapat dimuat. Tutup dan coba lagi.');else setQuizQuestions(data||[]);
   };
 
   const manageBankItems = async (bankId: string) => {
     setManagingBankId(bankId);
     setIsManageBankItemsModalOpen(true);
-    const { data } = await supabase.from("question_bank_items").select("*").eq("question_bank_id", bankId).order("created_at");
-    setBankItems(data || []);
+    setBankItems([]);setErrorMessage(null);
+    const {data,error}=await supabase.from('question_bank_items').select('*').eq('question_bank_id',bankId).order('created_at');
+    if(error)setErrorMessage('Bank soal belum dapat dimuat. Tutup dan coba lagi.');else setBankItems(data||[]);
   };
 
   const openSelectFromBank = async () => {
-    const { data } = await supabase.from("question_bank_items").select("*, question_banks!inner(name, programs(name))");
-    setAllBankItems(data || []);
+    setAllBankItems([]);setErrorMessage(null);
+    const {data,error}=await supabase.from('question_bank_items').select('*,question_banks!inner(name,program_id,programs(name))').eq('question_banks.program_id',programId);
+    if(error)setErrorMessage('Pilihan bank soal belum dapat dimuat.');else setAllBankItems(data||[]);
     setSelectedBankItems({});
     setIsBankSelectModalOpen(true);
   };
 
-  const submitQuestion = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const isEssay = questionForm.question_type === "essay";
-    const opts = isEssay ? [] : [questionForm.optA, questionForm.optB, questionForm.optC, questionForm.optD].filter(o => o.trim() !== "");
-    let correct = questionForm.optA;
-    if (questionForm.correct_option === "B") correct = questionForm.optB;
-    if (questionForm.correct_option === "C") correct = questionForm.optC;
-    if (questionForm.correct_option === "D") correct = questionForm.optD;
-
-    if (questionTarget === "quiz" && managingLesson) {
-      await submit(async () => {
-        const payload = {
-          lesson_id: managingLesson.id,
-          question_type: questionForm.question_type,
-          question_text: questionForm.question_text,
-          options: opts,
-          correct_answer: isEssay ? null : correct,
-          explanation: questionForm.explanation || null,
-          grading_guide: isEssay ? questionForm.grading_guide || null : null,
-          points: Number(questionForm.points || 10),
-          order_no: quizQuestions.length + 1
-        };
-        const res = await supabase.from("quiz_questions").insert(payload);
-        if (!res.error) {
-          const { data } = await supabase.from("quiz_questions").select("*").eq("lesson_id", managingLesson.id).order("order_no");
-          setQuizQuestions(data || []);
-        }
-        return res;
-      }, "Soal berhasil ditambahkan ke kuis.");
-    } else if (questionTarget === "bank" && managingBankId) {
-      await submit(async () => {
-        const payload = {
-          question_bank_id: managingBankId,
-          question_type: questionForm.question_type,
-          question_text: questionForm.question_text,
-          options: opts,
-          correct_answer: isEssay ? null : correct,
-          explanation: questionForm.explanation || null,
-          grading_guide: isEssay ? questionForm.grading_guide || null : null,
-          points: Number(questionForm.points || 10),
-        };
-        const res = await supabase.from("question_bank_items").insert(payload);
-        if (!res.error) {
-          const { data } = await supabase.from("question_bank_items").select("*").eq("question_bank_id", managingBankId).order("created_at");
-          setBankItems(data || []);
-        }
-        return res;
-      }, "Soal berhasil ditambahkan ke bank.");
-    }
-    setQuestionForm(emptyQuestion);
-    setIsCreateQuestionModalOpen(false);
+  const editQuestion=(question:any,target:'quiz'|'bank')=>{
+    setQuestionTarget(target);setEditingQuestionId(question.id);setErrorMessage(null);
+    const options=(question.options??[]) as string[];
+    setQuestionForm({...emptyQuestion,question_type:question.question_type,question_text:question.question_text,optA:options[0]??'',optB:options[1]??'',optC:options[2]??'',optD:options[3]??'',optE:options[4]??'',correct_option:String.fromCharCode(65+Math.max(0,options.indexOf(question.correct_answer))),explanation:question.explanation??'',grading_guide:question.grading_guide??'',points:question.points??10});
+    setIsCreateQuestionModalOpen(true);
+  };
+  const submitQuestion = async (event:React.FormEvent) => {
+    event.preventDefault();
+    const essay=questionForm.question_type==='essay';
+    const options=[questionForm.optA,questionForm.optB,questionForm.optC,questionForm.optD,questionForm.optE].map(option=>option.trim()).filter(Boolean);
+    const correct=({A:questionForm.optA,B:questionForm.optB,C:questionForm.optC,D:questionForm.optD,E:questionForm.optE} as Record<string,string>)[questionForm.correct_option]?.trim();
+    if(!questionForm.question_text.trim()||!Number.isFinite(questionForm.points)||questionForm.points<=0){setErrorMessage('Isi pertanyaan dan bobot nilai lebih dari 0.');return;}
+    if(!essay&&(options.length<2||new Set(options).size!==options.length||!correct||!options.includes(correct))){setErrorMessage('Isi minimal dua jawaban yang berbeda dan pilih kunci yang terisi.');return;}
+    const table=questionTarget==='quiz'?'quiz_questions':'question_bank_items';
+    const targetId=questionTarget==='quiz'?managingLesson?.id:managingBankId;
+    if(!targetId)return;
+    const payload={question_type:questionForm.question_type,question_text:questionForm.question_text.trim(),options:essay?[]:options,correct_answer:essay?null:correct,explanation:questionForm.explanation.trim()||null,grading_guide:essay?questionForm.grading_guide.trim()||null:null,points:questionForm.points};
+    const saved=await submit(async()=>{
+      const result=editingQuestionId?await supabase.from(table).update(payload).eq('id',editingQuestionId):await supabase.from(table).insert({...payload,...(questionTarget==='quiz'?{lesson_id:targetId,order_no:quizQuestions.length+1}:{question_bank_id:targetId})});
+      if(!result.error){const refreshed=await supabase.from(table).select('*').eq(questionTarget==='quiz'?'lesson_id':'question_bank_id',targetId).order(questionTarget==='quiz'?'order_no':'created_at');if(!refreshed.error){if(questionTarget==='quiz')setQuizQuestions(refreshed.data||[]);else setBankItems(refreshed.data||[]);}}
+      return result;
+    },'Butir soal tersimpan.');
+    if(saved){setQuestionForm(emptyQuestion);setEditingQuestionId(null);setIsCreateQuestionModalOpen(false);}
   };
 
   const submitImportBank = async () => {
@@ -617,7 +621,7 @@ export function ProgramBuilderPage() {
       order_no: startOrder + idx + 1
     }));
 
-    await submit(async () => {
+    const saved=await submit(async () => {
       const res = await supabase.from("quiz_questions").insert(payloads);
       if (!res.error) {
         const { data } = await supabase.from("quiz_questions").select("*").eq("lesson_id", managingLesson.id).order("order_no");
@@ -625,7 +629,7 @@ export function ProgramBuilderPage() {
       }
       return res;
     }, `${itemsToImport.length} soal berhasil diimpor.`);
-    setIsBankSelectModalOpen(false);
+    if(saved)setIsBankSelectModalOpen(false);
   };
 
   /* ── URL Preview Helper ── */
@@ -654,7 +658,7 @@ export function ProgramBuilderPage() {
   };
 
   const deleteMaterialSource = async (doc: DocumentFile) => {
-    if (!window.confirm(`Hapus sumber materi "${doc.display_name}"?`)) return;
+    if (!await askDelete(`Hapus sumber materi "${doc.display_name}"?`)) return;
 
     const { error } = await supabase.from("document_files").delete().eq("id", doc.id);
     if (error) {
@@ -667,6 +671,7 @@ export function ProgramBuilderPage() {
   };
 
   const renderUrlPreview = (url: string) => {
+    if(!isHttpUrl(url))return <p className="text-xs text-red-700">Masukkan tautan http atau https yang valid.</p>;
     const lower = url.toLowerCase();
     if (lower.includes("youtube.com") || lower.includes("youtu.be")) {
       const videoId = lower.includes("youtu.be")
@@ -704,31 +709,14 @@ export function ProgramBuilderPage() {
   /* ── Lesson Modal Submit ── */
   const handleLessonSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
-    setErrorMessage(null);
-    setMessage(null);
-
-    if (lessonForm.lesson_type === "live_session" && !lessonForm.external_url.trim()) {
-      setErrorMessage("Link meeting wajib diisi untuk sesi live.");
-      setIsSubmitting(false);
-      return;
-    }
-
-    if (lessonForm.lesson_type === "live_session" && !lessonForm.release_at) {
-      setErrorMessage("Tanggal dan waktu mulai wajib diisi untuk sesi live.");
-      setIsSubmitting(false);
-      return;
-    }
-
-    if ((lessonForm.lesson_type === "quiz" || lessonForm.lesson_type === "exam") && lessonForm.passing_grade) {
-      const passingGrade = Number(lessonForm.passing_grade);
-      if (Number.isNaN(passingGrade) || passingGrade < 0 || passingGrade > 100) {
-        setErrorMessage("Passing grade harus berada di rentang 0 sampai 100.");
-        setIsSubmitting(false);
-        return;
-      }
-    }
-
+    if(isSubmitting)return;
+    const validation=validateLessonSettings(lessonForm);
+    if(validation){setErrorMessage(validation);return;}
+    const invalidFile=selectedUploadFiles.map(validateProgramUpload).find(Boolean);
+    if(invalidFile){setErrorMessage(invalidFile);return;}
+    if(materialLinks.some(link=>link.url.trim()&&!isHttpUrl(link.url.trim()))){setErrorMessage('Gunakan tautan sumber http atau https yang valid.');return;}
+    setIsSubmitting(true);setErrorMessage(null);setMessage(null);
+    const wasNew=!editingLessonId;
     const autoCode = `MTR-${Date.now().toString(36).toUpperCase()}`;
     const cleanedMaterialLinks = materialLinks
       .map((link) => ({
@@ -771,6 +759,9 @@ export function ProgramBuilderPage() {
     }
 
     const lessonIdToUse = editingLessonId || data.id;
+    // Retain the confirmed id when a later link/upload fails, so retries update this lesson.
+    setEditingLessonId(lessonIdToUse);
+    setLessonForm(current=>({...current,code:payload.code}));
 
     if (lessonForm.lesson_type === "board") {
       const { error: boardError } = await supabase.from("lesson_boards").upsert({
@@ -787,38 +778,18 @@ export function ProgramBuilderPage() {
     }
 
     if (lessonForm.lesson_type !== "live_session" && lessonModalMode !== "kuis") {
-      const { error: deleteLinkError } = await supabase
-        .from("document_files")
-        .delete()
-        .eq("lesson_id", lessonIdToUse)
-        .eq("source_type", "external_link");
-
-      if (deleteLinkError) {
-        setErrorMessage(deleteLinkError.message);
-        setIsSubmitting(false);
-        return;
+      const linksToSave=cleanedMaterialLinks.map(link=>({...link,id:/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(link.id)?link.id:crypto.randomUUID()}));
+      if(linksToSave.length){
+        setMaterialLinks(linksToSave);
+        const {error:linkError}=await supabase.from('document_files').upsert(linksToSave.map(link=>({id:link.id,lesson_id:lessonIdToUse,source_type:'external_link',storage_provider:'external',external_url:link.url,display_name:link.label||link.url,file_category:link.category,access_level:'enrolled',status:'active',uploaded_by:user?.id||null})),{onConflict:'id'});
+        if(linkError){setErrorMessage(`Materi tersimpan, tetapi tautan belum lengkap: ${linkError.message}`);setIsSubmitting(false);return;}
+        setMaterialLinks(linksToSave);
       }
-
-      if (cleanedMaterialLinks.length > 0) {
-        const { error: linkError } = await supabase.from("document_files").insert(
-          cleanedMaterialLinks.map((link) => ({
-            lesson_id: lessonIdToUse,
-            source_type: "external_link",
-            storage_provider: "external",
-            external_url: link.url,
-            display_name: link.label || link.url,
-            file_category: link.category,
-            access_level: "enrolled",
-            status: "active",
-            uploaded_by: user?.id || null,
-          })),
-        );
-
-        if (linkError) {
-          setErrorMessage(linkError.message);
-          setIsSubmitting(false);
-          return;
-        }
+      const retained=new Set(linksToSave.map(link=>link.id));
+      const removed=documentFiles.filter(doc=>doc.lesson_id===lessonIdToUse&&doc.source_type==='external_link'&&!retained.has(doc.id)).map(doc=>doc.id);
+      if(removed.length){
+        const {error:removeError}=await supabase.from('document_files').delete().eq('lesson_id',lessonIdToUse).in('id',removed);
+        if(removeError){setErrorMessage(`Materi tersimpan, tetapi tautan lama belum dihapus: ${removeError.message}`);setIsSubmitting(false);return;}
       }
     }
 
@@ -846,6 +817,7 @@ export function ProgramBuilderPage() {
           });
 
           if (fileError) throw fileError;
+          setSelectedUploadFiles(current=>current.filter(item=>item!==file));
         }
       } catch (err: any) {
         setErrorMessage(err.message ?? "Gagal mengunggah file.");
@@ -860,8 +832,9 @@ export function ProgramBuilderPage() {
     setLessonForm(emptyLesson);
     setMaterialLinks([createMaterialLinkDraft()]);
     setSelectedUploadFiles([]);
-    await loadData();
+    await loadData(true);
     setIsSubmitting(false);
+    if(wasNew&&lessonModalMode==='kuis')void manageQuestions({...payload,id:lessonIdToUse} as Lesson);
     if (shouldOpenBoardAfterSave) navigate(`${boardEditorPrefix}/board/${lessonIdToUse}`);
   };
 
@@ -878,14 +851,15 @@ export function ProgramBuilderPage() {
     );
   }
 
+  if (loadError) return <div className="page-stack"><p className="program-error" role="alert">{loadError}</p><div className="flex gap-2"><Button variant="outline" onClick={()=>navigate(directoryPath)}>Daftar program</Button><Button onClick={()=>void loadData()}>Coba lagi</Button></div></div>;
   if (!program) {
     return (
       <div className="page-stack space-y-4">
         <Alert className="border-red-200 bg-red-50 text-red-900">
-          <AlertTitle>Error</AlertTitle>
+          <AlertTitle>Program belum tersedia</AlertTitle>
           <AlertDescription>Program tidak ditemukan atau Anda tidak memiliki akses.</AlertDescription>
         </Alert>
-        <Button onClick={() => navigate(-1)} variant="outline" className="h-10 w-fit whitespace-nowrap !text-foreground">
+        <Button onClick={() => navigate(directoryPath)} variant="outline" className="h-10 w-fit whitespace-nowrap !text-foreground">
           <ArrowLeft className="h-4 w-4" />
           Kembali
         </Button>
@@ -894,52 +868,31 @@ export function ProgramBuilderPage() {
   }
 
   const statusMeta = programStatusMeta[program.status] ?? programStatusMeta.draft;
-  const programTabs: ProgramTabItem[] = [
-    { key: "info", label: "Detail Program", desc: "Profil, publikasi, dan kesiapan", icon: Info },
-    { key: "silabus", label: "Silabus", desc: "Dokumen akademik dan capaian", icon: FileText },
-    { key: "kurikulum", label: "Kurikulum", desc: "Tahapan, modul, dan materi", icon: Layers, count: programSummary.lessons },
-    ...(program.curriculum_model === "angkatan"
-      ? [{ key: "angkatan" as const, label: "Angkatan & Kelas", desc: "Batch, kelas, dan halaqah", icon: CalendarDays, count: programSummary.classes + programSummary.halaqahs }]
-      : []),
-    { key: "bank_soal", label: "Bank Soal", desc: "Repositori soal program", icon: Library, count: programSummary.questionBanks },
-    { key: "peserta", label: "Peserta", desc: "Direktori peserta program", icon: Users },
-    { key: "kelulusan", label: "Kelulusan", desc: "Kriteria, antrean, dan penetapan hasil", icon: Trophy },
-  ];
-  const activeProgramTab = programTabs.find((tab) => tab.key === activeTab) ?? programTabs[0];
-  const selectedLessonModule = modules.find((module) => module.id === lessonForm.module_id);
-  const lessonWorkflowSteps = lessonModalMode === "kuis"
-    ? [
-        "Tentukan judul dan tipe evaluasi",
-        "Atur kelulusan, durasi, percobaan, dan anti-cheat",
-        "Simpan lalu kelola butir soal dari daftar kurikulum",
-      ]
-    : [
-        "Tentukan judul dan tipe pertemuan",
-        "Tambahkan sumber belajar atau jadwal live",
-        "Lengkapi deskripsi agar peserta paham konteks materi",
-      ];
+  const currentSection=programTabSegments[activeTab] as ProgramSection;
+  const navigateSection=(target:ProgramSection)=>navigate(programSectionPath(workspaceBase,program.id,target,directoryPath));
+  const selectedLessonModule = modules.find(module=>module.id===lessonForm.module_id);
 
   return (
-    <div className="page-stack w-full max-w-none">
+    <div className="page-stack w-full max-w-none program-workspace">
       {/* ── Header ── */}
-      <nav aria-label="Jejak navigasi" className="admin-breadcrumb"><button type="button" onClick={() => navigate(programBasePath.split("/program/")[0] + "/program")}>Program</button><span aria-hidden="true">/</span><span>{program.name}</span></nav>
-      <PageHeader title={program.name} eyebrow={statusMeta.label} />
-      <SectionNav items={programTabs} value={activeTab} onChange={navigateToProgramTab} label="Bagian program" />
+      <nav aria-label="Jejak navigasi" className="admin-breadcrumb"><button type="button" onClick={() => navigate(directoryPath)}>Program</button><span aria-hidden="true">/</span><span>{program.name}</span></nav>
+      <PageHeader title={program.name} eyebrow={`${program.code} · ${statusMeta.label}`} actions={<><Button variant="outline" onClick={()=>void loadData(true)} aria-label="Muat ulang program"><RefreshCw size={16}/></Button>{canManageProgram&&<Button asChild variant="outline"><Link to={`${workspaceBase}/keuangan?tab=invoices&program=${program.id}`}>Tagihan & pembayaran</Link></Button>}{canManageProgram&&<Button asChild variant="outline"><Link to={`${workspaceBase}/pengumuman?program=${program.id}`}>Pengumuman</Link></Button>}{canManageProgram&&<Button variant="outline" onClick={()=>setIsSettingsOpen(true)}><Settings size={16}/>Pengaturan</Button>}</>}/>
+      <ProgramNavigation basePath={workspaceBase} programId={program.id} section={currentSection} scheduled={program.curriculum_model==="angkatan"||classes.length>0} returnTo={directoryPath} admin={canManageProgram}/>
       <div>
         <div className="min-w-0 space-y-6">
-          <h2 className="text-lg font-semibold">{activeProgramTab.label}</h2>
+
 
       {/* ── Toast Notifications ── */}
       {(message || errorMessage) && (
-        <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-4 fade-in duration-300 max-w-sm">
+        <div className="program-feedback" role={errorMessage?"alert":"status"}>
           {message && (
-            <div className="bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2 mb-2">
+            <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-4 py-3 rounded-lg flex items-center gap-2 mb-2">
               <CheckCircle2 className="h-5 w-5 shrink-0" />
               <span className="text-sm font-medium">{message}</span>
             </div>
           )}
           {errorMessage && (
-            <div className="bg-red-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2">
+            <div className="bg-red-50 text-red-800 border border-red-200 px-4 py-3 rounded-lg flex items-center gap-2">
               <AlertCircle className="h-5 w-5 shrink-0" />
               <span className="text-sm font-medium">{errorMessage}</span>
             </div>
@@ -952,29 +905,30 @@ export function ProgramBuilderPage() {
         <ProgramDetailSection
           program={program}
           summary={programSummary}
-          onNavigate={(target) => navigateToProgramTab(target)}
-          onProgramUpdated={setProgram}
+          onNavigate={navigateSection}
+          onSettings={canManageProgram?()=>setIsSettingsOpen(true):undefined}
         />
       )}
 
       {/* ═══════════════ TAB: ANGKATAN ═══════════════ */}
-      {activeTab === "angkatan" && program.curriculum_model === "angkatan" && (
+      {activeTab === "angkatan" && (program.curriculum_model === "angkatan"||classes.length>0) && (
         <>
           <div className="flex flex-wrap gap-3 mb-6">
-            <Button onClick={() => { setBatchForm(emptyBatch); setIsBatchModalOpen(true); }} className="shadow-sm">
+            <Button onClick={() => { setEditingBatchId(null); setBatchForm(emptyBatch); setIsBatchModalOpen(true); }} className="shadow-sm">
               <Plus className="h-4 w-4 mr-2" /> Tambah Angkatan
             </Button>
-            <Button variant="outline" onClick={() => { setClassForm(emptyClass); setIsClassModalOpen(true); }} className="shadow-sm">
+            <Button variant="outline" onClick={() => { setEditingClassId(null); setClassForm(emptyClass); setIsClassModalOpen(true); }} className="shadow-sm">
               <Plus className="h-4 w-4 mr-2" /> Tambah Kelas
             </Button>
-            <Button variant="outline" onClick={() => { setHalaqahForm(emptyHalaqah); setIsHalaqahModalOpen(true); }} className="shadow-sm">
+            <Button variant="outline" onClick={() => { setEditingHalaqahId(null); setHalaqahForm(emptyHalaqah); setIsHalaqahModalOpen(true); }} className="shadow-sm">
               <Plus className="h-4 w-4 mr-2" /> Tambah Halaqah
             </Button>
           </div>
 
+          <div className="program-cohort-grid">{batches.map(batch=><article key={batch.id} className="program-panel"><header><div><h3>{batch.name}</h3><small>{batch.code}</small></div><span className={`program-status program-status--${batch.status}`}>{({active:'Aktif',draft:'Draf',archived:'Arsip'} as Record<string,string>)[batch.status]}</span></header><p className="text-xs text-muted-foreground">{batch.start_date?new Date(batch.start_date).toLocaleDateString('id-ID'):'Mulai belum diatur'}{batch.end_date?` – ${new Date(batch.end_date).toLocaleDateString('id-ID')}`:''}</p><footer className="flex items-center justify-between mt-3"><span className="text-sm">{classes.filter(group=>group.batch_id===batch.id).length} kelas</span><Button variant="outline" size="sm" onClick={()=>{setEditingBatchId(batch.id);setBatchForm({code:batch.code,name:batch.name,start_date:batch.start_date??'',end_date:batch.end_date??'',status:batch.status});setIsBatchModalOpen(true);}}>Ubah</Button></footer></article>)}</div>
           {/* Ringkasan Kelas */}
           <Card>
-            <CardHeader><CardTitle>Ringkasan Kelas & Halaqah</CardTitle></CardHeader>
+            <CardHeader className="program-section-heading"><CardTitle>Kelas & halaqah</CardTitle>{canManageProgram&&<Button disabled={!classes.length} onClick={()=>setPlacement({})}><Users size={15}/>Tempatkan peserta</Button>}</CardHeader>
             <CardContent>
               {classes.length === 0 ? (
                 <div className="text-center p-8 text-muted-foreground border rounded-lg border-dashed">Belum ada kelas di program ini.</div>
@@ -982,15 +936,15 @@ export function ProgramBuilderPage() {
                 <div className="table-wrap">
                   <table className="data-table">
                     <thead>
-                      <tr><th>Kelas</th><th>Angkatan</th><th>Pengajar</th><th>Halaqah</th></tr>
+                      <tr><th>Kelas</th><th>Angkatan</th><th>Pengajar</th><th>Halaqah</th><th>Aksi</th></tr>
                     </thead>
                     <tbody>
                       {classes.map(cl => (
                         <tr key={cl.id}>
-                          <td className="font-medium">{cl.code} - {cl.name}</td>
+                          <td className="font-medium">{cl.name}<small className="block text-muted-foreground">{cl.code} · {cl.capacity?`${cl.capacity} tempat`:"Tanpa batas kapasitas"} · {cl.status==='active'?'Aktif':'Arsip'}</small></td>
                           <td>{batches.find(b => b.id === cl.batch_id)?.name ?? "-"}</td>
                           <td>{staff.find(s => s.id === cl.teacher_user_id)?.full_name ?? "-"}</td>
-                          <td>{classScopedHalaqahs.filter(h => h.class_id === cl.id).map(h => <Badge key={h.id} variant="secondary" className="mr-1 mb-1">{h.name}</Badge>)}</td>
+                          <td>{classScopedHalaqahs.filter(h => h.class_id === cl.id).map(h => <button key={h.id} className="program-halaqah-chip" onClick={()=>{setEditingHalaqahId(h.id);setHalaqahForm({class_id:h.class_id,code:h.code,name:h.name,capacity:h.capacity?.toString()??'',mentor_user_id:h.mentor_user_id??'',status:h.status});setIsHalaqahModalOpen(true);}}>{h.name}<Edit2 size={12}/></button>)}</td><td><div className="flex gap-2"><Button variant="outline" size="sm" onClick={()=>{setEditingClassId(cl.id);setClassForm({batch_id:cl.batch_id??'',code:cl.code,name:cl.name,capacity:cl.capacity?.toString()??'',teacher_user_id:cl.teacher_user_id??'',status:cl.status});setIsClassModalOpen(true);}}>Ubah</Button>{canManageProgram&&<Button variant="outline" size="sm" disabled={cl.status!=='active'} onClick={()=>setPlacement({classId:cl.id})}>Tempatkan</Button>}</div></td>
                         </tr>
                       ))}
                     </tbody>
@@ -1032,15 +986,12 @@ export function ProgramBuilderPage() {
                   {moduleTree.map(({ module, lessons: moduleLessons }) => (
                     <div className="rounded-xl border shadow-sm bg-card overflow-hidden" key={module.id}>
                       {/* Module Header */}
-                      <div
-                        className="bg-muted/40 p-4 border-b cursor-pointer hover:bg-muted/60 transition-colors"
-                        onClick={() => toggleModule(module.id)}
-                      >
+                      <div className="program-module-header">
                         <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-3 min-w-0">
+                          <button type="button" className="program-module-toggle" aria-expanded={Boolean(expandedModules[module.id])} onClick={()=>toggleModule(module.id)}>
                             {expandedModules[module.id] ? <ChevronDown className="h-5 w-5 text-primary shrink-0" /> : <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />}
                             <div className="min-w-0">
-                              <h3 className="font-bold text-base text-foreground flex items-center gap-2">
+                              <h3 className="font-semibold text-base text-foreground flex items-center gap-2">
                                 <BookOpen className="h-4 w-4 text-primary shrink-0" />
                                 <span className="truncate">{module.code} - {module.title}</span>
                               </h3>
@@ -1048,13 +999,13 @@ export function ProgramBuilderPage() {
                                 <p className="text-xs text-muted-foreground mt-0.5">Tahapan: <span className="text-primary font-medium">{module.levels.name}</span></p>
                               )}
                             </div>
-                          </div>
+                          </button>
                           <div className="flex items-center gap-2 shrink-0">
-                            <Badge variant="outline" className="bg-white text-xs">{moduleLessons.length} Materi</Badge>
-                            <Button variant="ghost" className="h-8 w-8 p-0 text-blue-500 hover:bg-blue-50 rounded-full" onClick={(e) => { e.stopPropagation(); setModuleForm({ parent_module_id: module.parent_module_id || "", level_id: module.level_id || "", code: module.code, title: module.title, order_no: module.order_no.toString() }); setEditingModuleId(module.id); setIsModuleModalOpen(true); }}>
+                            <Badge variant="outline" className="bg-white text-xs">{moduleLessons.length} materi</Badge>
+                            <Button variant="ghost" className="h-8 w-8 p-0 text-blue-500 hover:bg-blue-50 rounded-full" aria-label={`Ubah mata pelajaran ${module.title}`} onClick={(e) => { e.stopPropagation(); setModuleForm({ parent_module_id: module.parent_module_id || "", level_id: module.level_id || "", code: module.code, title: module.title, order_no: module.order_no.toString() }); setEditingModuleId(module.id); setIsModuleModalOpen(true); }}>
                               <Edit2 className="h-3.5 w-3.5" />
                             </Button>
-                            <Button variant="ghost" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full" onClick={(e) => { e.stopPropagation(); void deleteModule(module.id); }}>
+                            <Button variant="ghost" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full" aria-label={`Hapus mata pelajaran ${module.title}`} onClick={(e) => { e.stopPropagation(); void deleteModule(module.id); }}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </div>
@@ -1076,7 +1027,7 @@ export function ProgramBuilderPage() {
                                       <span className="text-sm font-bold text-foreground truncate block">{lesson.title}</span>
                                       <div className="flex items-center gap-2 mt-0.5">
                                         <span className="text-xs text-muted-foreground">{lesson.code}</span>
-                                        <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{lesson.lesson_type.replace("_", " ")}</span>
+                                        <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{({content:"Materi",board:"Papan belajar",assignment:"Tugas",live_session:"Sesi live",quiz:"Kuis",exam:"Ujian"} as Record<string,string>)[lesson.lesson_type]??lesson.lesson_type}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -1091,9 +1042,9 @@ export function ProgramBuilderPage() {
                                         <Presentation className="h-3 w-3 mr-1" /> Kelola Board
                                       </Button>
                                     )}
-                                    <Badge variant={lesson.visibility_status === "published" ? "default" : "secondary"} className="text-xs">{lesson.visibility_status}</Badge>
-                                    <Button variant="ghost" className="h-8 w-8 p-0 text-blue-500 hover:bg-blue-50 rounded-full" onClick={() => editLesson(lesson)}><Edit2 className="h-3.5 w-3.5" /></Button>
-                                    <Button variant="ghost" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full" onClick={() => void deleteLesson(lesson.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                                    <Badge variant={lesson.visibility_status === "published" ? "default" : "secondary"} className="text-xs">{({published:"Terbit",draft:"Draf",locked:"Terkunci",archived:"Diarsipkan"} as Record<string,string>)[lesson.visibility_status]??lesson.visibility_status}</Badge>
+                                    <Button variant="ghost" className="h-8 w-8 p-0 text-blue-500 hover:bg-blue-50 rounded-full" aria-label={`Ubah ${lesson.title}`} onClick={() => editLesson(lesson)}><Edit2 className="h-3.5 w-3.5" /></Button>
+                                    <Button variant="ghost" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full" aria-label={`Hapus ${lesson.title}`} onClick={() => void deleteLesson(lesson.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                                   </div>
                                 </div>
                               ))}
@@ -1104,7 +1055,7 @@ export function ProgramBuilderPage() {
                           <div className="grid gap-3 border-t bg-muted/20 p-3 md:grid-cols-2">
                             <Button
                               variant="outline"
-                              className="h-auto min-h-[76px] w-full justify-start gap-3 border-dashed p-4 text-left"
+                              className="h-10 w-full justify-start gap-3 border-dashed p-4 text-left"
                               onClick={() => openCreateLessonModal(module.id, "materi")}
                             >
                               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
@@ -1112,12 +1063,12 @@ export function ProgramBuilderPage() {
                               </span>
                               <span className="min-w-0">
                                 <span className="block font-semibold">Tambah Pertemuan / Materi</span>
-                                <span className="block text-xs font-normal text-muted-foreground">Video, dokumen, tugas, atau sesi live.</span>
+
                               </span>
                             </Button>
                             <Button
                               variant="outline"
-                              className="h-auto min-h-[76px] w-full justify-start gap-3 border-dashed border-orange-200 p-4 text-left text-orange-700 hover:bg-orange-50 hover:text-orange-800"
+                              className="h-10 w-full justify-start gap-3 border-dashed border-orange-200 p-4 text-left text-orange-700 hover:bg-orange-50 hover:text-orange-800"
                               onClick={() => openCreateLessonModal(module.id, "kuis")}
                             >
                               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-700">
@@ -1125,7 +1076,7 @@ export function ProgramBuilderPage() {
                               </span>
                               <span className="min-w-0">
                                 <span className="block font-semibold">Tambah Kuis / Ujian</span>
-                                <span className="block text-xs font-normal text-orange-700/75">Atur passing grade, durasi, dan bank soal.</span>
+
                               </span>
                             </Button>
                           </div>
@@ -1166,7 +1117,7 @@ export function ProgramBuilderPage() {
                       <CardHeader className="bg-muted/30 pb-4">
                         <div className="flex justify-between items-start">
                           <CardTitle className="text-lg">{bank.name}</CardTitle>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full" onClick={() => submit(() => supabase.from("question_banks").delete().eq("id", bank.id), "Bank Soal dihapus.")}><Trash2 className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full" aria-label={`Hapus bank ${bank.name}`} onClick={()=>void removeBank(bank.id)}><Trash2 className="h-4 w-4" /></Button>
                         </div>
                         <p className="text-sm text-muted-foreground line-clamp-2">{bank.description || "Tidak ada deskripsi."}</p>
                       </CardHeader>
@@ -1186,20 +1137,10 @@ export function ProgramBuilderPage() {
 
       {/* Modal Kelola Soal Kuis */}
       {isQuestionModalOpen && managingLesson && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
-            <CardHeader className="border-b flex flex-row items-center justify-between py-4 shrink-0">
-              <div>
-                <CardTitle className="text-xl">Kelola Soal: {managingLesson.title}</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">Total {quizQuestions.length} soal ditambahkan.</p>
-              </div>
-              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => { setIsQuestionModalOpen(false); setManagingLesson(null); }}>
-                <X className="h-5 w-5" />
-              </Button>
-            </CardHeader>
+        <ProgramDialog title={`Soal: ${managingLesson.title}`} busy={isSubmitting} error={errorMessage} wide={true} onClose={()=>{setIsQuestionModalOpen(false);setManagingLesson(null);setErrorMessage(null);}}>
             <CardContent className="p-6 overflow-y-auto flex-1 bg-muted/10">
               <div className="flex gap-4 mb-6">
-                <Button className="shadow-sm" onClick={() => { setQuestionTarget("quiz"); setQuestionForm(emptyQuestion); setIsCreateQuestionModalOpen(true); }}>
+                <Button className="shadow-sm" onClick={() => { setQuestionTarget("quiz"); setEditingQuestionId(null); setQuestionForm(emptyQuestion); setIsCreateQuestionModalOpen(true); }}>
                   <Plus className="h-4 w-4 mr-2" /> Buat Soal Sendiri
                 </Button>
                 <Button variant="outline" className="border-primary/20 text-primary hover:bg-primary/5" onClick={openSelectFromBank}>
@@ -1241,8 +1182,8 @@ export function ProgramBuilderPage() {
                           </div>}
                         </div>
                         <div className="flex flex-col gap-2 shrink-0">
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-blue-500 hover:bg-blue-50 rounded-full"><Edit2 className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full" onClick={() => submit(async () => { const res = await supabase.from("quiz_questions").delete().eq("id", q.id); if (!res.error && managingLesson) { const { data } = await supabase.from("quiz_questions").select("*").eq("lesson_id", managingLesson.id).order("order_no"); setQuizQuestions(data || []); } return res; }, "Soal dihapus.")}><Trash2 className="h-4 w-4" /></Button>
+                          <Button aria-label="Edit butir soal" variant="ghost" size="sm" className="h-8 w-8 p-0 text-blue-500 hover:bg-blue-50 rounded-full" onClick={()=>editQuestion(q,"quiz")}><Edit2 className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full" onClick={()=>void removeQuestion(q.id,"quiz")}><Trash2 className="h-4 w-4" /></Button>
                         </div>
                       </div>
                     </Card>
@@ -1250,29 +1191,21 @@ export function ProgramBuilderPage() {
                 </div>
               )}
             </CardContent>
-          </Card>
-        </div>
+          </ProgramDialog>
       )}
 
       {/* Modal Bank Soal */}
       {isBankModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
-            <CardHeader className="border-b flex flex-row items-center justify-between py-4">
-              <CardTitle className="text-xl">Buat Bank Soal Baru</CardTitle>
-              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsBankModalOpen(false)}>
-                <X className="h-5 w-5" />
-              </Button>
-            </CardHeader>
+        <ProgramDialog title={"Buat bank soal"} busy={isSubmitting} error={errorMessage} wide={false} onClose={()=>{setIsBankModalOpen(false);setErrorMessage(null);}}>
             <CardContent className="p-6">
-              <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void submit(() => supabase.from("question_banks").insert({ program_id: programId, name: bankForm.name.trim(), description: bankForm.description.trim() || null }), "Bank Soal berhasil dibuat."); setBankForm({ name: "", description: "" }); setIsBankModalOpen(false); }}>
+              <form className="space-y-4" onSubmit={event=>void saveStructure(event,'bank')}>
                 <div>
-                  <label className="text-sm font-semibold mb-1 block">Nama Bank Soal <span className="text-red-500">*</span></label>
-                  <Input placeholder="Contoh: Bank Soal Tauhid" required value={bankForm.name} onChange={e => setBankForm(c => ({ ...c, name: e.target.value }))} />
+                  <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-1">Nama Bank Soal <span className="text-red-500">*</span></label>
+                  <Input id="program-field-1" placeholder="Contoh: Bank Soal Tauhid" required value={bankForm.name} onChange={e => setBankForm(c => ({ ...c, name: e.target.value }))} />
                 </div>
                 <div>
-                  <label className="text-sm font-semibold mb-1 block">Deskripsi</label>
-                  <textarea className="field-control min-h-[80px]" placeholder="Keterangan..." value={bankForm.description} onChange={e => setBankForm(c => ({ ...c, description: e.target.value }))} />
+                  <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-2">Deskripsi</label>
+                  <textarea id="program-field-2" className="field-control min-h-[80px]" placeholder="Keterangan..." value={bankForm.description} onChange={e => setBankForm(c => ({ ...c, description: e.target.value }))} />
                 </div>
                 <div className="pt-4 flex justify-end gap-3">
                   <Button type="button" variant="outline" onClick={() => setIsBankModalOpen(false)}>Batal</Button>
@@ -1280,175 +1213,146 @@ export function ProgramBuilderPage() {
                 </div>
               </form>
             </CardContent>
-          </Card>
-        </div>
+          </ProgramDialog>
       )}
 
       {/* Modal Angkatan */}
       {isBatchModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
-            <CardHeader className="border-b flex flex-row items-center justify-between py-4">
-              <CardTitle className="text-xl">Buat Angkatan Baru</CardTitle>
-              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsBatchModalOpen(false)}>
-                <X className="h-5 w-5" />
-              </Button>
-            </CardHeader>
+        <ProgramDialog title={editingBatchId?"Edit angkatan":"Buat angkatan"} busy={isSubmitting} error={errorMessage} wide={false} onClose={()=>{setIsBatchModalOpen(false);setErrorMessage(null);}}>
             <CardContent className="p-6">
-              <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void submit(() => supabase.from("batches").insert({ program_id: programId, code: batchForm.code.trim(), name: batchForm.name.trim(), start_date: batchForm.start_date || null, end_date: batchForm.end_date || null, status: batchForm.status }), "Angkatan berhasil dibuat."); setBatchForm(emptyBatch); setIsBatchModalOpen(false); }}>
+              <form className="space-y-4" onSubmit={event=>void saveStructure(event,'batch')}>
                 <div>
-                  <label className="text-sm font-semibold mb-1 block">Kode Angkatan</label>
-                  <Input placeholder="Contoh: BATCH-01" required value={batchForm.code} onChange={e => setBatchForm(c => ({ ...c, code: e.target.value }))} />
+                  <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-3">Kode Angkatan</label>
+                  <Input id="program-field-3" placeholder="Contoh: BATCH-01" required value={batchForm.code} onChange={e => setBatchForm(c => ({ ...c, code: e.target.value }))} />
                 </div>
                 <div>
-                  <label className="text-sm font-semibold mb-1 block">Nama Angkatan</label>
-                  <Input placeholder="Contoh: Angkatan 1" required value={batchForm.name} onChange={e => setBatchForm(c => ({ ...c, name: e.target.value }))} />
+                  <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-4">Nama Angkatan</label>
+                  <Input id="program-field-4" placeholder="Contoh: Angkatan 1" required value={batchForm.name} onChange={e => setBatchForm(c => ({ ...c, name: e.target.value }))} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-sm font-semibold mb-1 block">Tanggal Mulai</label>
-                    <Input type="date" value={batchForm.start_date} onChange={e => setBatchForm(c => ({ ...c, start_date: e.target.value }))} />
+                    <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-5">Tanggal Mulai</label>
+                    <Input id="program-field-5" type="date" value={batchForm.start_date} onChange={e => setBatchForm(c => ({ ...c, start_date: e.target.value }))} />
                   </div>
                   <div>
-                    <label className="text-sm font-semibold mb-1 block">Tanggal Selesai</label>
-                    <Input type="date" value={batchForm.end_date} onChange={e => setBatchForm(c => ({ ...c, end_date: e.target.value }))} />
+                    <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-6">Tanggal Selesai</label>
+                    <Input id="program-field-6" type="date" value={batchForm.end_date} onChange={e => setBatchForm(c => ({ ...c, end_date: e.target.value }))} />
                   </div>
                 </div>
+                <label className="block space-y-2">Status<select className="field-control" value={batchForm.status} onChange={event=>setBatchForm(current=>({...current,status:event.target.value as AcademicBatch['status']}))}><option value="draft">Draf</option><option value="active">Aktif</option><option value="archived">Diarsipkan</option></select></label>
                 <div className="pt-4 flex justify-end gap-3">
                   <Button type="button" variant="outline" onClick={() => setIsBatchModalOpen(false)}>Batal</Button>
-                  <Button disabled={isSubmitting} type="submit">Tambahkan Angkatan</Button>
+                  <Button disabled={isSubmitting} type="submit">Simpan angkatan</Button>
                 </div>
               </form>
             </CardContent>
-          </Card>
-        </div>
+          </ProgramDialog>
       )}
 
       {/* Modal Kelas */}
       {isClassModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
-            <CardHeader className="border-b flex flex-row items-center justify-between py-4">
-              <CardTitle className="text-xl">Buat Kelas Baru</CardTitle>
-              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsClassModalOpen(false)}>
-                <X className="h-5 w-5" />
-              </Button>
-            </CardHeader>
+        <ProgramDialog title={editingClassId?"Edit kelas":"Buat kelas"} busy={isSubmitting} error={errorMessage} wide={false} onClose={()=>{setIsClassModalOpen(false);setErrorMessage(null);}}>
             <CardContent className="p-6">
-              <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void submit(() => supabase.from("classes").insert({ program_id: programId, batch_id: classForm.batch_id || null, code: classForm.code.trim(), name: classForm.name.trim(), capacity: classForm.capacity ? Number(classForm.capacity) : null, teacher_user_id: classForm.teacher_user_id || null }), "Kelas berhasil dibuat."); setClassForm(emptyClass); setIsClassModalOpen(false); }}>
+              <form className="space-y-4" onSubmit={event=>void saveStructure(event,'class')}>
                 <div>
-                  <label className="text-sm font-semibold mb-1 block">Angkatan (Opsional)</label>
-                  <select className="field-control" value={classForm.batch_id} onChange={e => setClassForm(c => ({ ...c, batch_id: e.target.value }))}>
+                  <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-7">Angkatan (Opsional)</label>
+                  <select id="program-field-7" className="field-control" value={classForm.batch_id} onChange={e => setClassForm(c => ({ ...c, batch_id: e.target.value }))}>
                     <option value="">-- Pilih Angkatan --</option>
                     {batches.map(b => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}
                   </select>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-sm font-semibold mb-1 block">Kode Kelas</label>
-                    <Input placeholder="KLS-A" required value={classForm.code} onChange={e => setClassForm(c => ({ ...c, code: e.target.value }))} />
+                    <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-8">Kode Kelas</label>
+                    <Input id="program-field-8" placeholder="KLS-A" required value={classForm.code} onChange={e => setClassForm(c => ({ ...c, code: e.target.value }))} />
                   </div>
                   <div>
-                    <label className="text-sm font-semibold mb-1 block">Kapasitas</label>
-                    <Input placeholder="Max peserta" type="number" value={classForm.capacity} onChange={e => setClassForm(c => ({ ...c, capacity: e.target.value }))} />
+                    <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-9">Kapasitas</label>
+                    <Input id="program-field-9" placeholder="Max peserta" type="number" min={1} step={1} value={classForm.capacity} onChange={e => setClassForm(c => ({ ...c, capacity: e.target.value }))} />
                   </div>
                 </div>
                 <div>
-                  <label className="text-sm font-semibold mb-1 block">Nama Kelas</label>
-                  <Input placeholder="Contoh: Kelas A" required value={classForm.name} onChange={e => setClassForm(c => ({ ...c, name: e.target.value }))} />
+                  <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-10">Nama Kelas</label>
+                  <Input id="program-field-10" placeholder="Contoh: Kelas A" required value={classForm.name} onChange={e => setClassForm(c => ({ ...c, name: e.target.value }))} />
                 </div>
                 <div>
-                  <label className="text-sm font-semibold mb-1 block">Pengajar Utama</label>
-                  <select className="field-control" value={classForm.teacher_user_id} onChange={e => setClassForm(c => ({ ...c, teacher_user_id: e.target.value }))}>
+                  <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-11">Pengajar Utama</label>
+                  <select id="program-field-11" className="field-control" value={classForm.teacher_user_id} onChange={e => setClassForm(c => ({ ...c, teacher_user_id: e.target.value }))}>
                     <option value="">-- Pilih Pengajar --</option>
                     {staff.map(s => <option key={s.id} value={s.id}>{s.full_name ?? s.email}</option>)}
                   </select>
                 </div>
+                <label className="block space-y-2">Status<select className="field-control" value={classForm.status} onChange={event=>setClassForm(current=>({...current,status:event.target.value as AcademicClass['status']}))}><option value="active">Aktif</option><option value="archived">Diarsipkan</option></select></label>
                 <div className="pt-4 flex justify-end gap-3">
                   <Button type="button" variant="outline" onClick={() => setIsClassModalOpen(false)}>Batal</Button>
-                  <Button disabled={isSubmitting} type="submit">Tambahkan Kelas</Button>
+                  <Button disabled={isSubmitting} type="submit">Simpan kelas</Button>
                 </div>
               </form>
             </CardContent>
-          </Card>
-        </div>
+          </ProgramDialog>
       )}
 
       {/* Modal Halaqah */}
       {isHalaqahModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
-            <CardHeader className="border-b flex flex-row items-center justify-between py-4">
-              <CardTitle className="text-xl">Buat Halaqah / Kelompok</CardTitle>
-              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsHalaqahModalOpen(false)}>
-                <X className="h-5 w-5" />
-              </Button>
-            </CardHeader>
+        <ProgramDialog title={editingHalaqahId?"Edit halaqah":"Buat halaqah"} busy={isSubmitting} error={errorMessage} wide={false} onClose={()=>{setIsHalaqahModalOpen(false);setErrorMessage(null);}}>
             <CardContent className="p-6">
-              <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void submit(() => supabase.from("halaqahs").insert({ class_id: halaqahForm.class_id, code: halaqahForm.code.trim(), name: halaqahForm.name.trim(), capacity: halaqahForm.capacity ? Number(halaqahForm.capacity) : null, mentor_user_id: halaqahForm.mentor_user_id || null }), "Halaqah berhasil dibuat."); setHalaqahForm(emptyHalaqah); setIsHalaqahModalOpen(false); }}>
+              <form className="space-y-4" onSubmit={event=>void saveStructure(event,'halaqah')}>
                 <div>
-                  <label className="text-sm font-semibold mb-1 block">Kelas <span className="text-red-500">*</span></label>
-                  <select className="field-control" required value={halaqahForm.class_id} onChange={e => setHalaqahForm(c => ({ ...c, class_id: e.target.value }))}>
+                  <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-12">Kelas <span className="text-red-500">*</span></label>
+                  <select id="program-field-12" className="field-control" required value={halaqahForm.class_id} onChange={e => setHalaqahForm(c => ({ ...c, class_id: e.target.value }))}>
                     <option value="">-- Pilih Kelas --</option>
                     {classes.map(cl => <option key={cl.id} value={cl.id}>{cl.code} - {cl.name}</option>)}
                   </select>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-sm font-semibold mb-1 block">Kode Halaqah</label>
-                    <Input placeholder="HLQ-01" required value={halaqahForm.code} onChange={e => setHalaqahForm(c => ({ ...c, code: e.target.value }))} />
+                    <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-13">Kode Halaqah</label>
+                    <Input id="program-field-13" placeholder="HLQ-01" required value={halaqahForm.code} onChange={e => setHalaqahForm(c => ({ ...c, code: e.target.value }))} />
                   </div>
                   <div>
-                    <label className="text-sm font-semibold mb-1 block">Kapasitas</label>
-                    <Input placeholder="Max" type="number" value={halaqahForm.capacity} onChange={e => setHalaqahForm(c => ({ ...c, capacity: e.target.value }))} />
+                    <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-14">Kapasitas</label>
+                    <Input id="program-field-14" placeholder="Max" type="number" min={1} step={1} value={halaqahForm.capacity} onChange={e => setHalaqahForm(c => ({ ...c, capacity: e.target.value }))} />
                   </div>
                 </div>
                 <div>
-                  <label className="text-sm font-semibold mb-1 block">Nama Halaqah</label>
-                  <Input placeholder="Contoh: Kelompok Abu Bakar" required value={halaqahForm.name} onChange={e => setHalaqahForm(c => ({ ...c, name: e.target.value }))} />
+                  <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-15">Nama Halaqah</label>
+                  <Input id="program-field-15" placeholder="Contoh: Kelompok Abu Bakar" required value={halaqahForm.name} onChange={e => setHalaqahForm(c => ({ ...c, name: e.target.value }))} />
                 </div>
                 <div>
-                  <label className="text-sm font-semibold mb-1 block">Mentor / Pendamping</label>
-                  <select className="field-control" value={halaqahForm.mentor_user_id} onChange={e => setHalaqahForm(c => ({ ...c, mentor_user_id: e.target.value }))}>
+                  <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-16">Mentor / Pendamping</label>
+                  <select id="program-field-16" className="field-control" value={halaqahForm.mentor_user_id} onChange={e => setHalaqahForm(c => ({ ...c, mentor_user_id: e.target.value }))}>
                     <option value="">-- Pilih Mentor --</option>
                     {staff.map(s => <option key={s.id} value={s.id}>{s.full_name ?? s.email}</option>)}
                   </select>
                 </div>
+                <label className="block space-y-2">Status<select className="field-control" value={halaqahForm.status} onChange={event=>setHalaqahForm(current=>({...current,status:event.target.value as AcademicHalaqah['status']}))}><option value="active">Aktif</option><option value="archived">Diarsipkan</option></select></label>
                 <div className="pt-4 flex justify-end gap-3">
                   <Button type="button" variant="outline" onClick={() => setIsHalaqahModalOpen(false)}>Batal</Button>
-                  <Button disabled={isSubmitting} type="submit">Tambahkan Halaqah</Button>
+                  <Button disabled={isSubmitting} type="submit">Simpan halaqah</Button>
                 </div>
               </form>
             </CardContent>
-          </Card>
-        </div>
+          </ProgramDialog>
       )}
 
       {/* Modal Tahapan */}
       {isLevelModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
-            <CardHeader className="border-b flex flex-row items-center justify-between py-4">
-              <CardTitle className="text-xl">Buat Tahapan Baru</CardTitle>
-              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsLevelModalOpen(false)}>
-                <X className="h-5 w-5" />
-              </Button>
-            </CardHeader>
+        <ProgramDialog title={"Buat tahapan"} busy={isSubmitting} error={errorMessage} wide={false} onClose={()=>{setIsLevelModalOpen(false);setErrorMessage(null);}}>
             <CardContent className="p-6">
-              <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void submit(() => supabase.from("levels").insert({ program_id: programId, parent_level_id: null, code: levelForm.code.trim(), name: levelForm.name.trim(), order_no: Number(levelForm.order_no || 0) }), "Tahapan berhasil dibuat."); setLevelForm(emptyLevel); setIsLevelModalOpen(false); }}>
+              <form className="space-y-4" onSubmit={event=>void saveStructure(event,'level')}>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-sm font-semibold mb-1 block">Kode</label>
-                    <Input placeholder="Contoh: DASAR" required value={levelForm.code} onChange={e => setLevelForm(c => ({ ...c, code: e.target.value }))} />
+                    <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-17">Kode</label>
+                    <Input id="program-field-17" placeholder="Contoh: DASAR" required value={levelForm.code} onChange={e => setLevelForm(c => ({ ...c, code: e.target.value }))} />
                   </div>
                   <div>
-                    <label className="text-sm font-semibold mb-1 block">Urutan</label>
-                    <Input placeholder="1" type="number" value={levelForm.order_no} onChange={e => setLevelForm(c => ({ ...c, order_no: e.target.value }))} />
+                    <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-18">Urutan</label>
+                    <Input id="program-field-18" placeholder="1" type="number" value={levelForm.order_no} onChange={e => setLevelForm(c => ({ ...c, order_no: e.target.value }))} />
                   </div>
                 </div>
                 <div>
-                  <label className="text-sm font-semibold mb-1 block">Nama Tahapan</label>
-                  <Input placeholder="Contoh: Level 1 Dasar" required value={levelForm.name} onChange={e => setLevelForm(c => ({ ...c, name: e.target.value }))} />
+                  <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-19">Nama Tahapan</label>
+                  <Input id="program-field-19" placeholder="Contoh: Level 1 Dasar" required value={levelForm.name} onChange={e => setLevelForm(c => ({ ...c, name: e.target.value }))} />
                 </div>
                 <div className="pt-4 flex justify-end gap-3">
                   <Button type="button" variant="outline" onClick={() => setIsLevelModalOpen(false)}>Batal</Button>
@@ -1456,52 +1360,34 @@ export function ProgramBuilderPage() {
                 </div>
               </form>
             </CardContent>
-          </Card>
-        </div>
+          </ProgramDialog>
       )}
 
       {/* Modal Mata Pelajaran */}
       {isModuleModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
-            <CardHeader className="border-b flex flex-row items-center justify-between py-4">
-              <CardTitle className="text-xl">{editingModuleId ? "Edit Mata Pelajaran" : "Buat Mata Pelajaran"}</CardTitle>
-              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => { setIsModuleModalOpen(false); setEditingModuleId(null); setModuleForm(emptyModule); }}>
-                <X className="h-5 w-5" />
-              </Button>
-            </CardHeader>
+        <ProgramDialog title={editingModuleId?"Edit mata pelajaran":"Buat mata pelajaran"} busy={isSubmitting} error={errorMessage} wide={false} onClose={()=>{setIsModuleModalOpen(false);setEditingModuleId(null);setErrorMessage(null);}}>
             <CardContent className="p-6">
-              <form className="space-y-4" onSubmit={(e) => {
-                e.preventDefault();
-                if (editingModuleId) {
-                  void submit(() => supabase.from("program_modules").update({ parent_module_id: moduleForm.parent_module_id || null, level_id: moduleForm.level_id || null, code: moduleForm.code.trim(), title: moduleForm.title.trim(), order_no: Number(moduleForm.order_no || 0) }).eq("id", editingModuleId), "Mata Pelajaran berhasil diperbarui.");
-                  setEditingModuleId(null);
-                } else {
-                  void submit(() => supabase.from("program_modules").insert({ program_id: programId, parent_module_id: moduleForm.parent_module_id || null, level_id: moduleForm.level_id || null, code: moduleForm.code.trim(), title: moduleForm.title.trim(), order_no: Number(moduleForm.order_no || 0) }), "Mata Pelajaran berhasil dibuat.");
-                }
-                setModuleForm(emptyModule);
-                setIsModuleModalOpen(false);
-              }}>
+              <form className="space-y-4" onSubmit={event=>void saveStructure(event,'module')}>
                 <div>
-                  <label className="text-sm font-semibold mb-1 block">Tahapan (Opsional)</label>
-                  <select className="field-control" value={moduleForm.level_id} onChange={e => setModuleForm(c => ({ ...c, level_id: e.target.value }))}>
+                  <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-20">Tahapan (Opsional)</label>
+                  <select id="program-field-20" className="field-control" value={moduleForm.level_id} onChange={e => setModuleForm(c => ({ ...c, level_id: e.target.value }))}>
                     <option value="">-- Pilih Tahapan --</option>
                     {levels.map(l => <option key={l.id} value={l.id}>{l.code} - {l.name}</option>)}
                   </select>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-sm font-semibold mb-1 block">Kode</label>
-                    <Input placeholder="THD-1" required value={moduleForm.code} onChange={e => setModuleForm(c => ({ ...c, code: e.target.value }))} />
+                    <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-21">Kode</label>
+                    <Input id="program-field-21" placeholder="THD-1" required value={moduleForm.code} onChange={e => setModuleForm(c => ({ ...c, code: e.target.value }))} />
                   </div>
                   <div>
-                    <label className="text-sm font-semibold mb-1 block">Urutan</label>
-                    <Input placeholder="1" type="number" value={moduleForm.order_no} onChange={e => setModuleForm(c => ({ ...c, order_no: e.target.value }))} />
+                    <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-22">Urutan</label>
+                    <Input id="program-field-22" placeholder="1" type="number" value={moduleForm.order_no} onChange={e => setModuleForm(c => ({ ...c, order_no: e.target.value }))} />
                   </div>
                 </div>
                 <div>
-                  <label className="text-sm font-semibold mb-1 block">Judul Mata Pelajaran</label>
-                  <Input placeholder="Contoh: Pengantar Tauhid" required value={moduleForm.title} onChange={e => setModuleForm(c => ({ ...c, title: e.target.value }))} />
+                  <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-23">Judul Mata Pelajaran</label>
+                  <Input id="program-field-23" placeholder="Contoh: Pengantar Tauhid" required value={moduleForm.title} onChange={e => setModuleForm(c => ({ ...c, title: e.target.value }))} />
                 </div>
                 <div className="pt-4 flex justify-end gap-3">
                   <Button type="button" variant="outline" onClick={() => { setIsModuleModalOpen(false); setEditingModuleId(null); setModuleForm(emptyModule); }}>Batal</Button>
@@ -1509,86 +1395,28 @@ export function ProgramBuilderPage() {
                 </div>
               </form>
             </CardContent>
-          </Card>
-        </div>
+          </ProgramDialog>
       )}
 
       {/* ═══════════════ UNIFIED LESSON MODAL ═══════════════ */}
       {isLessonModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
-            <CardHeader className="shrink-0 border-b bg-background/95 py-4 backdrop-blur">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <CardTitle className={`flex items-center gap-2 text-xl ${lessonModalMode === "kuis" ? "text-orange-700" : "text-primary"}`}>
-                    {lessonModalMode === "kuis" ? <FileText className="h-5 w-5" /> : <Presentation className="h-5 w-5" />}
-                    {editingLessonId
-                      ? (lessonModalMode === "kuis" ? "Edit Kuis / Ujian" : "Edit Pertemuan / Materi")
-                      : (lessonModalMode === "kuis" ? "Buat Kuis / Ujian Baru" : "Buat Pertemuan / Materi Baru")}
-                  </CardTitle>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {lessonModalMode === "kuis"
-                      ? "Siapkan evaluasi dengan pengaturan nilai, durasi, percobaan, dan alur kelola soal."
-                      : "Siapkan materi belajar, sumber konten, jadwal rilis, atau sesi live untuk peserta."}
-                  </p>
-                </div>
-              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsLessonModalOpen(false)}>
-                <X className="h-5 w-5" />
-              </Button>
-              </div>
-            </CardHeader>
+        <ProgramDialog title={editingLessonId?"Edit materi / ujian":lessonModalMode==="kuis"?"Buat kuis / ujian":"Buat materi"} busy={isSubmitting} error={errorMessage} wide={true} onClose={()=>{setIsLessonModalOpen(false);setErrorMessage(null);}}>
             <CardContent className="overflow-y-auto p-0">
-              <form className="grid lg:grid-cols-[280px_minmax(0,1fr)]" onSubmit={handleLessonSubmit}>
-                <aside className="space-y-4 border-b bg-muted/25 p-5 lg:border-b-0 lg:border-r">
-                  <div className="rounded-xl border bg-background p-4">
-                    <p className="text-xs font-medium uppercase text-muted-foreground">Mata Pelajaran</p>
-                    <p className="mt-1 text-sm font-semibold">{selectedLessonModule ? `${selectedLessonModule.code} - ${selectedLessonModule.title}` : "Belum dipilih"}</p>
-                  </div>
-                  <div className="rounded-xl border bg-background p-4">
-                    <p className="text-xs font-medium uppercase text-muted-foreground">Workflow</p>
-                    <div className="mt-3 space-y-3">
-                      {lessonWorkflowSteps.map((step, index) => (
-                        <div key={step} className="flex gap-3">
-                          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${lessonModalMode === "kuis" ? "bg-orange-100 text-orange-700" : "bg-primary/10 text-primary"}`}>
-                            {index + 1}
-                          </span>
-                          <p className="text-sm leading-snug text-muted-foreground">{step}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="rounded-xl border bg-background p-4">
-                    <p className="text-xs font-medium uppercase text-muted-foreground">Status Simpan</p>
-                    <div className="mt-3 grid gap-2 text-sm">
-                      <div className="flex items-center justify-between">
-                        <span>Judul</span>
-                        {lessonForm.title.trim() ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <AlertCircle className="h-4 w-4 text-amber-600" />}
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Rilis</span>
-                        <Badge variant="outline" className="bg-muted/40">{lessonForm.visibility_status}</Badge>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>{lessonModalMode === "kuis" ? "Evaluasi" : "Konten"}</span>
-                        {lessonModalMode === "kuis" || lessonForm.external_url.trim() || selectedUploadFiles.length > 0 || lessonForm.content_body.trim()
-                          ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                          : <AlertCircle className="h-4 w-4 text-amber-600" />}
-                      </div>
-                    </div>
-                  </div>
-                </aside>
-                <div className="space-y-5 p-5">
+              <WizardSteps steps={['Identitas',lessonModalMode==='kuis'?'Aturan ujian':'Konten','Tinjau']} current={lessonStep}/>
+              <p className="program-lesson-context">{selectedLessonModule?.title}</p>
+              <form className="space-y-5" onSubmit={event=>{event.preventDefault();if(lessonStep<2){if(lessonStep===0&&!lessonForm.title.trim()){setErrorMessage('Isi judul materi.');return;}if(lessonStep===1){const validation=validateLessonSettings(lessonForm);if(validation){setErrorMessage(validation);return;}}setErrorMessage(null);setLessonStep(lessonStep+1);}else void handleLessonSubmit(event);}}>
+                <fieldset hidden={lessonStep!==0} disabled={lessonStep!==0} className="space-y-4">
                 {/* Title */}
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold">{lessonModalMode === "kuis" ? "Judul Kuis / Ujian" : "Judul Materi"} <span className="text-red-500">*</span></label>
-                  <Input placeholder={lessonModalMode === "kuis" ? "Contoh: Ujian Akhir Semester" : "Contoh: Pengantar Tauhid - Pertemuan 1"} required value={lessonForm.title} onChange={e => setLessonForm(c => ({ ...c, title: e.target.value }))} className="h-11" />
+                  <label className="text-sm font-semibold" htmlFor="program-field-24">{lessonModalMode === "kuis" ? "Judul Kuis / Ujian" : "Judul Materi"} <span className="text-red-500">*</span></label>
+                  <Input id="program-field-24" placeholder={lessonModalMode === "kuis" ? "Contoh: Ujian Akhir Semester" : "Contoh: Pengantar Tauhid - Pertemuan 1"} required value={lessonForm.title} onChange={e => setLessonForm(c => ({ ...c, title: e.target.value }))} className="h-11" />
                 </div>
 
                 {/* Type & Status */}
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold">{lessonModalMode === "kuis" ? "Tipe Evaluasi" : "Tipe Pertemuan"}</label>
-                    <select className="field-control h-11" value={lessonForm.lesson_type} onChange={e => setLessonForm(c => ({ ...c, lesson_type: e.target.value }))}>
+                    <label className="text-sm font-semibold" htmlFor="program-field-25">{lessonModalMode === "kuis" ? "Tipe Evaluasi" : "Tipe Pertemuan"}</label>
+                    <select id="program-field-25" className="field-control h-11" value={lessonForm.lesson_type} onChange={e => setLessonForm(c => ({ ...c, lesson_type: e.target.value }))}>
                       {lessonModalMode === "materi" ? (
                         <>
                           <option value="content">📖 Materi Pembelajaran</option>
@@ -1605,10 +1433,10 @@ export function ProgramBuilderPage() {
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold">Status</label>
-                    <select className="field-control h-11" value={lessonForm.visibility_status} onChange={e => setLessonForm(c => ({ ...c, visibility_status: e.target.value as LessonVisibilityStatus }))}>
-                      <option value="draft">Draft</option>
-                      <option value="published">Diterbitkan</option>
+                    <label className="text-sm font-semibold" htmlFor="program-field-26">Status</label>
+                    <select id="program-field-26" className="field-control h-11" value={lessonForm.visibility_status} onChange={e => setLessonForm(c => ({ ...c, visibility_status: e.target.value as LessonVisibilityStatus }))}>
+                      <option value="draft">Draf</option>
+                      <option value="published" disabled={lessonModalMode==="kuis"&&!editingLessonId}>Diterbitkan</option>
                       <option value="locked">Terkunci</option>
                     </select>
                   </div>
@@ -1617,15 +1445,17 @@ export function ProgramBuilderPage() {
                 {/* Order & Release */}
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold">Urutan</label>
-                    <Input placeholder="1" type="number" value={lessonForm.order_no} onChange={e => setLessonForm(c => ({ ...c, order_no: e.target.value }))} />
+                    <label className="text-sm font-semibold" htmlFor="program-field-27">Urutan</label>
+                    <Input id="program-field-27" placeholder="1" type="number" value={lessonForm.order_no} onChange={e => setLessonForm(c => ({ ...c, order_no: e.target.value }))} />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold">Tanggal Rilis (Opsional)</label>
-                    <Input type="datetime-local" value={lessonForm.release_at} onChange={e => setLessonForm(c => ({ ...c, release_at: e.target.value }))} />
+                    <label className="text-sm font-semibold" htmlFor="program-field-28">Tanggal Rilis (Opsional)</label>
+                    <Input id="program-field-28" type="datetime-local" value={lessonForm.release_at} onChange={e => setLessonForm(c => ({ ...c, release_at: e.target.value }))} />
                   </div>
                 </div>
 
+                </fieldset>
+                <fieldset hidden={lessonStep!==1} disabled={lessonStep!==1} className="space-y-4">
                 {/* Source Material — conditional on lesson type */}
                 {lessonForm.lesson_type === "live_session" ? (
                   <div className="space-y-4 p-4 bg-rose-50/50 dark:bg-rose-950/20 rounded-xl border border-rose-200/50 dark:border-rose-800/30">
@@ -1633,8 +1463,8 @@ export function ProgramBuilderPage() {
                       <Video className="h-4 w-4" /> Pengaturan Sesi Live
                     </label>
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-muted-foreground">Link Meeting (Zoom / Google Meet) <span className="text-red-500">*</span></label>
-                      <Input
+                      <label className="text-xs font-medium text-muted-foreground" htmlFor="program-field-29">Link Meeting (Zoom / Google Meet) <span className="text-red-500">*</span></label>
+                      <Input id="program-field-29"
                         placeholder="https://zoom.us/j/123456 atau https://meet.google.com/abc-defg-hij"
                         value={lessonForm.external_url}
                         onChange={e => setLessonForm(c => ({ ...c, external_url: e.target.value }))}
@@ -1656,8 +1486,8 @@ export function ProgramBuilderPage() {
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-muted-foreground">Tanggal & Waktu Mulai <span className="text-red-500">*</span></label>
-                        <Input
+                        <label className="text-xs font-medium text-muted-foreground" htmlFor="program-field-30">Tanggal & Waktu Mulai <span className="text-red-500">*</span></label>
+                        <Input id="program-field-30"
                           type="datetime-local"
                           value={lessonForm.release_at}
                           onChange={e => setLessonForm(c => ({ ...c, release_at: e.target.value }))}
@@ -1665,8 +1495,8 @@ export function ProgramBuilderPage() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-muted-foreground">Estimasi Durasi</label>
-                        <select className="field-control h-11" value={lessonForm.duration_minutes || "60"} onChange={e => setLessonForm(c => ({ ...c, duration_minutes: e.target.value }))}>
+                        <label className="text-xs font-medium text-muted-foreground" htmlFor="program-field-31">Estimasi Durasi</label>
+                        <select id="program-field-31" className="field-control h-11" value={lessonForm.duration_minutes || "60"} onChange={e => setLessonForm(c => ({ ...c, duration_minutes: e.target.value }))}>
                           <option value="30">30 Menit</option>
                           <option value="60">1 Jam</option>
                           <option value="90">1.5 Jam</option>
@@ -1694,7 +1524,7 @@ export function ProgramBuilderPage() {
                     </label>
                     <div className="grid gap-5 md:grid-cols-3">
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-slate-700 dark:text-slate-300">Passing Grade (Nilai Kelulusan)</label>
+                        <label className="text-xs font-medium text-slate-700 dark:text-slate-300">Nilai minimum kelulusan</label>
                         <div className="relative">
                           <Input
                             type="number"
@@ -1751,8 +1581,8 @@ export function ProgramBuilderPage() {
                       <div className="absolute top-0 left-0 w-1 h-full bg-primary"></div>
                       <div className="flex items-start justify-between gap-4 mb-3">
                         <div>
-                          <label className="text-sm font-semibold text-foreground">Mode Ujian Ketat (Anti-Cheat)</label>
-                          <p className="text-xs text-muted-foreground mt-0.5">Mencegah peserta pindah tab, copy-paste, dan membatasi aplikasi lain. Direkomendasikan untuk ujian kelulusan.</p>
+                          <label className="text-sm font-semibold text-foreground">Mode ujian ketat</label>
+                          <p className="text-xs text-muted-foreground mt-0.5">Mencatat perpindahan tab dan membatasi salin-tempel di halaman ujian.</p>
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
                           <input
@@ -1777,7 +1607,7 @@ export function ProgramBuilderPage() {
                               onChange={e => setLessonForm(c => ({ ...c, max_tab_switches: e.target.value }))}
                               className="h-9 w-24 border-primary/30 focus:border-primary focus:ring-primary/20 bg-background text-sm"
                             />
-                            <span className="text-xs text-muted-foreground">Kali (Ujian otomatis batal jika melebihi)</span>
+                            <span className="text-xs text-muted-foreground">kali</span>
                           </div>
                         </div>
                       )}
@@ -1797,7 +1627,7 @@ export function ProgramBuilderPage() {
                         <ExternalLink className="h-4 w-4 text-primary" /> Sumber Materi Utama
                       </label>
                       <Badge variant="outline" className="w-fit bg-background">
-                        Bisa video/audio + PDF/dokumen sekaligus
+                        Tautan & dokumen
                       </Badge>
                     </div>
 
@@ -1813,7 +1643,7 @@ export function ProgramBuilderPage() {
                                   {getMaterialCategoryLabel(doc.file_category)} · {doc.source_type === "external_link" ? "Link eksternal" : "File private"}
                                 </p>
                               </div>
-                              <Button type="button" variant="ghost" className="h-8 w-8 shrink-0 p-0 text-red-500 hover:bg-red-50" onClick={() => void deleteMaterialSource(doc)}>
+                              <Button type="button" variant="ghost" className="h-8 w-8 shrink-0 p-0 text-red-500 hover:bg-red-50" aria-label={`Hapus sumber ${doc.display_name}`} onClick={() => void deleteMaterialSource(doc)}>
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </div>
@@ -1833,12 +1663,12 @@ export function ProgramBuilderPage() {
                         {materialLinks.map((link, index) => (
                           <div key={link.id} className="rounded-lg border bg-background p-3 space-y-3">
                             <div className="grid gap-3 md:grid-cols-[1fr_150px_40px]">
-                              <Input
+                              <Input aria-label={`Judul sumber ${index+1}`}
                                 placeholder={`Judul link ${index + 1}, misal: Video pembuka`}
                                 value={link.label}
                                 onChange={e => updateMaterialLink(link.id, { label: e.target.value })}
                               />
-                              <select
+                              <select aria-label={`Jenis sumber ${index+1}`}
                                 className="field-control h-10"
                                 value={link.category}
                                 onChange={e => updateMaterialLink(link.id, { category: e.target.value as DocumentFile["file_category"] })}
@@ -1850,12 +1680,12 @@ export function ProgramBuilderPage() {
                                 <option value="link">Link</option>
                                 <option value="other">Lainnya</option>
                               </select>
-                              <Button type="button" variant="ghost" className="h-10 w-10 p-0 text-red-500 hover:bg-red-50" onClick={() => removeMaterialLink(link.id)}>
+                              <Button type="button" variant="ghost" className="h-10 w-10 p-0 text-red-500 hover:bg-red-50" aria-label={`Hapus tautan sumber ${index+1}`} onClick={() => removeMaterialLink(link.id)}>
                                 <X className="h-4 w-4" />
                               </Button>
                             </div>
-                            <Input
-                              placeholder="Paste link YouTube, Google Drive, PDF, MP4, MP3, atau hyperlink lainnya..."
+                            <Input aria-label={`Tautan sumber ${index+1}`}
+                              placeholder="https://… (sumber belajar eksternal)"
                               value={link.url}
                               onChange={e => updateMaterialLink(link.id, { url: e.target.value })}
                             />
@@ -1870,23 +1700,23 @@ export function ProgramBuilderPage() {
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Upload file private</p>
-                        <span className="text-xs text-muted-foreground">Video, audio, PDF, dokumen</span>
+                        <span className="text-xs text-muted-foreground">PDF, dokumen & gambar</span>
                       </div>
-                      <div
-                        className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
+                      <button type="button"
+                        className="w-full border-2 border-dashed rounded-xl p-6 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
                         onClick={() => fileInputRef.current?.click()}
                       >
                         <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
                         <p className="text-sm font-medium">Klik untuk memilih satu atau banyak file</p>
                         <p className="text-xs text-muted-foreground mt-1">File baru akan ditambahkan sebagai sumber tambahan.</p>
-                      </div>
+                      </button>
                       <input
                         ref={fileInputRef}
                         type="file"
                         multiple
                         className="hidden"
-                        accept="video/*,audio/*,.pdf,.doc,.docx,.ppt,.pptx"
-                        onChange={e => setSelectedUploadFiles(Array.from(e.target.files ?? []))}
+                        accept=".pdf,.docx,.xlsx,.pptx,.jpg,.jpeg,.png,.webp"
+                        onChange={event=>{const files=Array.from(event.target.files??[]);const invalid=files.map(validateProgramUpload).find(Boolean);if(invalid)setErrorMessage(invalid);else{setSelectedUploadFiles(current=>[...new Map([...current,...files].map(file=>[file.name,file])).values()]);setErrorMessage(null);}event.target.value='';}}
                       />
                       {selectedUploadFiles.length > 0 && (
                         <div className="grid gap-2">
@@ -1929,7 +1759,7 @@ export function ProgramBuilderPage() {
                       {lessonForm.content_body?.length || 0} / 1000
                     </span>
                   </div>
-                  <textarea
+                  <textarea aria-label="Deskripsi atau instruksi"
                     className="field-control min-h-[120px] leading-relaxed resize-y"
                     placeholder={
                       lessonForm.lesson_type === "live_session"
@@ -1946,29 +1776,16 @@ export function ProgramBuilderPage() {
                   />
                 </div>
 
-                {/* Submit */}
-                <div className="sticky bottom-0 -mx-5 flex justify-end gap-3 border-t bg-background/95 px-5 pt-4 pb-1 backdrop-blur">
-                  <Button type="button" variant="outline" onClick={() => setIsLessonModalOpen(false)}>Batal</Button>
-                  <Button disabled={isSubmitting} type="submit" className={`px-8 shadow-md ${lessonModalMode === "kuis" ? "bg-orange-600 hover:bg-orange-700" : ""}`}>
-                    {isSubmitting ? "Menyimpan..." : editingLessonId ? "Simpan Perubahan" : (lessonModalMode === "kuis" ? "Simpan Kuis" : "Simpan Materi")}
-                  </Button>
-                </div>
-                </div>
+                </fieldset>
+                {lessonStep===2&&<section className="program-review"><h3>Periksa {lessonModalMode==='kuis'?'ujian':'materi'}</h3><dl><div><dt>Judul</dt><dd>{lessonForm.title}</dd></div><div><dt>Mata pelajaran</dt><dd>{selectedLessonModule?.title}</dd></div><div><dt>Status</dt><dd>{({draft:'Draf',published:'Diterbitkan',locked:'Terkunci',archived:'Diarsipkan'} as Record<string,string>)[lessonForm.visibility_status]}</dd></div><div><dt>Waktu rilis</dt><dd>{lessonForm.release_at?new Date(lessonForm.release_at).toLocaleString('id-ID'):'Langsung setelah diterbitkan'}</dd></div><div><dt>{lessonModalMode==='kuis'?'Nilai minimum':'Sumber baru'}</dt><dd>{lessonModalMode==='kuis'?(lessonForm.passing_grade||'Tidak ditentukan'):`${materialLinks.filter(link=>link.url.trim()).length} tautan · ${selectedUploadFiles.length} file`}</dd></div></dl>{lessonModalMode==='kuis'&&!editingLessonId&&<p className="program-notice">Setelah disimpan, lanjutkan menyusun butir soal.</p>}</section>}
+                <div className="wizard-footer"><Button type="button" variant="outline" onClick={()=>lessonStep?setLessonStep(lessonStep-1):setIsLessonModalOpen(false)}>{lessonStep?'Kembali':'Batal'}</Button><span className="text-xs text-muted-foreground">{lessonStep+1} dari 3</span><Button disabled={isSubmitting} type="submit">{isSubmitting?'Menyimpan…':lessonStep<2?'Lanjut':'Simpan'}</Button></div>
               </form>
             </CardContent>
-          </Card>
-        </div>
+          </ProgramDialog>
       )}
       {/* Modal Buat Soal Sendiri (Digunakan di Kuis dan Bank Soal) */}
       {isCreateQuestionModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="w-full max-w-3xl shadow-2xl animate-in zoom-in-95 duration-200">
-            <CardHeader className="border-b flex flex-row items-center justify-between py-4">
-              <CardTitle className="text-xl">Buat Soal Baru</CardTitle>
-              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsCreateQuestionModalOpen(false)}>
-                <X className="h-5 w-5" />
-              </Button>
-            </CardHeader>
+        <ProgramDialog title={"Butir soal"} busy={isSubmitting} error={errorMessage} wide={false} onClose={()=>{setIsCreateQuestionModalOpen(false);setErrorMessage(null);}}>
             <CardContent className="p-6">
               <form className="space-y-4" onSubmit={submitQuestion}>
                 <div>
@@ -1990,21 +1807,22 @@ export function ProgramBuilderPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-sm font-semibold mb-1 block">Teks Soal / Pertanyaan <span className="text-red-500">*</span></label>
-                  <textarea className="field-control min-h-[100px]" required placeholder="Masukkan pertanyaan..." value={questionForm.question_text} onChange={e => setQuestionForm(c => ({ ...c, question_text: e.target.value }))} />
+                  <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-32">Teks Soal / Pertanyaan <span className="text-red-500">*</span></label>
+                  <textarea id="program-field-32" className="field-control min-h-[100px]" required placeholder="Masukkan pertanyaan..." value={questionForm.question_text} onChange={e => setQuestionForm(c => ({ ...c, question_text: e.target.value }))} />
                 </div>
 
                 {questionForm.question_type === "multiple_choice" ? <div className="space-y-3">
                   <label className="text-sm font-semibold block">Pilihan Jawaban</label>
                   <div className="grid gap-3">
-                    {["A", "B", "C", "D"].map(opt => (
+                    {["A", "B", "C", "D", "E"].map(opt => (
                       <div key={opt} className="flex gap-3 items-center">
                         <div className="flex items-center gap-2">
                           <input type="radio" name="correct_option" value={opt} checked={questionForm.correct_option === opt} onChange={e => setQuestionForm(c => ({ ...c, correct_option: e.target.value }))} className="w-4 h-4" />
                           <span className="font-bold">{opt}.</span>
                         </div>
                         <Input
-                          required
+                          required={opt==='A'||opt==='B'}
+                          aria-label={`Pilihan ${opt}`}
                           placeholder={`Pilihan ${opt}`}
                           value={(questionForm as any)[`opt${opt}`]}
                           onChange={e => setQuestionForm(c => ({ ...c, [`opt${opt}`]: e.target.value }))}
@@ -2016,8 +1834,8 @@ export function ProgramBuilderPage() {
                   </div>
                 </div> : (
                   <div>
-                    <label className="text-sm font-semibold mb-1 block">Panduan Penilaian</label>
-                    <textarea
+                    <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-33">Panduan Penilaian</label>
+                    <textarea id="program-field-33"
                       className="field-control min-h-[110px]"
                       placeholder="Tuliskan poin-poin jawaban ideal atau rubrik singkat untuk penilai."
                       value={questionForm.grading_guide}
@@ -2028,13 +1846,13 @@ export function ProgramBuilderPage() {
                 )}
 
                 {questionForm.question_type === "multiple_choice" && <div>
-                  <label className="text-sm font-semibold mb-1 block">Penjelasan (Opsional)</label>
-                  <textarea className="field-control min-h-[80px]" placeholder="Penjelasan kenapa jawaban tersebut benar..." value={questionForm.explanation} onChange={e => setQuestionForm(c => ({ ...c, explanation: e.target.value }))} />
+                  <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-34">Penjelasan (Opsional)</label>
+                  <textarea id="program-field-34" className="field-control min-h-[80px]" placeholder="Penjelasan kenapa jawaban tersebut benar..." value={questionForm.explanation} onChange={e => setQuestionForm(c => ({ ...c, explanation: e.target.value }))} />
                 </div>}
 
                 <div>
-                  <label className="text-sm font-semibold mb-1 block">Bobot Nilai (Points)</label>
-                  <Input type="number" required value={questionForm.points} onChange={e => setQuestionForm(c => ({ ...c, points: Number(e.target.value) }))} className="w-32" />
+                  <label className="text-sm font-semibold mb-1 block" htmlFor="program-field-35">Bobot nilai</label>
+                  <Input id="program-field-35" type="number" min={1} required value={questionForm.points} onChange={e => setQuestionForm(c => ({ ...c, points: Number(e.target.value) }))} className="w-32" />
                   <p className="text-xs text-muted-foreground mt-1">Bobot standar adalah 10. Bisa diubah jika soal ini lebih sulit.</p>
                 </div>
 
@@ -2044,26 +1862,15 @@ export function ProgramBuilderPage() {
                 </div>
               </form>
             </CardContent>
-          </Card>
-        </div>
+          </ProgramDialog>
       )}
 
       {/* Modal Kelola Butir Soal (Bank Soal) */}
       {isManageBankItemsModalOpen && managingBankId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
-            <CardHeader className="border-b flex flex-row items-center justify-between py-4 shrink-0">
-              <div>
-                <CardTitle className="text-xl">Kelola Butir Soal: {questionBanks.find(b => b.id === managingBankId)?.name}</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">Total {bankItems.length} soal tersimpan di bank ini.</p>
-              </div>
-              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => { setIsManageBankItemsModalOpen(false); setManagingBankId(null); }}>
-                <X className="h-5 w-5" />
-              </Button>
-            </CardHeader>
+        <ProgramDialog title={`Bank soal: ${questionBanks.find(bank=>bank.id===managingBankId)?.name??""}`} busy={isSubmitting} error={errorMessage} wide={true} onClose={()=>{setIsManageBankItemsModalOpen(false);setManagingBankId(null);setErrorMessage(null);}}>
             <CardContent className="p-6 overflow-y-auto flex-1 bg-muted/10">
               <div className="flex gap-4 mb-6">
-                <Button className="shadow-sm" onClick={() => { setQuestionTarget("bank"); setQuestionForm(emptyQuestion); setIsCreateQuestionModalOpen(true); }}>
+                <Button className="shadow-sm" onClick={() => { setQuestionTarget("bank"); setEditingQuestionId(null); setQuestionForm(emptyQuestion); setIsCreateQuestionModalOpen(true); }}>
                   <Plus className="h-4 w-4 mr-2" /> Buat Soal Baru
                 </Button>
                 <Button variant="outline" className="shadow-sm" onClick={() => { setIsImportModalOpen(true); setImportText(""); setImportPreview([]); }}>
@@ -2102,7 +1909,7 @@ export function ProgramBuilderPage() {
                           </div>}
                         </div>
                         <div className="flex flex-col gap-2 shrink-0">
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full" onClick={() => submit(async () => { await supabase.from("question_bank_items").delete().eq("id", q.id); const { data } = await supabase.from("question_bank_items").select("*").eq("question_bank_id", managingBankId).order("created_at"); setBankItems(data || []); return {error: null}; }, "Soal dihapus.")}><Trash2 className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 rounded-full" onClick={()=>void removeQuestion(q.id,"bank")}><Trash2 className="h-4 w-4" /></Button>
                         </div>
                       </div>
                     </Card>
@@ -2110,23 +1917,12 @@ export function ProgramBuilderPage() {
                 </div>
               )}
             </CardContent>
-          </Card>
-        </div>
+          </ProgramDialog>
       )}
 
       {/* Modal Ambil dari Bank Soal (ke Kuis) */}
       {isBankSelectModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
-            <CardHeader className="border-b flex flex-row items-center justify-between py-4 shrink-0">
-              <div>
-                <CardTitle className="text-xl">Pilih Soal dari Bank</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">Pilih soal yang ingin disalin ke kuis ini.</p>
-              </div>
-              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsBankSelectModalOpen(false)}>
-                <X className="h-5 w-5" />
-              </Button>
-            </CardHeader>
+        <ProgramDialog title={"Ambil soal dari bank"} busy={isSubmitting} error={errorMessage} wide={true} onClose={()=>{setIsBankSelectModalOpen(false);setErrorMessage(null);}}>
             <CardContent className="p-6 overflow-y-auto flex-1 bg-muted/10">
               {allBankItems.length === 0 ? (
                 <div className="text-center p-12 text-muted-foreground border rounded-lg border-dashed bg-background">
@@ -2157,7 +1953,7 @@ export function ProgramBuilderPage() {
                   {allBankItems.map(q => (
                     <Card key={q.id} className={`cursor-pointer transition-colors ${selectedBankItems[q.id] ? "border-primary bg-primary/5" : ""}`} onClick={() => setSelectedBankItems(prev => ({ ...prev, [q.id]: !prev[q.id] }))}>
                       <div className="flex gap-4 p-4 items-center">
-                        <input type="checkbox" className="w-5 h-5 shrink-0" checked={!!selectedBankItems[q.id]} readOnly />
+                        <input type="checkbox" className="w-5 h-5 shrink-0" checked={!!selectedBankItems[q.id]} aria-label={`Pilih soal ${q.question_text}`} onClick={event=>event.stopPropagation()} onChange={event=>setSelectedBankItems(current=>({...current,[q.id]:event.target.checked}))} />
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm text-foreground line-clamp-2">{q.question_text}</p>
                           <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
@@ -2179,19 +1975,21 @@ export function ProgramBuilderPage() {
                 <Button disabled={isSubmitting || Object.values(selectedBankItems).filter(Boolean).length === 0} onClick={submitImportBank}>Impor ke Kuis</Button>
               </div>
             </div>
-          </Card>
-        </div>
+          </ProgramDialog>
       )}
-      {/* Removed Pendaftaran Tab */}
+      {activeTab === 'pendaftaran' && canManageProgram && <section className="space-y-4"><div className="program-section-heading"><h2>Pendaftaran program</h2><Button asChild variant="outline"><Link to={`${workspaceBase}/pendaftaran?tab=review&program=${program.id}`}>Tinjau pendaftar <ArrowRight size={14}/></Link></Button></div><ProgramAdmissionBuilder programId={program.id} onFlagsChanged={flags=>setProgram(current=>current?{...current,feature_flags:flags}:current)}/></section>}
+      {deleteRequest&&<ProgramDialog title="Konfirmasi penghapusan" busy={false} onClose={()=>{deleteRequest.resolve(false);setDeleteRequest(null);}}><p className="text-sm">{deleteRequest.message}</p><div className="wizard-footer"><Button variant="outline" onClick={()=>{deleteRequest.resolve(false);setDeleteRequest(null);}}>Batal</Button><Button className="bg-red-700 hover:bg-red-800" onClick={()=>{deleteRequest.resolve(true);setDeleteRequest(null);}}>Hapus</Button></div></ProgramDialog>}
+      {placement&&<ProgramPlacementDialog programId={program.id} batches={batches} classes={classes} halaqahs={halaqahs} enrollmentId={placement.enrollmentId} initialClassId={placement.classId} onClose={()=>setPlacement(null)} onSaved={()=>{setPlacement(null);setMessage('Penempatan peserta tersimpan.');setPlacementRevision(value=>value+1);void loadData(true);}}/>}
+      {isSettingsOpen&&<ProgramFormDialog program={program} onClose={()=>setIsSettingsOpen(false)} onSaved={updated=>{setProgram(updated);setIsSettingsOpen(false);setMessage('Pengaturan program tersimpan.');}}/>}
 
       {/* ═══════════════ TAB: INFO PESERTA ═══════════════ */}
       {activeTab === "peserta" && (
-        <ProgramParticipants programId={program.id} />
+        <ProgramParticipants programId={program.id} reloadToken={placementRevision} onPlace={canManageProgram&&(program.curriculum_model==='angkatan'||classes.length>0)?enrollmentId=>setPlacement({enrollmentId}):undefined}/>
       )}
 
       {/* ═══════════════ TAB: SILABUS ═══════════════ */}
       {activeTab === "silabus" && (
-        <ProgramSyllabusSection program={program} onProgramUpdated={setProgram} />
+        <ProgramSyllabusSection key={program.id} program={program} onProgramUpdated={setProgram} />
       )}
 
       {/* ═══════════════ TAB: KELULUSAN ═══════════════ */}
@@ -2201,17 +1999,7 @@ export function ProgramBuilderPage() {
 
       {/* Modal Import Soal (Bulk Text) */}
       {isImportModalOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <Card className="w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
-            <CardHeader className="border-b flex flex-row items-center justify-between py-4 shrink-0 bg-slate-50">
-              <div>
-                <CardTitle className="text-xl">Impor Soal Massal (Dari Teks)</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">Salin dan tempel daftar soal Anda ke kotak di bawah ini.</p>
-              </div>
-              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setIsImportModalOpen(false)}>
-                <X className="h-5 w-5" />
-              </Button>
-            </CardHeader>
+        <ProgramDialog title={"Impor soal dari teks"} busy={isSubmitting} error={errorMessage} wide={true} onClose={()=>{setIsImportModalOpen(false);setErrorMessage(null);}}>
             <CardContent className="p-0 flex-1 overflow-y-auto bg-muted/10 grid grid-cols-1 md:grid-cols-2">
               <div className="p-4 border-r bg-white flex flex-col">
                 <label className="text-sm font-semibold mb-2 block">Tipe Soal yang Diimpor</label>
@@ -2233,8 +2021,8 @@ export function ProgramBuilderPage() {
                     </Button>
                   ))}
                 </div>
-                <label className="text-sm font-semibold mb-2 block">Teks Sumber Soal</label>
-                <textarea
+                <label className="text-sm font-semibold mb-2 block" htmlFor="program-field-36">Teks Sumber Soal</label>
+                <textarea id="program-field-36"
                   className="w-full h-[400px] p-4 text-sm border rounded-xl focus:ring-primary focus:border-primary font-mono text-slate-700 bg-slate-50"
                   placeholder={importQuestionType === "essay"
                     ? "1. Jelaskan makna ikhlas dalam menuntut ilmu.\nPanduan: Menjelaskan niat karena Allah dan contoh penerapannya.\nPoin: 20"
@@ -2305,8 +2093,7 @@ export function ProgramBuilderPage() {
                 {isSubmitting ? "Menyimpan..." : `Simpan ${importPreview.filter(q => q.isValid).length} Soal`}
               </Button>
             </div>
-          </Card>
-        </div>
+          </ProgramDialog>
       )}
 
         </div>

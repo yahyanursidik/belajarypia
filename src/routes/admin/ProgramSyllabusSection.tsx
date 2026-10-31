@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   BookOpen,
@@ -16,6 +16,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Program } from "../../lib/organization";
+import { useAuthSession } from "../../app/providers/authSessionContext";
+import { Dialog } from "../../components/ui/dialog";
 import { supabase } from "../../lib/supabase";
 
 type ProgramSyllabusSectionProps = {
@@ -62,19 +64,23 @@ const quickSections = [
 ];
 
 export function ProgramSyllabusSection({ program, onProgramUpdated }: ProgramSyllabusSectionProps) {
-  const [draft, setDraft] = useState(program.syllabus ?? "");
+  const {user}=useAuthSession();
+  const draftKey=`ypia:syllabus:${user?.id??'unknown'}:${program.id}`;
+  const [draft,setDraft]=useState(()=>{try{return sessionStorage.getItem(draftKey)??program.syllabus??'';}catch{return program.syllabus??'';}});
+  const savedRef=useRef(program.syllabus??'');
+  const [confirmTemplate,setConfirmTemplate]=useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [viewMode, setViewMode] = useState<"editor" | "preview">("editor");
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
-    setDraft(program.syllabus ?? "");
-  }, [program.id, program.syllabus]);
+    if(savedRef.current!==(program.syllabus??'')){savedRef.current=program.syllabus??'';setDraft(program.syllabus??'');}
+  }, [program.syllabus]);
+  useEffect(()=>{try{if(draft===(program.syllabus??''))sessionStorage.removeItem(draftKey);else sessionStorage.setItem(draftKey,draft);}catch{/* Editing still works when browser storage is unavailable. */}},[draft,draftKey,program.syllabus]);
 
   const savedValue = program.syllabus ?? "";
   const hasChanges = draft !== savedValue;
   const words = useMemo(() => draft.trim() ? draft.trim().split(/\s+/).length : 0, [draft]);
-  const sections = useMemo(() => draft.split("\n").filter((line) => /^[A-Z][A-Z\s/&-]{3,}$/.test(line.trim())).length, [draft]);
 
   useEffect(() => {
     if (!hasChanges) return;
@@ -90,8 +96,8 @@ export function ProgramSyllabusSection({ program, onProgramUpdated }: ProgramSyl
   };
 
   const saveSyllabus = async () => {
-    if (draft.trim().length < 40) {
-      setFeedback({ type: "error", message: "Silabus terlalu singkat. Tambahkan tujuan, cakupan materi, dan evaluasi agar informatif." });
+    if (!draft.trim()) {
+      setFeedback({ type: "error", message: "Isi silabus sebelum menyimpan." });
       return;
     }
 
@@ -118,26 +124,7 @@ export function ProgramSyllabusSection({ program, onProgramUpdated }: ProgramSyl
         </Alert>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-lg border bg-background p-4">
-          <p className="text-xs font-semibold text-muted-foreground">Status Dokumen</p>
-          <div className="mt-2 flex items-center gap-2">
-            {hasChanges ? <AlertCircle className="h-5 w-5 text-amber-600" /> : <CheckCircle2 className="h-5 w-5 text-emerald-600" />}
-            <span className="font-semibold">{hasChanges ? "Draft berubah" : draft.trim() ? "Tersimpan" : "Belum tersedia"}</span>
-          </div>
-        </div>
-        <div className="rounded-lg border bg-background p-4">
-          <p className="text-xs font-semibold text-muted-foreground">Panjang Silabus</p>
-          <p className="mt-2 text-2xl font-bold">{words}</p>
-          <p className="text-xs text-muted-foreground">kata</p>
-        </div>
-        <div className="rounded-lg border bg-background p-4">
-          <p className="text-xs font-semibold text-muted-foreground">Bagian Terdeteksi</p>
-          <p className="mt-2 text-2xl font-bold">{sections}</p>
-          <p className="text-xs text-muted-foreground">judul bagian</p>
-        </div>
-      </div>
-
+      {confirmTemplate&&<Dialog title="Ganti isi dengan template?" onClose={()=>setConfirmTemplate(false)}><p className="text-sm text-muted-foreground">Isi editor akan diganti. Salin bagian yang masih diperlukan sebelum melanjutkan.</p><div className="wizard-footer"><Button variant="outline" onClick={()=>setConfirmTemplate(false)}>Batal</Button><Button onClick={()=>{setDraft(syllabusTemplate);setConfirmTemplate(false);}}>Ganti isi</Button></div></Dialog>}
       <Card>
         <CardHeader className="border-b">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -155,7 +142,7 @@ export function ProgramSyllabusSection({ program, onProgramUpdated }: ProgramSyl
               </Button>
               <Button type="button" size="sm" variant={viewMode === "preview" ? "default" : "ghost"} onClick={() => setViewMode("preview")}>
                 <Eye className="mr-2 h-4 w-4" />
-                Preview
+                Pratinjau
               </Button>
             </div>
           </div>
@@ -172,7 +159,7 @@ export function ProgramSyllabusSection({ program, onProgramUpdated }: ProgramSyl
                 </Button>
               );
             })}
-            <Button type="button" variant="outline" size="sm" onClick={() => setDraft(syllabusTemplate)}>
+            <Button type="button" variant="outline" size="sm" onClick={() => draft.trim()?setConfirmTemplate(true):setDraft(syllabusTemplate)}>
               <Sparkles className="mr-2 h-3.5 w-3.5" />
               Gunakan Template Lengkap
             </Button>
@@ -181,7 +168,7 @@ export function ProgramSyllabusSection({ program, onProgramUpdated }: ProgramSyl
           {viewMode === "editor" ? (
             <div>
               <textarea
-                className="field-control min-h-[480px] resize-y font-mono text-sm leading-6"
+                aria-label="Isi silabus" className="field-control min-h-[360px] resize-y text-sm leading-6"
                 placeholder="Tuliskan silabus atau gunakan template lengkap..."
                 value={draft}
                 onChange={(event) => {
@@ -195,7 +182,7 @@ export function ProgramSyllabusSection({ program, onProgramUpdated }: ProgramSyl
               </div>
             </div>
           ) : (
-            <article className="min-h-[480px] whitespace-pre-wrap rounded-lg border bg-muted/15 p-6 text-sm leading-7 text-foreground">
+            <article className="min-h-[360px] whitespace-pre-wrap rounded-lg border bg-muted/15 p-6 text-sm leading-7 text-foreground">
               {draft.trim() || <span className="text-muted-foreground">Silabus belum memiliki isi.</span>}
             </article>
           )}
@@ -206,8 +193,8 @@ export function ProgramSyllabusSection({ program, onProgramUpdated }: ProgramSyl
         <div className="flex items-center gap-2 text-sm">
           {hasChanges ? <AlertCircle className="h-5 w-5 text-amber-600" /> : <CheckCircle2 className="h-5 w-5 text-emerald-600" />}
           <span>
-            <span className="block font-semibold">{hasChanges ? "Perubahan belum disimpan" : "Silabus tersinkron"}</span>
-            <span className="block text-xs text-muted-foreground">{words < 100 ? "Disarankan minimal 100 kata agar cukup informatif." : "Panjang dokumen sudah memadai."}</span>
+            <span className="block font-semibold">{hasChanges ? "Perubahan belum disimpan" : "Silabus tersimpan"}</span>
+            <span className="block text-xs text-muted-foreground">{`${words} kata`}</span>
           </span>
         </div>
         <div className="flex gap-2">

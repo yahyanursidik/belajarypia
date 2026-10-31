@@ -1,181 +1,172 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { PDFDocument, rgb, StandardFonts } from "https://esm.sh/pdf-lib@1.17.1";
 import { createS3SignedUrl, requiredEnv } from "../_shared/s3.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+import {
+  certificateRenderLayout,
+  jsonResponse,
+  authenticatedClient,
+  corsHeaders,
+} from "../_shared/certificate.ts";
+type Job = {
+  id: string;
+  claim_token: string;
+  snapshot: {
+    recipient_name: string;
+    program_name: string;
+    program_id: string;
+    template_data_json: Record<string, unknown>;
+    background_object_key: string | null;
+  };
 };
-
 Deno.serve(async (request) => {
-  if (request.method === "OPTIONS") {
+  if (request.method === "OPTIONS")
     return new Response("ok", { headers: corsHeaders });
-  }
-
-  const supabaseUrl = requiredEnv("SUPABASE_URL");
-  const supabaseServiceKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
-  
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
+  if (request.method !== "POST")
+    return jsonResponse({ error: "Gunakan metode POST." }, 405);
+  const serviceKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+  const db = createClient(requiredEnv("SUPABASE_URL"), serviceKey);
+  let claimed: { data: unknown; error: unknown };
   try {
-    const { data: jobs, error: fetchError } = await supabase
-      .from("certificate_generation_jobs")
-      .select(`
-        id, attempt_count, max_attempts, enrollment_id, participant_id, issuance_batch_id,
-        enrollments ( id, program_id, batch_id, participants ( display_name ) ),
-        certificate_templates ( id, name, template_data_json, background_object_key ),
-        certificate_issuance_batches ( id, completed_jobs, failed_jobs )
-      `)
-      .eq("status", "pending")
-      .order("created_at", { ascending: true })
-      .limit(5);
-
-    if (fetchError) throw fetchError;
-    if (!jobs || jobs.length === 0) {
-      return new Response(JSON.stringify({ message: "No jobs pending" }), { headers: corsHeaders });
+    const { batch_id } = await request.json();
+    if (request.headers.get("Authorization") === `Bearer ${serviceKey}`) {
+      claimed = await db.rpc("claim_certificate_jobs", {
+        p_batch_id: batch_id || null,
+      });
+    } else {
+      const caller = await authenticatedClient(request, createClient);
+      if (!batch_id) throw new Error();
+      claimed = await caller.rpc("admin_claim_certificate_jobs", {
+        p_batch_id: batch_id,
+      });
     }
-
-    const jobIds = jobs.map((j: any) => j.id);
-    await supabase
-      .from("certificate_generation_jobs")
-      .update({ status: "processing", updated_at: new Date().toISOString() })
-      .in("id", jobIds);
-
+    if (claimed.error) throw claimed.error;
+  } catch {
+    return jsonResponse(
+      {
+        error:
+          "Akses pemrosesan antrean ditolak. Periksa sesi dan cakupan program.",
+      },
+      403,
+    );
+  }
+  try {
+    const data = claimed.data;
     const results = [];
-
-    for (const job of jobs) {
-      let status = "completed";
-      let errorMsg = null;
-      
+    for (const job of (data ?? []) as Job[]) {
       try {
-        const participantName = job.enrollments.participants.display_name;
-        const programId = job.enrollments.program_id;
-        const batchId = job.enrollments.batch_id;
-        const template = job.certificate_templates;
-        
-        const certNumber = `YPIA-SYH-${new Date().getFullYear()}-${Math.random().toString(36).substring(2,8).toUpperCase()}`;
-        const verifyCode = crypto.randomUUID().substring(0, 8).toUpperCase();
-
-        let pdfDoc;
-        if (template.background_object_key) {
-          const bgSignedUrl = await createS3SignedUrl({
+        const s = job.snapshot;
+        if (!s?.recipient_name || !s.program_name || !s.program_id)
+          throw new Error("Data penerbitan belum lengkap.");
+        const layout = certificateRenderLayout(s.template_data_json ?? {});
+        let pdf: PDFDocument;
+        if (s.background_object_key) {
+          if (
+            !/\.pdf$/i.test(s.background_object_key) ||
+            s.background_object_key.includes("://") ||
+            s.background_object_key.includes("..")
+          )
+            throw new Error("Dokumen latar harus berupa PDF.");
+          const url = await createS3SignedUrl({
             method: "GET",
-            objectKey: template.background_object_key,
+            objectKey: s.background_object_key,
           });
-          const bgRes = await fetch(bgSignedUrl);
-          if (bgRes.ok) {
-            const bgBuffer = await bgRes.arrayBuffer();
-            pdfDoc = await PDFDocument.load(bgBuffer);
-          }
+          const res = await fetch(url);
+          if (!res.ok) throw new Error("Dokumen latar belum dapat dibaca.");
+          const bytes = await res.arrayBuffer();
+          if (bytes.byteLength > 15 * 1024 * 1024)
+            throw new Error("Ukuran PDF latar maksimal 15 MB.");
+          pdf = await PDFDocument.load(bytes);
+        } else {
+          pdf = await PDFDocument.create();
+          pdf.addPage([842, 595]);
         }
-
-        if (!pdfDoc) {
-          pdfDoc = await PDFDocument.create();
-          pdfDoc.addPage([842, 595]); // A4 landscape fallback
+        const first = pdf.getPages()[0];
+        if (!first) throw new Error("PDF latar tidak memiliki halaman.");
+        const { width, height } = first.getSize();
+        if (Math.abs(width - 842) > 3 || Math.abs(height - 595) > 3)
+          throw new Error("Gunakan PDF A4 mendatar agar posisi teks sesuai.");
+        for (const [key, value] of Object.entries(layout)) {
+          const max = key.endsWith("_x")
+            ? width
+            : key.endsWith("_y")
+              ? height
+              : 72;
+          if (
+            !Number.isFinite(value) ||
+            value < (key.endsWith("size") ? 6 : 0) ||
+            value > max
+          )
+            throw new Error("Tata letak template di luar area dokumen.");
         }
-
-        const pages = pdfDoc.getPages();
-        const firstPage = pages[0];
-        
-        const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-        const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
-        
-        const templateData = template.template_data_json || {};
-        
-        firstPage.drawText(participantName, {
-          x: templateData.name_x || 300,
-          y: templateData.name_y || 300,
-          size: templateData.name_size || 36,
-          font: font,
+        const font = await pdf.embedFont(StandardFonts.HelveticaBold),
+          regular = await pdf.embedFont(StandardFonts.Helvetica);
+        const num = `YPIA-SYH-${job.id.replaceAll("-", "").toUpperCase()}`;
+        if (
+          font.widthOfTextAtSize(s.recipient_name, layout.name_size) +
+            layout.name_x >
+            width ||
+          regular.widthOfTextAtSize(`No: ${num}`, layout.no_size) +
+            layout.no_x >
+            width
+        )
+          throw new Error(
+            "Teks melebihi lebar halaman. Kecilkan ukuran teks pada template.",
+          );
+        first.drawText(s.recipient_name, {
+          x: layout.name_x,
+          y: layout.name_y,
+          size: layout.name_size,
+          font,
           color: rgb(0.2, 0.2, 0.2),
         });
-
-        firstPage.drawText(`No: ${certNumber}`, {
-          x: templateData.no_x || 300,
-          y: templateData.no_y || 250,
-          size: templateData.no_size || 14,
-          font: fontRegular,
+        first.drawText(`No: ${num}`, {
+          x: layout.no_x,
+          y: layout.no_y,
+          size: layout.no_size,
+          font: regular,
         });
-
-        const pdfBytes = await pdfDoc.save();
-
-        const objectKey = `certificates/${programId}/${batchId || "no-batch"}/${certNumber}.pdf`;
-        const putUrl = await createS3SignedUrl({
+        const bytes = await pdf.save();
+        const objectKey = `certificates/${s.program_id}/${job.id}/${job.claim_token}.pdf`;
+        const put = await createS3SignedUrl({
           method: "PUT",
           objectKey,
           contentType: "application/pdf",
-          acl: "private"
         });
-
-        const uploadRes = await fetch(putUrl, {
+        const response = await fetch(put, {
           method: "PUT",
           headers: { "Content-Type": "application/pdf" },
-          body: pdfBytes,
+          body: Uint8Array.from(bytes).buffer,
         });
-
-        if (!uploadRes.ok) {
-          throw new Error(`Upload failed: ${uploadRes.statusText}`);
-        }
-
-        const { error: certError } = await supabase
-          .from("certificates")
-          .insert({
-            enrollment_id: job.enrollment_id,
-            certificate_template_id: template.id,
-            certificate_number: certNumber,
-            recipient_name: participantName,
-            program_name: "Program Syahadah", // Ideally fetched from programs table
-            object_key: objectKey,
-            verification_code: verifyCode,
-            status: "issued"
-          });
-
-        if (certError) throw certError;
-
-      } catch (err: any) {
-        status = "failed";
-        errorMsg = err.message;
+        if (!response.ok) throw new Error("Dokumen belum berhasil disimpan.");
+        const result = await db.rpc("finish_certificate_job", {
+          p_job_id: job.id,
+          p_claim_token: job.claim_token,
+          p_error: null,
+        });
+        if (result.error) throw result.error;
+        results.push({ job_id: job.id, ...result.data });
+      } catch (problem) {
+        const known = (problem as Error).message;
+        const message =
+          /^(Data penerbitan|Dokumen latar|Ukuran PDF|PDF latar|Gunakan PDF|Tata letak|Teks melebihi|Dokumen belum)/.test(
+            known,
+          )
+            ? known
+            : "Pembuatan PDF belum berhasil. Periksa template dan konfigurasi penyimpanan.";
+        const failed = await db.rpc("finish_certificate_job", {
+          p_job_id: job.id,
+          p_claim_token: job.claim_token,
+          p_error: message,
+        });
+        results.push({
+          job_id: job.id,
+          status: failed.error ? "unconfirmed" : failed.data?.status,
+          error: message,
+        });
       }
-
-      const attemptCount = job.attempt_count + 1;
-      let finalStatus = status;
-      if (status === "failed" && attemptCount < job.max_attempts) {
-        finalStatus = "pending";
-      }
-
-      await supabase
-        .from("certificate_generation_jobs")
-        .update({
-          status: finalStatus,
-          processed_at: new Date().toISOString(),
-          error_message: errorMsg,
-          attempt_count: attemptCount,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", job.id);
-        
-      if (finalStatus === "completed" || finalStatus === "failed") {
-        const batch = job.certificate_issuance_batches;
-        await supabase
-          .from("certificate_issuance_batches")
-          .update({
-            completed_jobs: finalStatus === "completed" ? batch.completed_jobs + 1 : batch.completed_jobs,
-            failed_jobs: finalStatus === "failed" ? batch.failed_jobs + 1 : batch.failed_jobs
-          })
-          .eq("id", batch.id);
-      }
-
-      results.push({ jobId: job.id, status: finalStatus, errorMsg });
     }
-
-    return new Response(JSON.stringify({ results }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 200,
-    });
-  } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 400,
-    });
+    return jsonResponse({ results });
+  } catch {
+    return jsonResponse({ error: "Antrean belum dapat diproses." }, 500);
   }
 });

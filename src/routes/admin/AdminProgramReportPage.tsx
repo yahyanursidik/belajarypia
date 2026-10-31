@@ -1,189 +1,359 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Download, Search, CheckCircle, Clock } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import {
+  Link,
+  useLocation,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
+import Papa from "papaparse";
+import { ClipboardCheck, Download, RefreshCw, Search } from "lucide-react";
+import { PageHeader } from "../../components/admin/PageHeader";
+import { ProgramNavigation } from "../../components/programs/ProgramNavigation";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Progress } from "../../components/ui/progress";
+import {
+  programDirectoryPath,
+  programSectionPath,
+} from "../../lib/programWorkspace";
+import {
+  summarizeProgramLearning,
+  type ReportProgress,
+  type ReportLesson,
+} from "../../lib/programLearningReport";
+import type { Program } from "../../lib/organization";
 import { supabase } from "../../lib/supabase";
 
-type ReportData = {
-  enrollment_id: string;
+type EnrollmentReport = {
+  id: string;
   participant_id: string;
-  full_name: string;
-  email: string;
-  progress_percent: number;
-  average_score: number;
-  predicate: string;
-  completed_lessons: number;
-  total_lessons: number;
+  enrollment_number: string;
+  participants: {
+    display_name: string;
+    global_participant_number: string;
+    profiles: { email: string | null } | null;
+  };
 };
-
+type Row = EnrollmentReport & {
+  percent: number;
+  completed: number;
+  total: number;
+  averageScore: number | null;
+  predicate: string;
+};
 export function AdminProgramReportPage() {
   const { programId } = useParams();
-  const navigate = useNavigate();
-  
-  const [programName, setProgramName] = useState("");
-  const [reports, setReports] = useState<ReportData[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-
+  const location = useLocation();
+  const [params] = useSearchParams();
+  const basePath = location.pathname.startsWith("/system")
+    ? "/system"
+    : "/admin";
+  const returnTo = programDirectoryPath(basePath, params.get("returnTo"));
+  const [program, setProgram] = useState<Program | null>(null);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [reload, setReload] = useState(0);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
   useEffect(() => {
-    async function fetchReportData() {
-      if (!programId) return;
-      setIsLoading(true);
-
-      // Fetch Program Info & Rubric
-      const { data: prog } = await supabase.from("programs").select("name, grading_rubric").eq("id", programId).single();
-      let rubric: any[] = [];
-      if (prog) {
-        setProgramName(prog.name);
-        rubric = prog.grading_rubric || [];
-      }
-
-      // Fetch enrollments and participants
-      const { data: enrollments } = await supabase
-        .from("enrollments")
-        .select("id, participant_id, participants(profiles(full_name, email))")
-        .eq("program_id", programId);
-
-      // Fetch total lessons for this program via 2-step fetch:
-      const { data: modules } = await supabase.from("program_modules").select("id").eq("program_id", programId);
-      const moduleIds = (modules || []).map(m => m.id);
-      
-      let totalLessons = 0;
-      if (moduleIds.length > 0) {
-        const { count } = await supabase.from("lessons").select("*", { count: "exact", head: true }).in("module_id", moduleIds);
-        totalLessons = count || 0;
-      }
-
-      // Fetch progress for these enrollments
-      const enrollmentIds = (enrollments || []).map(e => e.id);
-      let progresses: any[] = [];
-      if (enrollmentIds.length > 0) {
-        const { data: pData } = await supabase.from("lesson_progresses").select("*").in("enrollment_id", enrollmentIds);
-        progresses = pData || [];
-      }
-
-      // Map data
-      const mappedData: ReportData[] = (enrollments || []).map(en => {
-        const profile = (en.participants as any)?.profiles;
-        const enProgresses = progresses.filter(p => p.enrollment_id === en.id);
-        const completed = enProgresses.filter(p => p.status === "completed");
-        const scores = enProgresses.filter(p => p.score !== null).map(p => p.score);
-        
-        const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
-        const progressPercent = totalLessons > 0 ? Math.round((completed.length / totalLessons) * 100) : 0;
-        
-        let predicate = "-";
-        if (scores.length > 0 && rubric.length > 0) {
-          const matched = rubric.find(r => avgScore >= r.min_score && avgScore <= r.max_score);
-          if (matched) predicate = matched.label;
+    const controller = new AbortController();
+    setLoading(true);
+    setError("");
+    setRows([]);
+    setProgram(null);
+    void (async () => {
+      try {
+        const [programResult, enrollmentResult, lessonResult] =
+          await Promise.all([
+            supabase
+              .from("programs")
+              .select("*,units(code,name)")
+              .eq("id", programId)
+              .abortSignal(controller.signal)
+              .single(),
+            supabase
+              .from("enrollments")
+              .select(
+                "id,participant_id,enrollment_number,participants!inner(display_name,global_participant_number,profiles(email))",
+              )
+              .eq("program_id", programId)
+              .neq("enrollment_status", "cancelled")
+              .order("created_at")
+              .abortSignal(controller.signal),
+            supabase
+              .from("lessons")
+              .select(
+                "id,lesson_type,visibility_status,program_modules!inner(program_id)",
+              )
+              .eq("program_modules.program_id", programId)
+              .abortSignal(controller.signal),
+          ]);
+        if (controller.signal.aborted) return;
+        if (programResult.error || enrollmentResult.error || lessonResult.error)
+          throw new Error("Laporan belum dapat dimuat.");
+        const enrollments = (enrollmentResult.data ??
+          []) as unknown as EnrollmentReport[];
+        const progressRows: Array<ReportProgress & { enrollment_id: string }> =
+          [];
+        // Fetch in bounded batches so large rosters do not exceed URL/row limits.
+        for (let start = 0; start < enrollments.length; start += 100) {
+          const ids = enrollments
+            .slice(start, start + 100)
+            .map((row) => row.id);
+          for (let offset = 0; ; offset += 500) {
+            const result = await supabase
+              .from("lesson_progresses")
+              .select("enrollment_id,lesson_id,status,score,updated_at")
+              .in("enrollment_id", ids)
+              .order("id")
+              .range(offset, offset + 499)
+              .abortSignal(controller.signal);
+            if (controller.signal.aborted) return;
+            if (result.error) throw result.error;
+            progressRows.push(...((result.data ?? []) as typeof progressRows));
+            if ((result.data?.length ?? 0) < 500) break;
+          }
         }
-
-        return {
-          enrollment_id: en.id,
-          participant_id: en.participant_id,
-          full_name: profile?.full_name || "Tanpa Nama",
-          email: profile?.email || "-",
-          progress_percent: progressPercent,
-          average_score: Math.round(avgScore),
-          predicate,
-          completed_lessons: completed.length,
-          total_lessons: totalLessons,
-        };
-      });
-
-      setReports(mappedData);
-      setIsLoading(false);
-    }
-
-    void fetchReportData();
-  }, [programId]);
-
-  const filteredReports = reports.filter(r => 
-    r.full_name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    r.email.toLowerCase().includes(searchQuery.toLowerCase())
+        const current = programResult.data as Program;
+        setProgram(current);
+        setRows(
+          enrollments.map((enrollment) => {
+            const metrics = summarizeProgramLearning(
+              (lessonResult.data ?? []) as ReportLesson[],
+              progressRows.filter(
+                (progress) => progress.enrollment_id === enrollment.id,
+              ),
+            );
+            return {
+              ...enrollment,
+              percent: metrics.percent,
+              completed: metrics.completed,
+              total: metrics.total,
+              averageScore: metrics.averageScore,
+              predicate:
+                metrics.averageScore === null
+                  ? "—"
+                  : (current.grading_rubric?.find(
+                      (item) =>
+                        metrics.averageScore! >= item.min_score &&
+                        metrics.averageScore! <= item.max_score,
+                    )?.label ?? "Belum dipetakan"),
+            };
+          }),
+        );
+      } catch {
+        if (!controller.signal.aborted)
+          setError("Laporan belum dapat dimuat. Coba lagi.");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    })();
+    return () => controller.abort();
+  }, [programId, reload]);
+  const filtered = rows.filter(
+    (row) =>
+      (!search ||
+        [
+          row.participants.display_name,
+          row.participants.global_participant_number,
+          row.participants.profiles?.email,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(search.toLowerCase())) &&
+      (filter === "all" ||
+        (filter === "finished"
+          ? row.total > 0 && row.percent === 100
+          : row.total === 0 || row.percent < 100)),
   );
-
+  function exportCsv() {
+    const data = [
+      [
+        "Nama",
+        "Nomor induk",
+        "Enrollment",
+        "Materi selesai",
+        "Total materi terbit",
+        "Progres (%)",
+        "Rata-rata evaluasi",
+        "Predikat",
+      ],
+      ...filtered.map((row) => [
+        row.participants.display_name,
+        row.participants.global_participant_number,
+        row.enrollment_number,
+        row.completed,
+        row.total,
+        Math.round(row.percent),
+        row.averageScore === null ? "" : row.averageScore.toFixed(1),
+        row.predicate,
+      ]),
+    ];
+    const url = URL.createObjectURL(
+      new Blob(["\uFEFF" + Papa.unparse(data, { escapeFormulae: true })], {
+        type: "text/csv;charset=utf-8",
+      }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "laporan-program.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
   return (
-    <div className="page-stack">
-      <div className="flex items-center gap-4 mb-2">
-        <Button variant="ghost" className="h-10 w-10 p-0 rounded-full shrink-0" onClick={() => navigate(-1)}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div>
-          <h2 className="text-2xl font-bold truncate">Laporan Akademik</h2>
-          <p className="text-muted-foreground">{programName}</p>
+    <div className="page-stack program-workspace">
+      <nav className="admin-breadcrumb" aria-label="Jejak navigasi">
+        <Link to={returnTo}>Program</Link>
+        <span>/</span>
+        <Link
+          to={programSectionPath(
+            basePath,
+            programId ?? "",
+            "detail-program",
+            returnTo,
+          )}
+        >
+          {program?.name ?? "Laporan"}
+        </Link>
+      </nav>
+      <PageHeader
+        title={program?.name ?? "Laporan program"}
+        eyebrow="Laporan belajar"
+        actions={
+          <>
+            <Button
+              variant="outline"
+              aria-label="Muat ulang laporan"
+              onClick={() => setReload((value) => value + 1)}
+            >
+              <RefreshCw size={16} />
+            </Button>
+            <Button
+              variant="outline"
+              disabled={loading || Boolean(error) || !filtered.length}
+              onClick={exportCsv}
+            >
+              <Download size={16} />
+              Ekspor hasil
+            </Button>
+            {program && (
+              <Button variant="outline" asChild>
+                <Link to={`${basePath}/penilaian?program=${program.id}`}>
+                  <ClipboardCheck size={16} />
+                  Antrean penilaian
+                </Link>
+              </Button>
+            )}
+          </>
+        }
+      />
+      <ProgramNavigation
+        basePath={basePath}
+        programId={programId ?? ""}
+        section="report"
+        scheduled={program?.curriculum_model === "angkatan"}
+        returnTo={returnTo}
+      />
+      {error ? (
+        <div className="program-panel">
+          <p className="program-error" role="alert">
+            {error}
+          </p>
+          <Button onClick={() => setReload((value) => value + 1)}>
+            Coba lagi
+          </Button>
         </div>
-      </div>
-
-      <Card>
-        <CardHeader className="flex flex-row justify-between items-center">
-          <CardTitle>Progres Peserta</CardTitle>
-          <div className="flex gap-2">
-            <div className="relative w-64">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Cari peserta..."
-                className="pl-9"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-              />
-            </div>
-            <Button variant="outline"><Download className="h-4 w-4 mr-2"/> Export CSV</Button>
+      ) : (
+        <section className="program-panel program-report">
+          <div className="program-section-heading">
+            <h2>Progres peserta</h2>
+            <span className="text-xs text-muted-foreground">
+              Materi terbit · evaluasi yang sudah dinilai
+            </span>
           </div>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="py-12 text-center text-muted-foreground animate-pulse">Memuat laporan...</div>
+          <div className="program-directory-toolbar">
+            <label className="program-search">
+              <Search size={16} />
+              <Input
+                aria-label="Cari peserta laporan"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Cari nama atau nomor induk…"
+              />
+            </label>
+            <select
+              aria-label="Progres peserta"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+            >
+              <option value="all">Semua progres</option>
+              <option value="finished">Materi selesai</option>
+              <option value="ongoing">Belum selesai</option>
+            </select>
+          </div>
+          {loading ? (
+            <p className="program-loading" role="status">
+              Memuat laporan…
+            </p>
           ) : (
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
                   <tr>
                     <th>Peserta</th>
-                    <th>Penyelesaian Materi</th>
-                    <th>Rata-rata Kuis</th>
+                    <th>Materi</th>
+                    <th>Rata-rata evaluasi</th>
                     <th>Predikat</th>
-                    <th>Status Progres</th>
+                    <th>Dokumen</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredReports.length === 0 ? (
-                    <tr><td colSpan={4} className="text-center py-8 text-muted-foreground">Tidak ada data.</td></tr>
+                  {!filtered.length ? (
+                    <tr>
+                      <td colSpan={5}>Tidak ada peserta sesuai filter.</td>
+                    </tr>
                   ) : (
-                    filteredReports.map(r => (
-                      <tr key={r.enrollment_id}>
+                    filtered.map((row) => (
+                      <tr key={row.id}>
                         <td>
-                          <p className="font-medium">{r.full_name}</p>
-                          <p className="text-xs text-muted-foreground">{r.email}</p>
+                          <Link
+                            className="font-semibold"
+                            to={`${basePath}/peserta/${row.participant_id}?tab=academic`}
+                          >
+                            {row.participants.display_name}
+                          </Link>
+                          <small className="block text-muted-foreground">
+                            {row.participants.global_participant_number}
+                          </small>
                         </td>
                         <td>
-                          <div className="flex items-center gap-3">
-                            <div className="flex-1 bg-muted rounded-full h-2.5 w-24 overflow-hidden">
-                              <div className="bg-primary h-2.5 rounded-full" style={{ width: `${r.progress_percent}%` }}></div>
-                            </div>
-                            <span className="text-sm font-medium">{r.progress_percent}%</span>
+                          <div className="flex items-center gap-2">
+                            <Progress
+                              value={row.percent}
+                              aria-label={`Progres ${row.participants.display_name}`}
+                              className="w-24"
+                            />
+                            <span>{Math.round(row.percent)}%</span>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-1">{r.completed_lessons} dari {r.total_lessons} Selesai</p>
+                          <small>
+                            {row.completed} / {row.total} materi terbit
+                          </small>
                         </td>
                         <td>
-                          <span className={`font-semibold ${r.average_score >= 70 ? 'text-emerald-600' : r.average_score > 0 ? 'text-orange-600' : 'text-muted-foreground'}`}>
-                            {r.average_score > 0 ? r.average_score : "-"}
-                          </span>
+                          {row.averageScore === null
+                            ? "Belum dinilai"
+                            : row.averageScore.toFixed(1)}
                         </td>
+                        <td>{row.predicate}</td>
                         <td>
-                          <span className="font-medium text-sm">{r.predicate}</span>
-                        </td>
-                        <td>
-                          {r.progress_percent === 100 ? (
-                            <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100"><CheckCircle className="h-3 w-3 mr-1"/> Selesai</Badge>
-                          ) : r.progress_percent > 0 ? (
-                            <Badge variant="secondary" className="bg-blue-50 text-blue-700 hover:bg-blue-50"><Clock className="h-3 w-3 mr-1"/> Berjalan</Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-muted-foreground">Belum Mulai</Badge>
-                          )}
+                          <Button variant="outline" size="sm" asChild>
+                            <Link
+                              to={`${basePath}/peserta/${row.participant_id}/transkrip/${row.id}`}
+                            >
+                              Transkrip
+                            </Link>
+                          </Button>
                         </td>
                       </tr>
                     ))
@@ -192,8 +362,8 @@ export function AdminProgramReportPage() {
               </table>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </section>
+      )}
     </div>
   );
 }

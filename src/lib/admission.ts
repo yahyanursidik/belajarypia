@@ -8,9 +8,11 @@ export type ApplicantStatus =
   | "accepted"
   | "rejected";
 
-export type RegistrationFieldType = "text" | "textarea" | "email" | "phone" | "select" | "file";
+export type RegistrationFieldType =
+  "text" | "textarea" | "email" | "phone" | "select" | "file";
 
-export type RegistrationWindowState = "draft" | "upcoming" | "open" | "closed" | "archived";
+export type RegistrationWindowState =
+  "draft" | "upcoming" | "open" | "closed" | "archived";
 
 export type GroupLinkSetting = {
   name: string;
@@ -81,7 +83,7 @@ export type ApplicantProgramChoice = {
 };
 
 export const applicantStatusLabels: Record<ApplicantStatus, string> = {
-  draft: "Draft",
+  draft: "Draf",
   submitted: "Masuk",
   under_review: "Direview",
   revision_requested: "Perlu Revisi",
@@ -124,7 +126,9 @@ export const defaultGroupSettings: GroupSettings = {
   general_groups: [],
 };
 
-export function normalizeGroupSettings(settings: Partial<GroupSettings> | null | undefined): GroupSettings {
+export function normalizeGroupSettings(
+  settings: Partial<GroupSettings> | null | undefined,
+): GroupSettings {
   return {
     ...defaultGroupSettings,
     ...(settings ?? {}),
@@ -134,19 +138,28 @@ export function normalizeGroupSettings(settings: Partial<GroupSettings> | null |
   };
 }
 
-function normalizeGroupLink(group: Partial<GroupLinkSetting>): GroupLinkSetting {
+function normalizeGroupLink(
+  group: Partial<GroupLinkSetting>,
+): GroupLinkSetting {
   return {
     name: group.name ?? "",
     link: group.link ?? "",
     click_limit:
-      typeof group.click_limit === "number" && Number.isFinite(group.click_limit)
+      typeof group.click_limit === "number" &&
+      Number.isFinite(group.click_limit)
         ? group.click_limit
         : 500,
   };
 }
 
 export function getRegistrationWindowState(
-  form: Pick<RegistrationForm, "status" | "registration_open_at" | "registration_close_at"> | null | undefined,
+  form:
+    | Pick<
+        RegistrationForm,
+        "status" | "registration_open_at" | "registration_close_at"
+      >
+    | null
+    | undefined,
   now = new Date(),
 ): RegistrationWindowState {
   if (!form || form.status === "draft") {
@@ -157,8 +170,12 @@ export function getRegistrationWindowState(
     return "archived";
   }
 
-  const openAt = form.registration_open_at ? new Date(form.registration_open_at) : null;
-  const closeAt = form.registration_close_at ? new Date(form.registration_close_at) : null;
+  const openAt = form.registration_open_at
+    ? new Date(form.registration_open_at)
+    : null;
+  const closeAt = form.registration_close_at
+    ? new Date(form.registration_close_at)
+    : null;
 
   if (openAt && now < openAt) {
     return "upcoming";
@@ -172,12 +189,20 @@ export function getRegistrationWindowState(
 }
 
 export function isRegistrationOpen(
-  form: Pick<RegistrationForm, "status" | "registration_open_at" | "registration_close_at"> | null | undefined,
+  form:
+    | Pick<
+        RegistrationForm,
+        "status" | "registration_open_at" | "registration_close_at"
+      >
+    | null
+    | undefined,
 ): boolean {
   return getRegistrationWindowState(form) === "open";
 }
 
-export function formatRegistrationDateTime(value: string | null | undefined): string {
+export function formatRegistrationDateTime(
+  value: string | null | undefined,
+): string {
   if (!value) {
     return "-";
   }
@@ -194,10 +219,40 @@ export function toDateTimeLocalValue(value: string | null | undefined): string {
   }
 
   const date = new Date(value);
-  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  const offsetDate = new Date(
+    date.getTime() - date.getTimezoneOffset() * 60_000,
+  );
   return offsetDate.toISOString().slice(0, 16);
 }
 
 export function fromDateTimeLocalValue(value: string): string | null {
   return value ? new Date(value).toISOString() : null;
+}
+
+// Match the submission RPC: prefer an open program form, then an open global form.
+// When neither is open, retain the configured active form so the public page can show its schedule.
+export function selectRegistrationForm<
+  T extends RegistrationForm & { created_at?: string },
+>(forms: T[], programId: string, now = new Date()): T | null {
+  const candidates = forms
+    .filter(
+      (form) =>
+        form.status === "active" &&
+        (form.program_id === programId || form.program_id === null),
+    )
+    .sort(
+      (a, b) =>
+        (b.created_at ?? "").localeCompare(a.created_at ?? "") ||
+        b.id.localeCompare(a.id),
+    );
+  const opened = candidates.filter(
+    (form) => getRegistrationWindowState(form, now) === "open",
+  );
+  return (
+    opened.find((form) => form.program_id === programId) ??
+    opened.find((form) => form.program_id === null) ??
+    candidates.find((form) => form.program_id === programId) ??
+    candidates.find((form) => form.program_id === null) ??
+    null
+  );
 }
