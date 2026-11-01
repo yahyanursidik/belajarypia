@@ -283,7 +283,7 @@ export function LearnerProgramDetailPage() {
         </p>
       )}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <LearnerProgramNav programId={programId} enrollmentId={enrollment.id} />
+        <LearnerProgramNav programId={programId} enrollmentId={enrollment.id} quran={program.feature_flags?.use_quran_engine} />
         <Button asChild variant="ghost" size="sm">
           <Link
             to={`/learner/bantuan?category=academic&contextProgram=${programId}&contextEnrollment=${enrollment.id}`}

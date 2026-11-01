@@ -8,7 +8,7 @@ export function AdminLayout({ children }: PropsWithChildren) {
 
   return (
     <ShellLayout
-      title="Ruang Admin"
+      title={primaryRole === "finance" ? "Ruang Keuangan" : primaryRole === "helpdesk" ? "Ruang Layanan" : primaryRole === "content_reviewer" ? "Ruang Reviewer" : "Ruang Admin"}
       subtitle="Workspace operasional untuk pendaftaran, program, dan peserta"
       variant="admin"
       menuItems={getNavigationForRole(primaryRole)}

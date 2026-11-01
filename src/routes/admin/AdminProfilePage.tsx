@@ -30,7 +30,7 @@ export function AdminProfilePage() {
   const { user, refresh } = useAuthSession(),
     { data, loading, error, load, update } = useMyProfile(user?.id),
     location = useLocation(),
-    base = location.pathname.startsWith("/system") ? "/system" : location.pathname.startsWith("/teacher") ? "/teacher" : "/admin";
+    base = location.pathname.startsWith("/system") ? "/system" : location.pathname.startsWith("/teacher") ? "/teacher" : location.pathname.startsWith("/learner") ? "/learner" : "/admin";
   const [dirty, setDirty] = useState(false),
     [busy, setBusy] = useState(false),
     [version, setVersion] = useState(0),
@@ -379,7 +379,7 @@ export function AdminProfilePage() {
                   </div>
                 )}
               </section>
-              <Link className="profile-help-link" to={base === "/teacher" ? "/teacher/bantuan" : base + "/helpdesk"}>
+              <Link className="profile-help-link" to={base === "/system" ? "/system/helpdesk" : base + "/bantuan"}>
                 <span>Butuh bantuan akun?</span>Buka Helpdesk
                 <ArrowRight size={15} />
               </Link>

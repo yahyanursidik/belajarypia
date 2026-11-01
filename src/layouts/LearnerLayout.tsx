@@ -9,8 +9,8 @@ export function LearnerLayout({ children }: PropsWithChildren) {
 
   return (
     <ShellLayout
-      title="Portal Peserta"
-      subtitle="Akses belajar yang sederhana, terarah, dan ramah mobile"
+      title={learnerRole === "guardian" ? "Ruang Wali" : "Ruang Belajar"}
+      subtitle={learnerRole === "guardian" ? "Perkembangan dan pendampingan anak" : "Program, tugas, dan progres belajar"}
       variant="learner"
       menuItems={getNavigationForRole(learnerRole)}
     >

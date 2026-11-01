@@ -1,3 +1,4 @@
+import { useAuthSession } from "../../app/providers/authSessionContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import Papa from "papaparse";
@@ -35,6 +36,8 @@ const tones = {
 };
 export function TeacherReviewPage() {
   const location = useLocation();
+  const { primaryRole } = useAuthSession();
+  const assignmentReview = primaryRole !== "mentor";
   const [params, setParams] = useSearchParams();
   const root = location.pathname.startsWith("/system")
     ? "/system"
@@ -216,7 +219,7 @@ export function TeacherReviewPage() {
                 <ArrowRight size={15} />
               </Button>
             )}
-            <Button asChild variant="outline"><Link to={`${root}/tugas?view=review`}>Pengumpulan tugas</Link></Button>
+            {assignmentReview && <Button asChild variant="outline"><Link to={`${root}/tugas?view=review`}>Pengumpulan tugas</Link></Button>}
           </>
         }
       />
@@ -364,7 +367,7 @@ export function TeacherReviewPage() {
         </div>
         {filters.kind === "assignment" && (
           <p className="program-notice mb-4">
-            Hasil tugas terdahulu tetap tersimpan. <Link to={`${root}/tugas?view=review`}>Buka pengumpulan dan revisi tugas →</Link>
+            Hasil tugas terdahulu tetap tersimpan. {assignmentReview && <Link to={`${root}/tugas?view=review`}>Buka pengumpulan dan revisi tugas →</Link>}
           </p>
         )}
         {error ? (

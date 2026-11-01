@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   BookOpen,
@@ -79,10 +79,12 @@ function sectionCount(value: string) {
 export function TeacherSyllabusPage() {
   const { programId } = useParams<{ programId?: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedId = programId ?? searchParams.get("program");
   const { user, primaryRole } = useAuthSession();
   const isMentor = primaryRole === "mentor";
   const [programs, setPrograms] = useState<TeacherProgram[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(programId ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(programId ?? searchParams.get("program"));
   const [draft, setDraft] = useState("");
   const [metrics, setMetrics] = useState<CurriculumMetrics>(emptyMetrics);
   const [programQuery, setProgramQuery] = useState("");
@@ -121,13 +123,13 @@ export function TeacherSyllabusPage() {
 
     const nextPrograms = (data ?? []) as TeacherProgram[];
     setPrograms(nextPrograms);
-    const requestedProgram = programId ? nextPrograms.find((program) => program.id === programId) : null;
+    const requestedProgram = requestedId ? nextPrograms.find((program) => program.id === requestedId) : null;
     const nextSelectedId = requestedProgram?.id ?? nextPrograms[0]?.id ?? null;
     setSelectedId(nextSelectedId);
     setDraft(nextPrograms.find((program) => program.id === nextSelectedId)?.syllabus ?? "");
-    if (programId && !requestedProgram) setErrorMessage("Program tidak ditemukan atau tidak termasuk dalam penugasan Anda.");
+    if (requestedId && !requestedProgram) setErrorMessage("Program tidak ditemukan atau tidak termasuk dalam penugasan Anda.");
     setIsLoading(false);
-  }, [programId, user]);
+  }, [requestedId, user]);
 
   useEffect(() => {
     void loadPrograms();

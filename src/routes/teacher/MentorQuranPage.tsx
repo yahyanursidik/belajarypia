@@ -8,6 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FullPageLoader } from "@/components/ui/full-page-loader";
 import { Input } from "@/components/ui/input";
 import { useAuthSession } from "../../app/providers/authSessionContext";
+import { teachingRows } from "../../lib/teacherData";
+import { Dialog } from "../../components/ui/dialog";
+import { QuranHistory } from "../../components/companion/QuranHistory";
+import { validDateKey, wibDateKey } from "../../lib/dateRange";
 import { supabase } from "../../lib/supabase";
 import type { MentorEnrollment, MentorHalaqah } from "./mentorTypes";
 
@@ -42,7 +46,7 @@ type SubmissionDraft = {
 };
 
 const pageSize = 10;
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => wibDateKey(new Date().toISOString());
 const emptyDraft = (): SubmissionDraft => ({ enrollmentId: "", assessmentDate: today(), submissionType: "hafalan", surahName: "", ayahFrom: "", ayahTo: "", fluencyScore: "", tajwidScore: "", memorizationScore: "", notes: "", nextTarget: "" });
 
 function nullableNumber(value: string) {
@@ -60,6 +64,7 @@ export function MentorQuranPage() {
   const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [confirm, setConfirm] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -72,6 +77,8 @@ export function MentorQuranPage() {
     }
     setIsLoading(true);
     setErrorMessage(null);
+    setSubmissions([]);
+    setEnrollments([]);
     const { data: halaqahRows, error: halaqahError } = await supabase
       .from("halaqahs")
       .select("id, code, name, capacity, status, classes(id, code, name, program_id, programs(id, code, name, syllabus))")
@@ -90,6 +97,7 @@ export function MentorQuranPage() {
       setIsLoading(false);
       return;
     }
+    if (!nextHalaqahs.some(h=>h.id===halaqahId)) {setErrorMessage("Halaqah tidak tersedia dalam penugasan Anda.");setIsLoading(false);return;}
     if (!searchParams.get("halaqah")) setSearchParams({ halaqah: halaqahId }, { replace: true });
     const { data: enrollmentRows, error: enrollmentError } = await supabase
       .from("enrollments")
@@ -98,7 +106,7 @@ export function MentorQuranPage() {
       .eq("enrollment_status", "active")
       .order("created_at");
     if (enrollmentError) {
-      setErrorMessage(`${enrollmentError.message}. Jalankan migration 202607170003_mentor_workspace.sql bila akses peserta belum tersedia.`);
+      setErrorMessage("Peserta belum dapat dimuat. Coba lagi atau hubungi pengelola.");
       setIsLoading(false);
       return;
     }
@@ -106,17 +114,14 @@ export function MentorQuranPage() {
     setEnrollments(nextEnrollments);
     const requestedEnrollment = searchParams.get("enrollment");
     setDraft((current) => ({ ...current, enrollmentId: requestedEnrollment && nextEnrollments.some((item) => item.id === requestedEnrollment) ? requestedEnrollment : current.enrollmentId && nextEnrollments.some((item) => item.id === current.enrollmentId) ? current.enrollmentId : nextEnrollments[0]?.id ?? "" }));
-    const { data: submissionRows, error: submissionError } = await supabase
-      .from("quran_submissions")
-      .select("id, halaqah_id, enrollment_id, assessment_date, submission_type, surah_name, ayah_from, ayah_to, fluency_score, tajwid_score, memorization_score, notes, next_target")
-      .eq("halaqah_id", halaqahId)
-      .order("assessment_date", { ascending: false })
-      .order("created_at", { ascending: false });
-    if (submissionError) {
-      setErrorMessage(`Riwayat setoran belum tersedia: ${submissionError.message}. Jalankan migration 202607170003_mentor_workspace.sql.`);
+    try {
+      const rows=await teachingRows<QuranSubmission>(offset=>supabase.from("quran_submissions")
+        .select("id,halaqah_id,enrollment_id,assessment_date,submission_type,surah_name,ayah_from,ayah_to,fluency_score,tajwid_score,memorization_score,notes,next_target")
+        .eq("halaqah_id",halaqahId).order("assessment_date",{ascending:false}).order("created_at",{ascending:false}).order("id").range(offset,offset+499));
+      setSubmissions(rows);
+    } catch {
+      setErrorMessage("Riwayat setoran belum dapat dimuat. Coba lagi atau hubungi pengelola.");
       setSubmissions([]);
-    } else {
-      setSubmissions((submissionRows ?? []) as QuranSubmission[]);
     }
     setIsLoading(false);
   }, [searchParams, setSearchParams, user]);
@@ -125,16 +130,18 @@ export function MentorQuranPage() {
   useEffect(() => { setPage(1); }, [historyQuery, selectedHalaqahId]);
 
   const participantByEnrollment = useMemo(() => new Map(enrollments.map((item) => [item.id, item.participants])), [enrollments]);
+  const focusedEnrollment=searchParams.get("enrollment");
   const filteredHistory = useMemo(() => {
+    const scoped=focusedEnrollment?submissions.filter(s=>s.enrollment_id===focusedEnrollment):submissions;
     const query = historyQuery.trim().toLowerCase();
-    if (!query) return submissions;
-    return submissions.filter((item) => `${item.surah_name} ${item.submission_type} ${participantByEnrollment.get(item.enrollment_id)?.display_name ?? ""}`.toLowerCase().includes(query));
-  }, [historyQuery, participantByEnrollment, submissions]);
+    if (!query) return scoped;
+    return scoped.filter((item) => `${item.surah_name} ${item.submission_type} ${participantByEnrollment.get(item.enrollment_id)?.display_name ?? ""}`.toLowerCase().includes(query));
+  }, [historyQuery, participantByEnrollment, submissions, focusedEnrollment]);
   const totalPages = Math.max(1, Math.ceil(filteredHistory.length / pageSize));
   const pagedHistory = filteredHistory.slice((page - 1) * pageSize, page * pageSize);
   const todayCount = submissions.filter((item) => item.assessment_date === today()).length;
   const scoreValues = submissions.flatMap((item) => [item.fluency_score, item.tajwid_score, item.memorization_score]).filter((score): score is number => score != null);
-  const averageScore = scoreValues.length ? Math.round(scoreValues.reduce((sum, score) => sum + score, 0) / scoreValues.length) : 0;
+  const averageScore = scoreValues.length ? Math.round(scoreValues.reduce((sum, score) => sum + score, 0) / scoreValues.length) : "—";
 
   const selectHalaqah = (id: string) => {
     setSearchParams({ halaqah: id });
@@ -142,24 +149,30 @@ export function MentorQuranPage() {
     setFeedback(null);
   };
 
-  const saveSubmission = async () => {
+  const saveSubmission = async (confirmed = false) => {
+    if (isSaving) return;
     if (!selectedHalaqahId || !draft.enrollmentId || !draft.surahName.trim()) {
       setFeedback({ type: "error", message: "Pilih peserta dan isi nama surat sebelum menyimpan." });
       return;
     }
+    if (!validDateKey(draft.assessmentDate) || draft.assessmentDate > today()) {
+      setFeedback({type:"error",message:"Pilih tanggal setoran yang valid, paling lambat hari ini."});return;
+    }
     const ayahFrom = nullableNumber(draft.ayahFrom);
     const ayahTo = nullableNumber(draft.ayahTo);
-    if (ayahFrom != null && ayahTo != null && ayahTo < ayahFrom) {
+    if ([ayahFrom,ayahTo].some(value=>value!=null&&(!Number.isSafeInteger(value)||value<1)) || (ayahFrom != null && ayahTo != null && ayahTo < ayahFrom)) {
       setFeedback({ type: "error", message: "Ayat akhir tidak boleh lebih kecil dari ayat awal." });
       return;
     }
     const scores = [draft.fluencyScore, draft.tajwidScore, draft.memorizationScore].filter(Boolean).map(Number);
-    if (scores.some((score) => score < 0 || score > 100)) {
+    if (scores.some((score) => !Number.isSafeInteger(score) || score < 0 || score > 100)) {
       setFeedback({ type: "error", message: "Nilai kelancaran, tajwid, dan hafalan harus berada pada rentang 0-100." });
       return;
     }
+    if (!confirmed) { setConfirm(true); return; }
     setIsSaving(true);
     setFeedback(null);
+    try {
     const { error } = await supabase.from("quran_submissions").insert({
       halaqah_id: selectedHalaqahId,
       enrollment_id: draft.enrollmentId,
@@ -176,28 +189,38 @@ export function MentorQuranPage() {
       recorded_by: user?.id,
     });
     if (error) {
-      setFeedback({ type: "error", message: `Setoran gagal disimpan: ${error.message}. Pastikan migration 202607170003_mentor_workspace.sql sudah dijalankan.` });
+      setFeedback({ type: "error", message: "Setoran belum dapat disimpan. Periksa koneksi dan penugasan Anda." });
     } else {
+      setConfirm(false);
       const enrollmentId = draft.enrollmentId;
       setDraft({ ...emptyDraft(), enrollmentId });
       await loadData();
       setFeedback({ type: "success", message: "Setoran berhasil dicatat dan riwayat peserta telah diperbarui." });
     }
-    setIsSaving(false);
+    } catch {
+      setFeedback({type:"error",message:"Hasil simpan belum terkonfirmasi. Muat ulang riwayat sebelum mencoba kembali."});
+    } finally { setIsSaving(false); }
   };
 
   if (isLoading) return <FullPageLoader message="Memuat setoran Qur'an..." />;
+  if (errorMessage) return <Alert><AlertTitle>Data setoran belum dapat dimuat</AlertTitle><AlertDescription>{errorMessage}</AlertDescription><Button variant="outline" onClick={()=>void loadData()}>Coba lagi</Button></Alert>;
 
   return (
     <div className="page-stack pb-12">
-      <section className="rounded-lg border bg-background p-5 sm:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><Badge variant="outline">SETORAN QUR'AN</Badge><h1 className="mt-3 text-2xl font-bold sm:text-3xl">Catatan & Progres Setoran</h1><p className="mt-2 max-w-2xl text-sm text-muted-foreground">Catat capaian bacaan atau hafalan, berikan penilaian, dan tetapkan target berikutnya.</p></div><div className="flex gap-2"><Button variant="outline" asChild><Link to="/teacher/halaqah"><Users className="h-4 w-4" /> Halaqah</Link></Button><Button variant="outline" onClick={() => void loadData()}><RefreshCw className="h-4 w-4" /> Muat Ulang</Button></div></div></section>
-      {errorMessage ? <Alert className="border-amber-200 bg-amber-50 text-amber-900"><AlertCircle className="h-4 w-4" /><AlertTitle>Perlu konfigurasi database</AlertTitle><AlertDescription>{errorMessage}</AlertDescription></Alert> : null}
+      {confirm&&<Dialog title="2 · Tinjau setoran" onClose={()=>setConfirm(false)} busy={isSaving}>
+        <p className="mb-3 font-semibold">{participantByEnrollment.get(draft.enrollmentId)?.display_name}</p>
+        <QuranHistory rows={[{id:"preview",assessment_date:draft.assessmentDate,submission_type:draft.submissionType,surah_name:draft.surahName,ayah_from:nullableNumber(draft.ayahFrom),ayah_to:nullableNumber(draft.ayahTo),fluency_score:nullableNumber(draft.fluencyScore),tajwid_score:nullableNumber(draft.tajwidScore),memorization_score:nullableNumber(draft.memorizationScore),notes:draft.notes,next_target:draft.nextTarget}]}/>
+        {feedback?.type==='error'&&<p role="alert" className="mt-3 text-sm text-red-700">{feedback.message}</p>}
+        <div className="mt-4 flex justify-end gap-2"><Button variant="outline" disabled={isSaving} onClick={()=>setConfirm(false)}>Kembali</Button><Button disabled={isSaving} onClick={()=>void saveSubmission(true)}>{isSaving?"Menyimpan…":"Simpan setoran"}</Button></div>
+      </Dialog>}
+      <section className="rounded-lg border bg-background p-5 sm:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><Badge variant="outline">SETORAN QUR'AN</Badge><h1 className="mt-3 text-2xl font-bold sm:text-3xl">Catatan & Progres Setoran</h1><p className="mt-2 max-w-2xl text-sm text-muted-foreground">Catat capaian bacaan atau hafalan, berikan penilaian, dan tetapkan target berikutnya.</p></div><div className="flex gap-2"><Button variant="outline" asChild><Link to={`/teacher/halaqah?halaqah=${selectedHalaqahId}`}><Users className="h-4 w-4" /> Halaqah</Link></Button><Button variant="outline" onClick={() => void loadData()}><RefreshCw className="h-4 w-4" /> Muat Ulang</Button></div></div></section>
+      {errorMessage ? <Alert className="border-amber-200 bg-amber-50 text-amber-900"><AlertCircle className="h-4 w-4" /><AlertTitle>Data belum dapat dimuat</AlertTitle><AlertDescription>{errorMessage}</AlertDescription></Alert> : null}
       {feedback ? <Alert className={feedback.type === "error" ? "border-red-200 bg-red-50 text-red-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}>{feedback.type === "error" ? <AlertCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}<AlertDescription>{feedback.message}</AlertDescription></Alert> : null}
       {!halaqahs.length ? <Alert><Users className="h-4 w-4" /><AlertTitle>Belum ada halaqah aktif</AlertTitle><AlertDescription>Form setoran akan aktif setelah Anda mendapatkan penugasan halaqah.</AlertDescription></Alert> : <>
         <div className="flex gap-2 overflow-x-auto pb-1">{halaqahs.map((item) => <button key={item.id} type="button" onClick={() => selectHalaqah(item.id)} className={`min-w-[210px] rounded-md border p-3 text-left ${selectedHalaqahId === item.id ? "border-primary bg-primary/5" : "bg-background hover:bg-muted/40"}`}><span className="text-xs font-semibold text-primary">{item.code}</span><p className="mt-2 font-semibold">{item.name}</p><p className="mt-1 text-xs text-muted-foreground">{item.classes?.programs?.name}</p></button>)}</div>
-        <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-md border p-4"><p className="text-xs text-muted-foreground">Peserta Binaan</p><p className="mt-1 text-2xl font-bold">{enrollments.length}</p></div><div className="rounded-md border p-4"><p className="text-xs text-muted-foreground">Setoran Hari Ini</p><p className="mt-1 text-2xl font-bold">{todayCount}</p></div><div className="rounded-md border p-4"><p className="text-xs text-muted-foreground">Rata-rata Penilaian</p><p className="mt-1 text-2xl font-bold">{averageScore || "-"}</p></div></div>
-        <Card><CardHeader className="border-b"><CardTitle className="flex items-center gap-2 text-lg"><BookOpen className="h-5 w-5 text-primary" /> Form Setoran</CardTitle></CardHeader><CardContent className="space-y-4 p-5"><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><label className="text-sm font-medium">Peserta<select className="field-control mt-2" value={draft.enrollmentId} onChange={(event) => setDraft((current) => ({ ...current, enrollmentId: event.target.value }))}><option value="">Pilih peserta</option>{enrollments.map((item) => <option key={item.id} value={item.id}>{item.participants?.display_name} · {item.participants?.global_participant_number}</option>)}</select></label><label className="text-sm font-medium">Tanggal<Input type="date" className="mt-2" value={draft.assessmentDate} onChange={(event) => setDraft((current) => ({ ...current, assessmentDate: event.target.value }))} /></label><label className="text-sm font-medium">Jenis Setoran<select className="field-control mt-2" value={draft.submissionType} onChange={(event) => setDraft((current) => ({ ...current, submissionType: event.target.value as QuranSubmission["submission_type"] }))}><option value="hafalan">Hafalan Baru</option><option value="murajaah">Murajaah</option><option value="tilawah">Tilawah</option></select></label><label className="text-sm font-medium">Surat<Input className="mt-2" value={draft.surahName} onChange={(event) => setDraft((current) => ({ ...current, surahName: event.target.value }))} placeholder="Contoh: Al-Baqarah" /></label></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"><label className="text-sm font-medium">Ayat Awal<Input type="number" min="1" className="mt-2" value={draft.ayahFrom} onChange={(event) => setDraft((current) => ({ ...current, ayahFrom: event.target.value }))} /></label><label className="text-sm font-medium">Ayat Akhir<Input type="number" min="1" className="mt-2" value={draft.ayahTo} onChange={(event) => setDraft((current) => ({ ...current, ayahTo: event.target.value }))} /></label><label className="text-sm font-medium">Kelancaran<Input type="number" min="0" max="100" className="mt-2" value={draft.fluencyScore} onChange={(event) => setDraft((current) => ({ ...current, fluencyScore: event.target.value }))} placeholder="0-100" /></label><label className="text-sm font-medium">Tajwid<Input type="number" min="0" max="100" className="mt-2" value={draft.tajwidScore} onChange={(event) => setDraft((current) => ({ ...current, tajwidScore: event.target.value }))} placeholder="0-100" /></label><label className="text-sm font-medium">Hafalan<Input type="number" min="0" max="100" className="mt-2" value={draft.memorizationScore} onChange={(event) => setDraft((current) => ({ ...current, memorizationScore: event.target.value }))} placeholder="0-100" /></label></div><div className="grid gap-4 md:grid-cols-2"><label className="text-sm font-medium">Catatan<textarea className="field-control mt-2 min-h-24 resize-y" value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Catatan koreksi dan apresiasi..." /></label><label className="text-sm font-medium">Target Berikutnya<textarea className="field-control mt-2 min-h-24 resize-y" value={draft.nextTarget} onChange={(event) => setDraft((current) => ({ ...current, nextTarget: event.target.value }))} placeholder="Surat, ayat, atau fokus perbaikan berikutnya..." /></label></div><div className="flex justify-end"><Button onClick={() => void saveSubmission()} disabled={isSaving || !enrollments.length}><Save className="h-4 w-4" /> {isSaving ? "Menyimpan..." : "Simpan Setoran"}</Button></div></CardContent></Card>
-        <Card><CardHeader className="border-b"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><CardTitle className="text-lg">Riwayat Setoran</CardTitle><p className="mt-1 text-sm text-muted-foreground">Riwayat terbaru seluruh peserta pada halaqah terpilih.</p></div><div className="relative sm:w-72"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Cari peserta atau surat..." className="pl-9" /></div></div></CardHeader><CardContent className="p-0">{!pagedHistory.length ? <div className="p-10 text-center text-sm text-muted-foreground">Belum ada riwayat setoran.</div> : <div className="divide-y">{pagedHistory.map((item) => { const participant = participantByEnrollment.get(item.enrollment_id); const scores = [item.fluency_score, item.tajwid_score, item.memorization_score].filter((score): score is number => score != null); const average = scores.length ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : null; return <div key={item.id} className="grid gap-3 p-4 lg:grid-cols-[minmax(180px,1fr)_minmax(220px,1.2fr)_minmax(220px,1.3fr)_auto] lg:items-center"><div><p className="font-semibold">{participant?.display_name ?? "Peserta"}</p><p className="text-xs text-muted-foreground">{new Date(`${item.assessment_date}T00:00:00`).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}</p></div><div><div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className="capitalize">{item.submission_type}</Badge><strong>{item.surah_name}</strong></div><p className="mt-1 text-xs text-muted-foreground">Ayat {item.ayah_from ?? "-"} sampai {item.ayah_to ?? "-"}</p></div><div><p className="text-sm"><Target className="mr-1 inline h-4 w-4 text-primary" /> {item.next_target || "Target berikutnya belum dicatat"}</p><p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{item.notes || "Tidak ada catatan"}</p></div><Badge variant={average != null && average >= 75 ? "secondary" : "outline"}>{average != null ? `Nilai ${average}` : "Belum dinilai"}</Badge></div>; })}</div>}<div className="flex items-center justify-between border-t p-4"><p className="text-xs text-muted-foreground">{filteredHistory.length} catatan</p><div className="flex items-center gap-2"><Button variant="outline" size="icon" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}><ChevronLeft className="h-4 w-4" /><span className="sr-only">Sebelumnya</span></Button><span className="min-w-16 text-center text-sm">{page}/{totalPages}</span><Button variant="outline" size="icon" disabled={page >= totalPages} onClick={() => setPage((current) => current + 1)}><ChevronRight className="h-4 w-4" /><span className="sr-only">Berikutnya</span></Button></div></div></CardContent></Card>
+        <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-md border p-4"><p className="text-xs text-muted-foreground">Peserta Binaan</p><p className="mt-1 text-2xl font-bold">{enrollments.length}</p></div><div className="rounded-md border p-4"><p className="text-xs text-muted-foreground">Setoran Hari Ini</p><p className="mt-1 text-2xl font-bold">{todayCount}</p></div><div className="rounded-md border p-4"><p className="text-xs text-muted-foreground">Rata-rata Penilaian</p><p className="mt-1 text-2xl font-bold">{averageScore}</p></div></div>
+        <Card><CardHeader className="border-b"><CardTitle className="flex items-center gap-2 text-lg"><BookOpen className="h-5 w-5 text-primary" /> 1 · Catat Setoran</CardTitle></CardHeader><CardContent className="space-y-4 p-5"><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><label className="text-sm font-medium">Peserta<select className="field-control mt-2" value={draft.enrollmentId} onChange={(event) => setDraft((current) => ({ ...current, enrollmentId: event.target.value }))}><option value="">Pilih peserta</option>{enrollments.map((item) => <option key={item.id} value={item.id}>{item.participants?.display_name} · {item.participants?.global_participant_number}</option>)}</select></label><label className="text-sm font-medium">Tanggal<Input type="date" className="mt-2" value={draft.assessmentDate} onChange={(event) => setDraft((current) => ({ ...current, assessmentDate: event.target.value }))} /></label><label className="text-sm font-medium">Jenis Setoran<select className="field-control mt-2" value={draft.submissionType} onChange={(event) => setDraft((current) => ({ ...current, submissionType: event.target.value as QuranSubmission["submission_type"] }))}><option value="hafalan">Hafalan Baru</option><option value="murajaah">Murajaah</option><option value="tilawah">Tilawah</option></select></label><label className="text-sm font-medium">Surat<Input className="mt-2" value={draft.surahName} onChange={(event) => setDraft((current) => ({ ...current, surahName: event.target.value }))} placeholder="Contoh: Al-Baqarah" /></label></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"><label className="text-sm font-medium">Ayat Awal<Input type="number" min="1" className="mt-2" value={draft.ayahFrom} onChange={(event) => setDraft((current) => ({ ...current, ayahFrom: event.target.value }))} /></label><label className="text-sm font-medium">Ayat Akhir<Input type="number" min="1" className="mt-2" value={draft.ayahTo} onChange={(event) => setDraft((current) => ({ ...current, ayahTo: event.target.value }))} /></label><label className="text-sm font-medium">Kelancaran<Input type="number" min="0" max="100" className="mt-2" value={draft.fluencyScore} onChange={(event) => setDraft((current) => ({ ...current, fluencyScore: event.target.value }))} placeholder="0-100" /></label><label className="text-sm font-medium">Tajwid<Input type="number" min="0" max="100" className="mt-2" value={draft.tajwidScore} onChange={(event) => setDraft((current) => ({ ...current, tajwidScore: event.target.value }))} placeholder="0-100" /></label><label className="text-sm font-medium">Hafalan<Input type="number" min="0" max="100" className="mt-2" value={draft.memorizationScore} onChange={(event) => setDraft((current) => ({ ...current, memorizationScore: event.target.value }))} placeholder="0-100" /></label></div><div className="grid gap-4 md:grid-cols-2"><label className="text-sm font-medium">Catatan<textarea className="field-control mt-2 min-h-24 resize-y" value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Catatan koreksi dan apresiasi..." /></label><label className="text-sm font-medium">Target Berikutnya<textarea className="field-control mt-2 min-h-24 resize-y" value={draft.nextTarget} onChange={(event) => setDraft((current) => ({ ...current, nextTarget: event.target.value }))} placeholder="Surat, ayat, atau fokus perbaikan berikutnya..." /></label></div><div className="flex justify-end"><Button onClick={() => void saveSubmission()} disabled={isSaving || !enrollments.length}><Save className="h-4 w-4" /> {isSaving ? "Menyimpan..." : "Tinjau setoran"}</Button></div></CardContent></Card>
+        <Card><CardHeader className="border-b"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><CardTitle className="text-lg">Riwayat Setoran</CardTitle><p className="mt-1 text-sm text-muted-foreground">{focusedEnrollment ? "Riwayat peserta yang dipilih." : "Riwayat peserta pada halaqah terpilih."}</p></div><div className="relative sm:w-72"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label="Cari riwayat setoran" value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Cari peserta atau surat..." className="pl-9" /></div></div></CardHeader><CardContent className="p-0">{!pagedHistory.length ? <div className="p-10 text-center text-sm text-muted-foreground">Belum ada riwayat setoran.</div> : <div className="divide-y">{pagedHistory.map((item) => { const participant = participantByEnrollment.get(item.enrollment_id); const scores = [item.fluency_score, item.tajwid_score, item.memorization_score].filter((score): score is number => score != null); const average = scores.length ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : null; return <div key={item.id} className="grid gap-3 p-4 lg:grid-cols-[minmax(180px,1fr)_minmax(220px,1.2fr)_minmax(220px,1.3fr)_auto] lg:items-center"><div><p className="font-semibold">{participant?.display_name ?? "Peserta"}</p><p className="text-xs text-muted-foreground">{new Date(`${item.assessment_date}T00:00:00`).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}</p></div><div><div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className="capitalize">{item.submission_type}</Badge><strong>{item.surah_name}</strong></div><p className="mt-1 text-xs text-muted-foreground">Ayat {item.ayah_from ?? "-"} sampai {item.ayah_to ?? "-"}</p></div><div><p className="text-sm"><Target className="mr-1 inline h-4 w-4 text-primary" /> {item.next_target || "Target berikutnya belum dicatat"}</p><p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{item.notes || "Tidak ada catatan"}</p></div><Badge variant={average != null && average >= 75 ? "secondary" : "outline"}>{average != null ? `Nilai ${average}` : "Belum dinilai"}</Badge></div>; })}</div>}<div className="flex items-center justify-between border-t p-4"><p className="text-xs text-muted-foreground">{filteredHistory.length} catatan</p><div className="flex items-center gap-2"><Button variant="outline" size="icon" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}><ChevronLeft className="h-4 w-4" /><span className="sr-only">Sebelumnya</span></Button><span className="min-w-16 text-center text-sm">{page}/{totalPages}</span><Button variant="outline" size="icon" disabled={page >= totalPages} onClick={() => setPage((current) => current + 1)}><ChevronRight className="h-4 w-4" /><span className="sr-only">Berikutnya</span></Button></div></div></CardContent></Card>
       </>}
     </div>
   );
