@@ -88,3 +88,10 @@ Verifikasi akhir Tugas: 77 versi migration, body hash 16/16 cocok, RLS/grant ses
 ## 2026-11-01 — Uji Contabo dengan akun nyata
 
 Uji pengumpulan dan revisi melalui UI peserta/pengajar berhasil pada Supabase/Contabo nyata. PNG v1/v2 berhasil diunggah; unduhan pengajar v1/v2 serta unduhan riwayat v1 oleh peserta identik dengan checksum asal. Nilai final uji memperbarui progres 1/13. Tugas uji kemudian diarsipkan, materi aktif/progres kembali 0/12. Tidak menghapus riwayat, mereset sandi atau mengubah akun/peran. Bukti lokal: ../backups/assignment-live/live-receipt.json dan participant-final.png. Pilihan Diarsipkan dilengkapi pada form kurikulum. Seluruh 40 berkas regresi dan pemeriksaan sembilan Edge Function lulus.
+
+
+## 2026-11-01 — Migration Pendampingan
+
+202611010001 diterapkan pada YPIA/BelajarLMS1, main (foauntgtmhnhqlspgtoc), setelah persetujuan pengguna. guardian_learning_workspace() dan learner_quran_history(uuid,integer) terpasang, body hash 2/2 cocok, execute authenticated aktif/anon ditolak, search_path public,pg_temp. Fingerprint profil, relasi wali, enrollment, progres, kiriman tugas, fitur program dan policy sebelum/sesudah identik. Panggilan wali nyata dalam READ ONLY + ROLE authenticated + ROLLBACK mengembalikan dua anak terhubung. Fitur parent_portal dan quran_engine tetap nonaktif pada seluruh program sebagaimana baseline.
+
+Bukti: ../backups/companion-portals/ (manifest, before/after, preflight, apply, verify-functions, emergency-disable, receipt dan screenshot). SHA-256 sumber 588db4d96cfcdd6840a44608a0367fba95c423e877b26a3fbe278723d833d378. Tidak ada Edge Function baru pada paket ini. Source revamp frontend masuk paket publikasi Git portal pendamping; deployment hosting belum diverifikasi. Lihat COMPANION_PORTALS_WORKSPACE.md untuk cakupan dan batas pengujian.

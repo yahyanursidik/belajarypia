@@ -245,7 +245,7 @@ export function TeacherContentPage() {
               Muat Ulang
             </Button>
             <Button asChild variant="secondary" className="bg-white/15 text-white hover:bg-white/25">
-              <Link to="/teacher/kelas">
+              <Link to={isMentor ? "/teacher/halaqah" : "/teacher/kelas"}>
                 <Plus className="mr-2 h-4 w-4" />
                 Kelola Program
               </Link>

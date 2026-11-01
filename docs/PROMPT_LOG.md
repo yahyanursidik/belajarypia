@@ -1079,3 +1079,13 @@ Permintaan: mulai melengkapi fitur tugas agar admin, peserta dan pengajar terhub
 ## 2026-11-01 — Uji nyata lampiran, revisi, dan publikasi Git
 
 Permintaan: uji unggah/unduh Contabo dengan akun nyata, verifikasi alur peserta–pengajar dan revisi, kemudian push serta merge. Uji teknis berlabel UJI SISTEM berhasil melalui dua sesi nyata; tiga unduhan cocok dengan checksum, revisi menjaga file lama dan nilai final memperbarui progres. Tugas diarsipkan setelah pengujian. Opsi arsip yang belum tampil pada form kurikulum ditambahkan. Berkas contoh dan bukti akun disimpan lokal di luar repo. Paket Git mencakup rangkaian revamp portal, upgrade stack dan migration 016–022 yang sebelumnya belum dipush.
+
+
+## 2026-11-01 — Revamp portal pendamping dan layanan
+
+Pengguna meminta audit dan penyelarasan portal selain admin/pengajar. Diimplementasikan Ruang Wali, progres/status tugas anak, riwayat Qur’an peserta, ringkasan serta wizard setoran musyrif, beranda keuangan/helpdesk/reviewer dan katalog publik. Tautan profil, pengumuman, bantuan dan konteks program diperbaiki. Migration 202611010001 diterapkan setelah persetujuan “Terapkan migration Pendampingan”. Dua body fungsi cocok; fingerprint data/policy tetap sama; RPC wali nyata mengembalikan dua anak dalam transaksi READ ONLY + ROLLBACK. Tidak mengaktifkan fitur program atau mengubah relasi, akun dan nilai. 25 berkas unit, tujuh skenario SQL, typecheck/build lulus; lint 0 error/4 warning lama. UI diverifikasi dengan fixture terisolasi termasuk ponsel 390 px. Temuan, hubungan fitur dan backlog ada di COMPANION_PORTALS_WORKSPACE.md. Frontend masih lokal, belum push/merge pada paket ini.
+
+
+## 2026-11-01 — Publikasi Git portal pendamping
+
+Pengguna meminta push dan merge paket portal pendamping. Paket mencakup 31 berkas frontend, migration 202611010001, pengujian dan dokumentasi. Baseline main lokal/remote sama (778a10a); diff check bersih, scan perubahan tidak menemukan pola kredensial. Pemeriksaan implementasi sebelumnya tetap berlaku: 25 berkas unit, tujuh skenario SQL, typecheck/build lulus dan lint 0 error/4 warning lama. Publikasi melalui branch dan pull request ke main; status merge akhir tercatat di GitHub. Migration sudah terpasang, tidak dijalankan ulang saat publikasi Git. Deployment hosting frontend perlu diverifikasi terpisah.

@@ -124,7 +124,8 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
       return [
         { href: "/admin/informasi", label: "Pengumuman", group: "Informasi", icon: menuIcon.announcement },
         { href: "/admin", label: "Dashboard", description: "Ringkasan operasional", group: "Ikhtisar", icon: menuIcon.dashboard, mobilePriority: 1 },
-        { href: "/admin/konten", label: "Review Konten", description: "Moderasi materi pembelajaran", group: "Konten", icon: menuIcon.contentReview, mobilePriority: 2 },
+        { href: "/admin/konten", label: "Akses Review", description: "Status akses moderasi", group: "Konten", icon: menuIcon.contentReview, mobilePriority: 2 },
+        { href: "/admin/bantuan", label: "Bantuan", group: "Layanan", icon: menuIcon.helpdesk, mobilePriority: 3 },
       ];
     case "teacher":
       return [
@@ -145,25 +146,28 @@ export function getNavigationForRole(role: RoleCode | null): AppNavItem[] {
         { href: "/teacher", label: "Dashboard Musyrif", description: "Amanah dan fokus pendampingan", group: "Ikhtisar", icon: menuIcon.dashboard, keywords: ["ringkasan", "amanah"], mobilePriority: 1 },
         { href: "/teacher/halaqah", label: "Halaqah & Binaan", description: "Kelompok, peserta, dan progres", group: "Pendampingan", icon: menuIcon.team, keywords: ["santri", "peserta", "progres"], mobilePriority: 2 },
         { href: "/teacher/silabus", label: "Silabus Pendampingan", description: "Tujuan, capaian, dan rencana belajar", group: "Pendampingan", icon: menuIcon.document, keywords: ["kurikulum", "target", "rencana"], mobilePriority: 4 },
-        { href: "/teacher/konten", label: "Konten Materi", description: "Materi dan evaluasi program", group: "Pembelajaran", icon: menuIcon.library },
-        { href: "/teacher/review", label: "Review Pembelajaran", description: "Progres, nilai, dan tindak lanjut", group: "Pembelajaran", icon: menuIcon.review },
+
+        { href: "/teacher/konten", label: "Materi program", group: "Pembelajaran", icon: menuIcon.library },
+        { href: "/teacher/review", label: "Penilaian ujian", group: "Pembelajaran", icon: menuIcon.review },
         { href: "/teacher/quran", label: "Setoran Qur'an", description: "Penilaian, catatan, dan target", group: "Pendampingan", icon: menuIcon.book, keywords: ["hafalan", "murajaah", "tilawah"], mobilePriority: 3 },
         { href: "/teacher/pengumuman", label: "Pengumuman", group: "Informasi", icon: menuIcon.announcement },
         { href: "/teacher/bantuan", label: "Bantuan", group: "Layanan", icon: menuIcon.helpdesk },
-        { href: "/teacher/profil", label: "Profil Saya", description: "Identitas dan akun mentor", group: "Akun", icon: menuIcon.user, mobilePriority: 4 },
+        { href: "/teacher/profil", label: "Profil Saya", description: "Identitas dan akun mentor", group: "Akun", icon: menuIcon.user, mobilePriority: 5 },
       ];
     case "guardian":
       return [
-        { href: "/learner", label: "Dashboard", description: "Ringkasan aktivitas", group: "Ikhtisar", icon: menuIcon.dashboard, mobilePriority: 1 },
-        { href: "/learner/anak-saya", label: "Anak Saya", description: "Progres belajar dan administrasi", group: "Pendampingan", icon: menuIcon.user, mobilePriority: 2 },
+        { href: "/learner", label: "Beranda", description: "Perkembangan anak", group: "Ikhtisar", icon: menuIcon.dashboard, mobilePriority: 1 },
+        { href: "/learner/anak-saya", label: "Anak Saya", description: "Program, tugas, dan perkembangan", group: "Pendampingan", icon: menuIcon.user, mobilePriority: 2 },
         { href: "/learner/pengumuman", label: "Pengumuman", group: "Informasi", icon: menuIcon.announcement },
         { href: "/learner/bantuan", label: "Bantuan", description: "Panduan dan layanan", group: "Layanan", icon: menuIcon.helpdesk, mobilePriority: 3 },
+        { href: "/learner/profil", label: "Profil Wali", group: "Akun", icon: menuIcon.user, mobilePriority: 4 },
       ];
     case "participant":
       return [
         { href: "/learner", label: "Beranda", group: "Belajar", icon: menuIcon.dashboard, mobilePriority: 1 },
         { href: "/learner/program-saya", label: "Program", group: "Belajar", icon: menuIcon.book, mobilePriority: 2, activePathPrefixes: ["/learner/program", "/learner/lesson", "/learner/transkrip"] },
         { href: "/learner/tugas", label: "Tugas", group: "Belajar", icon: menuIcon.document, keywords: ["pengumpulan", "revisi", "jawaban"] },
+        { href: "/learner/quran", label: "Qur’an", group: "Belajar", icon: menuIcon.book, keywords: ["setoran", "hafalan", "musyrif"] },
         { href: "/learner/agenda", label: "Agenda", group: "Belajar", icon: menuIcon.calendar, keywords: ["jadwal", "tenggat", "rilis"] },
         { href: "/learner/progres", label: "Progres", group: "Belajar", icon: menuIcon.verified, mobilePriority: 3 },
         { href: "/learner/keuangan", label: "Pembayaran", group: "Akun", icon: menuIcon.finance, mobilePriority: 4 },

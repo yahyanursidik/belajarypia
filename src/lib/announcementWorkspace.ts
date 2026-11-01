@@ -170,6 +170,10 @@ export function announcementInboxPath(role: RoleCode | null) {
         : "/admin/informasi";
 }
 export function announcementAction(a: Announcement, role: RoleCode | null) {
+  if (role === "guardian" && ["program", "lesson"].includes(a.action_kind) && a.target_program_id)
+    return { label: "Perkembangan anak", to: "/learner/anak-saya?program=" + a.target_program_id };
+  if (role === "guardian" && a.action_kind === "payment")
+    return { label: "Bantuan pembayaran", to: "/learner/bantuan?category=payment" + (a.target_program_id ? "&contextProgram=" + a.target_program_id : "") };
   const learner = role === "participant";
   const teacher = ["teacher", "mentor"].includes(role ?? "");
   const manager = ["super_admin", "admin"].includes(role ?? "");

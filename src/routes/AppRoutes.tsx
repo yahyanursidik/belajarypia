@@ -6,6 +6,10 @@ import { DashboardRedirect, ProtectedRoute } from "./ProtectedRoute";
 const AssignmentsPage = lazy(() => import("./shared/AssignmentsPage").then(m => ({default:m.AssignmentsPage})));
 const AssignmentDetailPage = lazy(() => import("./shared/AssignmentsPage").then(m => ({default:m.AssignmentDetailPage})));
 
+const GuardianDashboardPage = lazy(() => import('./guardian/GuardianDashboardPage').then(m=>({default:m.GuardianDashboardPage})));
+const LearnerQuranPage = lazy(() => import('./learner/LearnerQuranPage').then(m=>({default:m.LearnerQuranPage})));
+const StaffHomePage = lazy(() => import('./shared/StaffHomePage').then(m=>({default:m.StaffHomePage})));
+const ContentAccessPage = lazy(() => import('./shared/StaffHomePage').then(m=>({default:m.ContentAccessPage})));
 const AgendaPage = lazy(() => import("./shared/AgendaPage").then((m) => ({ default: m.AgendaPage })));
 
 const AdminLayout = lazy(() =>
@@ -117,8 +121,8 @@ const CertificateQueuePage = lazy(() =>
   })),
 );
 const LearnerDashboardPage = lazy(() =>
-  import("./learner/LearnerDashboardPage").then((module) => ({
-    default: module.LearnerDashboardPage,
+  import("./learner/LearnerPortalHomePage").then((module) => ({
+    default: module.LearnerPortalHomePage,
   })),
 );
 const LearnerTranscriptPage = lazy(() =>
@@ -127,8 +131,8 @@ const LearnerTranscriptPage = lazy(() =>
   })),
 );
 const LearnerProfilePage = lazy(() =>
-  import("./learner/LearnerProfilePage").then((module) => ({
-    default: module.LearnerProfilePage,
+  import("./learner/LearnerPortalHomePage").then((module) => ({
+    default: module.LearnerPortalProfilePage,
   })),
 );
 const LearnerProgressPage = lazy(() => import("./learner/LearnerProgressPage").then(module => ({ default: module.LearnerProgressPage })));
@@ -172,6 +176,7 @@ const TeacherSyllabusPage = lazy(() =>
     default: module.TeacherSyllabusPage,
   })),
 );
+const ProgramCatalogPage = lazy(() => import("./public/ProgramCatalogPage").then(m=>({default:m.ProgramCatalogPage})));
 const AdmissionPortalPage = lazy(() =>
   import("./public/AdmissionPortalPage").then((module) => ({
     default: module.AdmissionPortalPage,
@@ -306,6 +311,8 @@ export function AppRoutes() {
             </PublicLayout>
           }
         />
+        <Route path="/katalog" element={<PublicLayout><ProgramCatalogPage /></PublicLayout>} />
+        <Route path="/program" element={<Navigate to="/katalog" replace />} />
         <Route path="/pendaftaran/:programId" element={<PublicLayout><AdmissionPortalPage /></PublicLayout>} />
         <Route path="/cek-status" element={<PublicLayout><AdmissionStatusPage /></PublicLayout>} />
         <Route path="/katalog/:programId" element={<PublicLayout><ProgramDetailPage /></PublicLayout>} />
@@ -322,7 +329,7 @@ export function AppRoutes() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<AdminDashboardPage />} />
+          <Route index element={<StaffHomePage><AdminDashboardPage /></StaffHomePage>} />
           <Route path="tugas" element={<ProtectedRoute allowedRoles={["admin"]}><AssignmentsPage /></ProtectedRoute>} />
           <Route path="tugas/:lessonId" element={<ProtectedRoute allowedRoles={["admin"]}><AssignmentDetailPage /></ProtectedRoute>} />
           <Route path="agenda" element={<ProtectedRoute allowedRoles={["admin"]}><AgendaPage /></ProtectedRoute>} />
@@ -367,6 +374,7 @@ export function AppRoutes() {
             }
           />
           <Route path="profil" element={<AdminProfilePage />} />
+          <Route path="bantuan" element={<LearnerHelpPage />} />
           <Route path="informasi" element={<AnnouncementInboxPage/>}/>
 
           <Route path="penilaian" element={<ProtectedRoute allowedRoles={["admin"]}><TeacherReviewPage /></ProtectedRoute>} />
@@ -383,7 +391,7 @@ export function AppRoutes() {
             path="konten"
             element={
               <ProtectedRoute allowedRoles={["admin", "content_reviewer"]}>
-                <SystemContentReviewPage />
+                <ContentAccessPage />
               </ProtectedRoute>
             }
           />
@@ -493,18 +501,20 @@ export function AppRoutes() {
           }
         >
           <Route index element={<LearnerDashboardPage />} />
+          <Route path="anak-saya" element={<ProtectedRoute allowedRoles={["guardian"]}><GuardianDashboardPage /></ProtectedRoute>} />
+          <Route path="quran" element={<ProtectedRoute allowedRoles={["participant"]}><LearnerQuranPage /></ProtectedRoute>} />
           <Route path="tugas" element={<ProtectedRoute allowedRoles={["participant"]}><AssignmentsPage /></ProtectedRoute>} />
           <Route path="tugas/:lessonId" element={<ProtectedRoute allowedRoles={["participant"]}><AssignmentDetailPage /></ProtectedRoute>} />
           <Route path="agenda" element={<ProtectedRoute allowedRoles={["participant"]}><AgendaPage /></ProtectedRoute>} />
-          <Route path="program-saya" element={<LearnerProgramLessonsPage />} />
-          <Route path="progres" element={<LearnerProgressPage />} />
-          <Route path="program/:programId" element={<LearnerProgramDetailPage />} />
-          <Route path="program/:programId/:section" element={<LearnerProgramDetailPage />} />
-          <Route path="lesson/:lessonId" element={<LearnerLessonPage />} />
-          <Route path="lesson/:lessonId/quiz" element={<LearnerQuizPage />} />
-          <Route path="transkrip/:enrollmentId" element={<LearnerTranscriptPage />} />
+          <Route path="program-saya" element={<ProtectedRoute allowedRoles={["participant", "admin", "super_admin"]}><LearnerProgramLessonsPage /></ProtectedRoute>} />
+          <Route path="progres" element={<ProtectedRoute allowedRoles={["participant", "admin", "super_admin"]}><LearnerProgressPage /></ProtectedRoute>} />
+          <Route path="program/:programId" element={<ProtectedRoute allowedRoles={["participant", "admin", "super_admin"]}><LearnerProgramDetailPage /></ProtectedRoute>} />
+          <Route path="program/:programId/:section" element={<ProtectedRoute allowedRoles={["participant", "admin", "super_admin"]}><LearnerProgramDetailPage /></ProtectedRoute>} />
+          <Route path="lesson/:lessonId" element={<ProtectedRoute allowedRoles={["participant", "admin", "super_admin"]}><LearnerLessonPage /></ProtectedRoute>} />
+          <Route path="lesson/:lessonId/quiz" element={<ProtectedRoute allowedRoles={["participant", "admin", "super_admin"]}><LearnerQuizPage /></ProtectedRoute>} />
+          <Route path="transkrip/:enrollmentId" element={<ProtectedRoute allowedRoles={["participant", "admin", "super_admin"]}><LearnerTranscriptPage /></ProtectedRoute>} />
           <Route path="profil" element={<LearnerProfilePage />} />
-          <Route path="keuangan" element={<LearnerFinancePage />} />
+          <Route path="keuangan" element={<ProtectedRoute allowedRoles={["participant", "admin", "super_admin"]}><LearnerFinancePage /></ProtectedRoute>} />
           <Route path="pendaftaran/:programId" element={<AdmissionPortalPage />} />
           <Route path="cek-status" element={<AdmissionStatusPage />} />
           <Route path="pengumuman" element={<AnnouncementInboxPage/>}/>

@@ -136,7 +136,7 @@ test("internal actions and inbox links respect portal roles", () => {
     "/system/program/p1/peserta",
   );
   assert.equal(announcementAction(item, "finance"), null);
-  assert.equal(announcementAction(item, "guardian"), null);
+  assert.equal(announcementAction(item, "guardian").to, "/learner/anak-saya?program=p1");
   assert.equal(
     announcementAction({ ...item, action_kind: "payment" }, "finance").to,
     "/admin/keuangan?program=p1",

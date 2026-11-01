@@ -233,7 +233,7 @@ export function LearnerProgramSyllabusPage() {
         </div>
       </section>
 
-      <div className="print:hidden"><LearnerProgramNav programId={programId} enrollmentId={enrollment.id} /></div>
+      <div className="print:hidden"><LearnerProgramNav programId={programId} enrollmentId={enrollment.id} quran={program.feature_flags?.use_quran_engine} /></div>
 
       <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
         <aside className="space-y-4 print:hidden">
